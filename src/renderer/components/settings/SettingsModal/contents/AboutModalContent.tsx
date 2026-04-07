@@ -1,7 +1,6 @@
 /**
- * @license
- * Copyright 2025 AionUi (aionui.com)
- * SPDX-License-Identifier: Apache-2.0
+ * @license Apache-2.0
+ * TitanX About page — branding, version, links, attribution.
  */
 
 import { Divider, Typography, Button, Switch } from '@arco-design/web-react';
@@ -12,6 +11,7 @@ import classNames from 'classnames';
 import { useSettingsViewMode } from '../settingsViewContext';
 import { isElectronDesktop, openExternalUrl } from '@/renderer/utils/platform';
 import packageJson from '../../../../../../package.json';
+import cesLogo from '@renderer/assets/logos/brand/app.png';
 
 const AboutModalContent: React.FC = () => {
   const { t } = useTranslation();
@@ -40,42 +40,34 @@ const AboutModalContent: React.FC = () => {
   };
 
   const checkUpdate = () => {
-    // 使用 window 自定义事件在渲染进程内部通信（buildEmitter 只支持主进程->渲染进程）
-    // Use window custom event for renderer-side communication (buildEmitter only works main->renderer)
     window.dispatchEvent(new CustomEvent('aionui-open-update-modal', { detail: { source: 'about' } }));
   };
 
   const linkItems = [
     {
       title: t('settings.helpDocumentation'),
-      url: 'https://github.com/iOfficeAI/AionUi/wiki',
+      url: 'https://github.com/CES-Ltd/TitanX/wiki',
       icon: <Right theme='outline' size='16' />,
     },
     {
       title: t('settings.updateLog'),
-      url: 'https://github.com/iOfficeAI/AionUi/releases',
+      url: 'https://github.com/CES-Ltd/TitanX/releases',
       icon: <Right theme='outline' size='16' />,
     },
     {
       title: t('settings.feedback'),
-      url: 'https://github.com/iOfficeAI/AionUi/issues',
-      icon: <Right theme='outline' size='16' />,
-    },
-    {
-      title: t('settings.contactMe'),
-      url: 'https://x.com/WailiVery',
+      url: 'https://github.com/CES-Ltd/TitanX/issues',
       icon: <Right theme='outline' size='16' />,
     },
     {
       title: t('settings.officialWebsite'),
-      url: 'https://www.aionui.com',
+      url: 'https://cesltd.com',
       icon: <Right theme='outline' size='16' />,
     },
   ];
 
   return (
     <div className='flex flex-col h-full w-full'>
-      {/* Content Area */}
       <div
         className={classNames(
           'flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-24px',
@@ -85,11 +77,21 @@ const AboutModalContent: React.FC = () => {
         <div className='flex flex-col max-w-500px mx-auto'>
           {/* App Info Section */}
           <div className='flex flex-col items-center pb-24px'>
-            <Typography.Title heading={3} className='text-24px font-bold text-t-primary mb-8px'>
-              AionUi
+            {/* High-res CES logo */}
+            <img
+              src={cesLogo}
+              alt='TitanX'
+              className='w-80px h-80px object-contain mb-12px'
+              style={{ borderRadius: 16 }}
+            />
+            <Typography.Title heading={3} className='text-24px font-bold text-t-primary mb-4px'>
+              TitanX
             </Typography.Title>
-            <Typography.Text className='text-14px text-t-secondary mb-12px text-center'>
+            <Typography.Text className='text-13px text-t-secondary mb-8px text-center max-w-400px'>
               {t('settings.appDescription')}
+            </Typography.Text>
+            <Typography.Text className='text-11px text-t-quaternary mb-12px text-center italic'>
+              {t('settings.appTagline')}
             </Typography.Text>
             <div className='flex items-center justify-center gap-8px mb-16px'>
               <span className='px-10px py-4px rd-6px text-13px bg-fill-2 text-t-primary font-500'>
@@ -98,7 +100,7 @@ const AboutModalContent: React.FC = () => {
               <div
                 className='text-t-primary cursor-pointer hover:text-t-secondary transition-colors p-4px'
                 onClick={() =>
-                  openLink('https://github.com/iOfficeAI/AionUi').catch((error) =>
+                  openLink('https://github.com/CES-Ltd/TitanX').catch((error) =>
                     console.error('Failed to open link:', error)
                   )
                 }
@@ -142,6 +144,21 @@ const AboutModalContent: React.FC = () => {
                 <div className='text-t-secondary group-hover:text-t-primary transition-colors'>{item.icon}</div>
               </div>
             ))}
+          </div>
+
+          {/* Attribution */}
+          <Divider className='my-16px' />
+          <div className='text-center pb-16px'>
+            <Typography.Text className='text-11px text-t-quaternary'>
+              Built on{' '}
+              <span
+                className='text-t-secondary cursor-pointer hover:underline'
+                onClick={() => openLink('https://github.com/iOfficeAI/AionUi').catch(console.error)}
+              >
+                AionUI
+              </span>{' '}
+              &mdash; the open-source AI cowork platform
+            </Typography.Text>
           </div>
         </div>
       </div>

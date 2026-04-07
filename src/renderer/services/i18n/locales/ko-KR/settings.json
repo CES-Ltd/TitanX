@@ -507,7 +507,7 @@
   "needHelpTooltip": "도움이 필요하시면 확인하세요",
   "googleCloudProjectPlaceholder": "Google Cloud 프로젝트 ID 입력",
   "noAvailableModels": "사용 가능한 모델 없음",
-  "appDescription": "무료, 로컬, 오픈 소스 Gemini CLI용 GUI 앱",
+  "appDescription": "TitanX는 엔터프라이즈 보안을 염두에 두고 생산성을 높이고 워크플로우를 간소화하는 강력한 도구입니다",
   "helpDocumentation": "도움말 문서",
   "updateLog": "업데이트 로그",
   "feedback": "피드백",
@@ -807,5 +807,6 @@
     "pendingTimeout": "승인 요청이 만료되었습니다 (5분). 다시 시도해주세요.",
     "pendingCancel": "취소",
     "pendingTimeRemaining": "남은 시간: {{time}}"
-  }
+  },
+  "appTagline": "AI 디지털 워크포스 — 에이전트 팀과 함께 10배 빠르게 ⚡"
 }

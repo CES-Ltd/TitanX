@@ -740,7 +740,7 @@ const WebuiModalContent: React.FC = () => {
                   className='text-primary hover:underline cursor-pointer bg-transparent border-none p-0 text-12px'
                   onClick={() =>
                     shell.openExternal
-                      .invoke('https://github.com/iOfficeAI/AionUi/wiki/Remote-Internet-Access-Guide')
+                      .invoke('https://github.com/CES-Ltd/TitanX/wiki/Remote-Internet-Access-Guide')
                       .catch(console.error)
                   }
                 >
