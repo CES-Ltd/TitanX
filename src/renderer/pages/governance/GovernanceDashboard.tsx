@@ -6,7 +6,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, Grid, Statistic, Spin, Tag, Empty, Button, Space, Message } from '@arco-design/web-react';
-import { Performance, MoneyOne, Caution, CheckCorrect } from '@icon-park/react';
+import { Performance, HoneyOne, Caution, CheckCorrect } from '@icon-park/react';
 import {
   agentRuns,
   costTracking,
@@ -99,7 +99,7 @@ const GovernanceDashboard: React.FC = () => {
             <Statistic
               title={t('governance.totalSpend', 'Total Spend')}
               value={((costSummary?.totalCostCents ?? 0) / 100).toFixed(2)}
-              prefix={<MoneyOne size={18} />}
+              prefix={<HoneyOne size={18} />}
               suffix='USD'
             />
           </Card>

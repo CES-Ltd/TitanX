@@ -1,7 +1,7 @@
 /**
  * @license Apache-2.0
  * WebUI API routes for TitanX governance features (observability + security).
- * All routes require JWT authentication via TokenMiddleware.
+ * All routes require JWT authentication via createAuthMiddleware.
  */
 
 import { type Express, type Request, type Response } from 'express';
@@ -12,23 +12,40 @@ import * as costTrackingService from '@process/services/costTracking';
 import * as budgetService from '@process/services/budgets';
 import * as agentRunsService from '@process/services/agentRuns';
 import * as approvalsService from '@process/services/approvals';
-import { TokenMiddleware } from '@process/webserver/auth/middleware/TokenMiddleware';
+import { createAuthMiddleware } from '@process/webserver/auth/middleware/TokenMiddleware';
 
-const auth = TokenMiddleware.createAuthMiddleware('json');
+const auth = createAuthMiddleware('json');
+
+/** Safely extract a single string query parameter (Express 5 returns string | string[]). */
+function qStr(value: unknown): string | undefined {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value) && typeof value[0] === 'string') return value[0];
+  return undefined;
+}
+
+function qNum(value: unknown): number | undefined {
+  const s = qStr(value);
+  if (s === undefined) return undefined;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function getUserId(req: Request): string {
+  return (req as Request & { user?: { id: string } }).user?.id ?? 'system_default_user';
+}
 
 export function registerGovernanceRoutes(app: Express): void {
   // ─── Activity Log ─────────────────────────────────────────────────────────
   app.get('/api/governance/activity', auth, async (req: Request, res: Response) => {
     try {
       const db = await getDatabase();
-      const userId = (req as Request & { user?: { id: string } }).user?.id ?? 'system_default_user';
       const result = activityLogService.listActivities(db.getDriver(), {
-        userId,
-        entityType: req.query.entityType as string | undefined,
-        agentId: req.query.agentId as string | undefined,
-        action: req.query.action as string | undefined,
-        limit: req.query.limit ? Number(req.query.limit) : undefined,
-        offset: req.query.offset ? Number(req.query.offset) : undefined,
+        userId: getUserId(req),
+        entityType: qStr(req.query.entityType),
+        agentId: qStr(req.query.agentId),
+        action: qStr(req.query.action),
+        limit: qNum(req.query.limit),
+        offset: qNum(req.query.offset),
       });
       res.json(result);
     } catch (err) {
@@ -41,8 +58,8 @@ export function registerGovernanceRoutes(app: Express): void {
       const db = await getDatabase();
       const result = activityLogService.getActivitiesForEntity(
         db.getDriver(),
-        req.params.entityType,
-        req.params.entityId
+        String(req.params.entityType),
+        String(req.params.entityId)
       );
       res.json(result);
     } catch (err) {
@@ -54,8 +71,7 @@ export function registerGovernanceRoutes(app: Express): void {
   app.get('/api/governance/secrets', auth, async (req: Request, res: Response) => {
     try {
       const db = await getDatabase();
-      const userId = (req as Request & { user?: { id: string } }).user?.id ?? 'system_default_user';
-      res.json(secretsService.listSecrets(db.getDriver(), userId));
+      res.json(secretsService.listSecrets(db.getDriver(), getUserId(req)));
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
@@ -64,13 +80,12 @@ export function registerGovernanceRoutes(app: Express): void {
   app.post('/api/governance/secrets', auth, async (req: Request, res: Response) => {
     try {
       const db = await getDatabase();
-      const userId = (req as Request & { user?: { id: string } }).user?.id ?? 'system_default_user';
       const { name, value } = req.body;
       if (!name || !value) {
         res.status(400).json({ error: 'name and value are required' });
         return;
       }
-      const secret = secretsService.createSecret(db.getDriver(), { userId, name, value });
+      const secret = secretsService.createSecret(db.getDriver(), { userId: getUserId(req), name, value });
       res.json(secret);
     } catch (err) {
       res.status(500).json({ error: String(err) });
@@ -85,7 +100,7 @@ export function registerGovernanceRoutes(app: Express): void {
         res.status(400).json({ error: 'value is required' });
         return;
       }
-      const result = secretsService.rotateSecret(db.getDriver(), { secretId: req.params.secretId, value });
+      const result = secretsService.rotateSecret(db.getDriver(), { secretId: String(req.params.secretId), value });
       res.json(result);
     } catch (err) {
       res.status(500).json({ error: String(err) });
@@ -95,7 +110,7 @@ export function registerGovernanceRoutes(app: Express): void {
   app.delete('/api/governance/secrets/:secretId', auth, async (req: Request, res: Response) => {
     try {
       const db = await getDatabase();
-      const ok = secretsService.deleteSecret(db.getDriver(), req.params.secretId);
+      const ok = secretsService.deleteSecret(db.getDriver(), String(req.params.secretId));
       res.json({ deleted: ok });
     } catch (err) {
       res.status(500).json({ error: String(err) });
@@ -106,9 +121,7 @@ export function registerGovernanceRoutes(app: Express): void {
   app.get('/api/governance/costs/summary', auth, async (req: Request, res: Response) => {
     try {
       const db = await getDatabase();
-      const userId = (req as Request & { user?: { id: string } }).user?.id ?? 'system_default_user';
-      const fromDate = req.query.fromDate ? Number(req.query.fromDate) : undefined;
-      res.json(costTrackingService.getCostSummary(db.getDriver(), userId, fromDate));
+      res.json(costTrackingService.getCostSummary(db.getDriver(), getUserId(req), qNum(req.query.fromDate)));
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
@@ -117,8 +130,7 @@ export function registerGovernanceRoutes(app: Express): void {
   app.get('/api/governance/costs/by-agent', auth, async (req: Request, res: Response) => {
     try {
       const db = await getDatabase();
-      const userId = (req as Request & { user?: { id: string } }).user?.id ?? 'system_default_user';
-      res.json(costTrackingService.getCostByAgent(db.getDriver(), userId));
+      res.json(costTrackingService.getCostByAgent(db.getDriver(), getUserId(req)));
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
@@ -127,8 +139,7 @@ export function registerGovernanceRoutes(app: Express): void {
   app.get('/api/governance/costs/by-provider', auth, async (req: Request, res: Response) => {
     try {
       const db = await getDatabase();
-      const userId = (req as Request & { user?: { id: string } }).user?.id ?? 'system_default_user';
-      res.json(costTrackingService.getCostByProvider(db.getDriver(), userId));
+      res.json(costTrackingService.getCostByProvider(db.getDriver(), getUserId(req)));
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
@@ -137,8 +148,7 @@ export function registerGovernanceRoutes(app: Express): void {
   app.get('/api/governance/costs/window-spend', auth, async (req: Request, res: Response) => {
     try {
       const db = await getDatabase();
-      const userId = (req as Request & { user?: { id: string } }).user?.id ?? 'system_default_user';
-      res.json(costTrackingService.getWindowSpend(db.getDriver(), userId));
+      res.json(costTrackingService.getWindowSpend(db.getDriver(), getUserId(req)));
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
@@ -148,8 +158,7 @@ export function registerGovernanceRoutes(app: Express): void {
   app.get('/api/governance/budgets/policies', auth, async (req: Request, res: Response) => {
     try {
       const db = await getDatabase();
-      const userId = (req as Request & { user?: { id: string } }).user?.id ?? 'system_default_user';
-      res.json(budgetService.listPolicies(db.getDriver(), userId));
+      res.json(budgetService.listPolicies(db.getDriver(), getUserId(req)));
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
@@ -158,8 +167,7 @@ export function registerGovernanceRoutes(app: Express): void {
   app.post('/api/governance/budgets/policies', auth, async (req: Request, res: Response) => {
     try {
       const db = await getDatabase();
-      const userId = (req as Request & { user?: { id: string } }).user?.id ?? 'system_default_user';
-      const result = budgetService.upsertPolicy(db.getDriver(), { ...req.body, userId });
+      const result = budgetService.upsertPolicy(db.getDriver(), { ...req.body, userId: getUserId(req) });
       res.json(result);
     } catch (err) {
       res.status(500).json({ error: String(err) });
@@ -169,8 +177,7 @@ export function registerGovernanceRoutes(app: Express): void {
   app.get('/api/governance/budgets/incidents', auth, async (req: Request, res: Response) => {
     try {
       const db = await getDatabase();
-      const userId = (req as Request & { user?: { id: string } }).user?.id ?? 'system_default_user';
-      res.json(budgetService.listIncidents(db.getDriver(), userId, req.query.status as string | undefined));
+      res.json(budgetService.listIncidents(db.getDriver(), getUserId(req), qStr(req.query.status)));
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
@@ -179,7 +186,7 @@ export function registerGovernanceRoutes(app: Express): void {
   app.post('/api/governance/budgets/incidents/:incidentId/resolve', auth, async (req: Request, res: Response) => {
     try {
       const db = await getDatabase();
-      budgetService.resolveIncident(db.getDriver(), req.params.incidentId, req.body.status ?? 'resolved');
+      budgetService.resolveIncident(db.getDriver(), String(req.params.incidentId), req.body.status ?? 'resolved');
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ error: String(err) });
@@ -190,13 +197,12 @@ export function registerGovernanceRoutes(app: Express): void {
   app.get('/api/governance/runs', auth, async (req: Request, res: Response) => {
     try {
       const db = await getDatabase();
-      const userId = (req as Request & { user?: { id: string } }).user?.id ?? 'system_default_user';
       res.json(
         agentRunsService.listRuns(db.getDriver(), {
-          userId,
-          conversationId: req.query.conversationId as string | undefined,
-          agentType: req.query.agentType as string | undefined,
-          limit: req.query.limit ? Number(req.query.limit) : undefined,
+          userId: getUserId(req),
+          conversationId: qStr(req.query.conversationId),
+          agentType: qStr(req.query.agentType),
+          limit: qNum(req.query.limit),
         })
       );
     } catch (err) {
@@ -207,8 +213,7 @@ export function registerGovernanceRoutes(app: Express): void {
   app.get('/api/governance/runs/stats', auth, async (req: Request, res: Response) => {
     try {
       const db = await getDatabase();
-      const userId = (req as Request & { user?: { id: string } }).user?.id ?? 'system_default_user';
-      res.json(agentRunsService.getRunStats(db.getDriver(), userId));
+      res.json(agentRunsService.getRunStats(db.getDriver(), getUserId(req)));
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
@@ -218,8 +223,7 @@ export function registerGovernanceRoutes(app: Express): void {
   app.get('/api/governance/approvals', auth, async (req: Request, res: Response) => {
     try {
       const db = await getDatabase();
-      const userId = (req as Request & { user?: { id: string } }).user?.id ?? 'system_default_user';
-      res.json(approvalsService.listApprovals(db.getDriver(), userId, req.query.status as string | undefined));
+      res.json(approvalsService.listApprovals(db.getDriver(), getUserId(req), qStr(req.query.status)));
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
@@ -229,7 +233,7 @@ export function registerGovernanceRoutes(app: Express): void {
     try {
       const db = await getDatabase();
       approvalsService.decideApproval(db.getDriver(), {
-        approvalId: req.params.approvalId,
+        approvalId: String(req.params.approvalId),
         status: req.body.status,
         decisionNote: req.body.note,
       });
@@ -242,8 +246,7 @@ export function registerGovernanceRoutes(app: Express): void {
   app.get('/api/governance/approvals/pending-count', auth, async (req: Request, res: Response) => {
     try {
       const db = await getDatabase();
-      const userId = (req as Request & { user?: { id: string } }).user?.id ?? 'system_default_user';
-      res.json({ count: approvalsService.getPendingCount(db.getDriver(), userId) });
+      res.json({ count: approvalsService.getPendingCount(db.getDriver(), getUserId(req)) });
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }

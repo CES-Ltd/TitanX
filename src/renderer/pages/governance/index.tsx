@@ -7,7 +7,7 @@
 import React, { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Tabs, Typography } from '@arco-design/web-react';
-import { Dashboard as DashboardIcon, ListView, MoneyOne, Shield, CheckCorrect } from '@icon-park/react';
+import { Dashboard as DashboardIcon, ListView, HoneyOne, Shield, CheckCorrect } from '@icon-park/react';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import GovernanceDashboard from './GovernanceDashboard';
 import ActivityLog from './ActivityLog';
@@ -60,7 +60,7 @@ const GovernancePage: React.FC = () => {
           key='costs'
           title={
             <span className='flex items-center gap-1'>
-              <MoneyOne size={16} />
+              <HoneyOne size={16} />
               {t('governance.tabs.costs', 'Costs')}
             </span>
           }
