@@ -1,5 +1,5 @@
 import { Message, Spin } from '@arco-design/web-react';
-import { CloseOne, FullScreen, Left, OffScreen, Right } from '@icon-park/react';
+import { CloseOne, FullScreen, OffScreen } from '@icon-park/react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import useSWR, { useSWRConfig } from 'swr';
@@ -8,8 +8,9 @@ import { ipcBridge } from '@/common';
 import type { TeamAgent, TTeam } from '@/common/types/teamTypes';
 import type { IProvider, TChatConversation, TProviderWithModel } from '@/common/config/storage';
 import ChatLayout from '@/renderer/pages/conversation/components/ChatLayout';
-import ChatSider from '@/renderer/pages/conversation/components/ChatSider';
 import TeamConfirmOverlay from './components/TeamConfirmOverlay';
+import TeamSider from './components/TeamSider';
+import SpawnedAgentCard from './components/SpawnedAgentCard';
 import { useConversationAgents } from '@/renderer/pages/conversation/hooks/useConversationAgents';
 import AcpModelSelector from '@/renderer/components/agent/AcpModelSelector';
 import GeminiModelSelector from '@/renderer/pages/conversation/platforms/gemini/GeminiModelSelector';
@@ -235,10 +236,33 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({ team, onAddAgent, onR
     [t]
   );
 
-  const sider = useMemo(() => {
-    if (!workspaceEnabled || !dispatchConversation) return <div />;
-    return <ChatSider conversation={dispatchConversation} />;
-  }, [workspaceEnabled, dispatchConversation]);
+  const handleAgentClick = useCallback(
+    (slotId: string) => {
+      switchTab(slotId);
+    },
+    [switchTab]
+  );
+
+  const handleLeadClick = useCallback(() => {
+    if (leadAgent?.slotId) switchTab(leadAgent.slotId);
+  }, [leadAgent?.slotId, switchTab]);
+
+  const spawnedAgents = useMemo(() => agents.filter((a) => a.role !== 'lead'), [agents]);
+
+  const sider = useMemo(
+    () => (
+      <TeamSider
+        conversation={dispatchConversation}
+        agents={agents}
+        teamId={team.id}
+        leadSlotId={leadAgent?.slotId ?? ''}
+        statusMap={statusMap}
+        onAgentClick={handleAgentClick}
+        onLeadClick={handleLeadClick}
+      />
+    ),
+    [dispatchConversation, agents, team.id, leadAgent?.slotId, statusMap, handleAgentClick, handleLeadClick]
+  );
 
   const updateScrollArrows = useCallback(() => {
     const container = scrollContainerRef.current;
@@ -341,99 +365,48 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({ team, onAddAgent, onR
         title={team.name}
         siderTitle={siderTitle}
         sider={sider}
-        workspaceEnabled={workspaceEnabled}
+        workspaceEnabled
         tabsSlot={tabsSlot}
-        conversationId={activeAgent?.conversationId}
+        conversationId={leadAgent?.conversationId}
         agentName={undefined}
         workspacePath={effectiveWorkspace}
         onRenameTitle={onRenameTeam}
       >
-        <div className='relative flex h-full'>
-          {fullscreenSlotId ? (
-            // Fullscreen: single agent fills the entire content area
-            (() => {
-              const agent = agents.find((a) => a.slotId === fullscreenSlotId);
-              if (!agent) return null;
-              const isLeadSlot = agent.slotId === leadAgent?.slotId;
-              return (
-                <div className='flex-1 h-full'>
-                  <AgentChatSlot
-                    agent={agent}
-                    teamId={team.id}
-                    isLead={isLeadSlot}
-                    isFullscreen
-                    runtimeStatus={statusMap.get(agent.slotId)?.status}
-                    onToggleFullscreen={() => setFullscreenSlotId(null)}
-                    onRemove={() => handleRemoveAgent(agent.slotId)}
-                  />
-                </div>
-              );
-            })()
-          ) : (
-            <>
-              {showLeftArrow && (
-                <div
-                  className='absolute left-0 top-0 bottom-0 w-48px z-20 flex items-center justify-center cursor-pointer opacity-80 hover:opacity-100 transition-opacity'
-                  style={{ background: 'linear-gradient(90deg, var(--color-bg-1) 40%, transparent)' }}
-                  onClick={scrollToPrev}
-                >
-                  <div
-                    className='w-32px h-32px rd-full flex items-center justify-center'
-                    style={{ background: 'rgba(0,0,0,0.5)', lineHeight: 0 }}
-                  >
-                    <Left size='24' fill='#fff' />
-                  </div>
-                </div>
-              )}
-              <div
-                ref={scrollContainerRef}
-                className='flex h-full w-full overflow-x-auto overflow-y-hidden [scrollbar-width:none]'
-                style={{ scrollSnapType: 'x proximity' }}
-              >
-                {agents.map((agent) => {
-                  const isSingle = agents.length <= 2;
-                  const isLeadSlot = agent.slotId === leadAgent?.slotId;
-                  return (
-                    <div
-                      key={agent.slotId}
-                      ref={(el) => {
-                        agentRefs.current[agent.slotId] = el;
-                      }}
-                      className='relative shrink-0 h-full border-r border-solid border-[color:var(--border-base)]'
-                      style={{
-                        flex: isSingle ? 1 : undefined,
-                        width: isSingle ? undefined : '400px',
-                        minWidth: isSingle ? '240px' : '400px',
-                        scrollSnapAlign: 'start',
-                      }}
-                    >
-                      <AgentChatSlot
-                        agent={agent}
-                        teamId={team.id}
-                        isLead={isLeadSlot}
-                        runtimeStatus={statusMap.get(agent.slotId)?.status}
-                        onToggleFullscreen={() => setFullscreenSlotId(agent.slotId)}
-                        onRemove={() => handleRemoveAgent(agent.slotId)}
-                      />
-                    </div>
-                  );
-                })}
+        {/* Command Center: Lead agent chat + spawned agent cards */}
+        <div className='flex flex-col h-full'>
+          {/* Lead agent chat — fills most of the space */}
+          <div className='flex-1 min-h-0'>
+            {leadAgent ? (
+              <AgentChatSlot
+                agent={leadAgent}
+                teamId={team.id}
+                isLead
+                runtimeStatus={statusMap.get(leadAgent.slotId)?.status}
+                onToggleFullscreen={() => setFullscreenSlotId(leadAgent.slotId)}
+                onRemove={() => {}}
+              />
+            ) : (
+              <div className='flex items-center justify-center h-full text-t-secondary'>
+                {t('team.noLead', 'No lead agent configured')}
               </div>
-              {showRightArrow && (
-                <div
-                  className='absolute right-0 top-0 bottom-0 w-48px z-20 flex items-center justify-center cursor-pointer opacity-80 hover:opacity-100 transition-opacity'
-                  style={{ background: 'linear-gradient(270deg, var(--color-bg-1) 40%, transparent)' }}
-                  onClick={scrollToNext}
-                >
-                  <div
-                    className='w-32px h-32px rd-full flex items-center justify-center'
-                    style={{ background: 'rgba(0,0,0,0.5)', lineHeight: 0 }}
-                  >
-                    <Right size='24' fill='#fff' />
-                  </div>
-                </div>
-              )}
-            </>
+            )}
+          </div>
+          {/* Spawned agent cards — compact strip at bottom */}
+          {spawnedAgents.length > 0 && (
+            <div className='shrink-0 border-t border-solid border-[color:var(--border-base)] bg-fill-1 max-h-[200px] overflow-y-auto py-4px'>
+              {spawnedAgents.map((agent) => {
+                const live = statusMap.get(agent.slotId);
+                return (
+                  <SpawnedAgentCard
+                    key={agent.slotId}
+                    agent={agent}
+                    status={live?.status ?? agent.status}
+                    lastMessage={live?.lastMessage}
+                    onViewDetail={handleAgentClick}
+                  />
+                );
+              })}
+            </div>
           )}
         </div>
       </ChatLayout>
