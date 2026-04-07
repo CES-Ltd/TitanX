@@ -1,7 +1,8 @@
 /**
  * @license Apache-2.0
  * Team workspace sider — wraps the standard ChatSider with additional
- * "Workforce" tab and agent detail panel overlay for the command center layout.
+ * "Workforce" tab showing agent org hierarchy for the command center layout.
+ * Clicking an agent calls onAgentClick which switches the main view.
  */
 
 import React, { useState } from 'react';
@@ -12,7 +13,6 @@ import type { TChatConversation } from '@/common/config/storage';
 import type { TeamAgent, TeammateStatus } from '@/common/types/teamTypes';
 import ChatSider from '@renderer/pages/conversation/components/ChatSider';
 import WorkforcePanel from './WorkforcePanel';
-import AgentDetailPanel from './AgentDetailPanel';
 
 const { TabPane } = Tabs;
 
@@ -29,7 +29,6 @@ type TeamSiderProps = {
 const TeamSider: React.FC<TeamSiderProps> = ({
   conversation,
   agents,
-  teamId,
   leadSlotId,
   statusMap,
   onAgentClick,
@@ -37,36 +36,14 @@ const TeamSider: React.FC<TeamSiderProps> = ({
 }) => {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('workforce');
-  const [detailAgent, setDetailAgent] = useState<TeamAgent | null>(null);
 
   const handleAgentClick = (slotId: string) => {
     if (slotId === leadSlotId) {
       onLeadClick();
-      return;
+    } else {
+      onAgentClick(slotId);
     }
-    const agent = agents.find((a) => a.slotId === slotId);
-    if (agent) {
-      setDetailAgent(agent);
-    }
-    onAgentClick(slotId);
   };
-
-  const handleCloseDetail = () => {
-    setDetailAgent(null);
-  };
-
-  // If an agent detail is open, show it instead of tabs
-  if (detailAgent) {
-    const liveStatus = statusMap.get(detailAgent.slotId);
-    return (
-      <AgentDetailPanel
-        agent={detailAgent}
-        teamId={teamId}
-        status={liveStatus?.status ?? detailAgent.status}
-        onClose={handleCloseDetail}
-      />
-    );
-  }
 
   return (
     <Tabs activeTab={activeTab} onChange={setActiveTab} size='small' className='h-full team-sider-tabs'>

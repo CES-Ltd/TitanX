@@ -350,9 +350,40 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({ team, onAddAgent, onR
     }
   }, []); // empty deps = only on mount
 
-  const tabsSlot = useMemo(
-    () => <TeamTabs onAddAgent={onAddAgent} onTabClick={handleTabClick} />,
-    [onAddAgent, handleTabClick]
+  // State: which spawned agent's chat to show in main view (null = lead agent)
+  const [viewingAgentSlotId, setViewingAgentSlotId] = useState<string | null>(null);
+  const viewingAgent = viewingAgentSlotId ? agents.find((a) => a.slotId === viewingAgentSlotId) : null;
+
+  // Override handleAgentClick to switch main view instead of opening side panel
+  const handleAgentClickMain = useCallback(
+    (slotId: string) => {
+      if (slotId === leadAgent?.slotId) {
+        setViewingAgentSlotId(null); // back to lead
+      } else {
+        setViewingAgentSlotId(slotId);
+      }
+    },
+    [leadAgent?.slotId]
+  );
+
+  const handleLeadClickMain = useCallback(() => {
+    setViewingAgentSlotId(null);
+  }, []);
+
+  // Override sider to use main-view click handlers
+  const siderWithMainView = useMemo(
+    () => (
+      <TeamSider
+        conversation={dispatchConversation}
+        agents={agents}
+        teamId={team.id}
+        leadSlotId={leadAgent?.slotId ?? ''}
+        statusMap={statusMap}
+        onAgentClick={handleAgentClickMain}
+        onLeadClick={handleLeadClickMain}
+      />
+    ),
+    [dispatchConversation, agents, team.id, leadAgent?.slotId, statusMap, handleAgentClickMain, handleLeadClickMain]
   );
 
   return (
@@ -366,29 +397,49 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({ team, onAddAgent, onR
       <ChatLayout
         title={team.name}
         siderTitle={siderTitle}
-        sider={sider}
+        sider={siderWithMainView}
         workspaceEnabled
-        tabsSlot={tabsSlot}
-        conversationId={leadAgent?.conversationId}
+        tabsSlot={null}
+        conversationId={viewingAgent?.conversationId ?? leadAgent?.conversationId}
         agentName={undefined}
         workspacePath={effectiveWorkspace}
         onRenameTitle={onRenameTeam}
         headerExtra={
-          <button
-            type='button'
-            className='flex items-center gap-4px px-8px py-4px rd-6px text-12px text-t-secondary hover:bg-fill-3 hover:text-t-primary transition-colors cursor-pointer border-none bg-transparent'
-            onClick={() => navigate(`/team/${team.id}/sprint`)}
-          >
-            <ApplicationMenu size={14} />
-            {t('sprint.title', 'Sprint')}
-          </button>
+          <div className='flex items-center gap-4px'>
+            {viewingAgent && (
+              <button
+                type='button'
+                className='flex items-center gap-4px px-8px py-4px rd-6px text-12px text-primary hover:bg-fill-3 transition-colors cursor-pointer border-none bg-[rgba(var(--primary-6),0.08)]'
+                onClick={() => setViewingAgentSlotId(null)}
+              >
+                ← {t('team.backToLead', 'Back to Lead')}
+              </button>
+            )}
+            <button
+              type='button'
+              className='flex items-center gap-4px px-8px py-4px rd-6px text-12px text-t-secondary hover:bg-fill-3 hover:text-t-primary transition-colors cursor-pointer border-none bg-transparent'
+              onClick={() => navigate(`/team/${team.id}/sprint`)}
+            >
+              <ApplicationMenu size={14} />
+              {t('sprint.title', 'Sprint')}
+            </button>
+          </div>
         }
       >
-        {/* Command Center: Lead agent chat + spawned agent cards */}
+        {/* Command Center: Lead or selected agent chat + spawned agent cards */}
         <div className='flex flex-col h-full'>
-          {/* Lead agent chat — fills most of the space */}
+          {/* Main chat area */}
           <div className='flex-1 min-h-0'>
-            {leadAgent ? (
+            {viewingAgent ? (
+              <AgentChatSlot
+                agent={viewingAgent}
+                teamId={team.id}
+                isLead={false}
+                runtimeStatus={statusMap.get(viewingAgent.slotId)?.status}
+                onToggleFullscreen={() => setFullscreenSlotId(viewingAgent.slotId)}
+                onRemove={() => handleRemoveAgent(viewingAgent.slotId)}
+              />
+            ) : leadAgent ? (
               <AgentChatSlot
                 agent={leadAgent}
                 teamId={team.id}
@@ -403,8 +454,8 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({ team, onAddAgent, onR
               </div>
             )}
           </div>
-          {/* Spawned agent cards — compact strip at bottom */}
-          {spawnedAgents.length > 0 && (
+          {/* Spawned agent cards — compact strip at bottom (only shown when viewing lead) */}
+          {!viewingAgent && spawnedAgents.length > 0 && (
             <div className='shrink-0 border-t border-solid border-[color:var(--border-base)] bg-fill-1 max-h-[200px] overflow-y-auto py-4px'>
               {spawnedAgents.map((agent) => {
                 const live = statusMap.get(agent.slotId);
@@ -414,7 +465,7 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({ team, onAddAgent, onR
                     agent={agent}
                     status={live?.status ?? agent.status}
                     lastMessage={live?.lastMessage}
-                    onViewDetail={handleAgentClick}
+                    onViewDetail={handleAgentClickMain}
                   />
                 );
               })}
