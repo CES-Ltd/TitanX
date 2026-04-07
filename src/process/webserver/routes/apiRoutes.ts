@@ -22,6 +22,7 @@ import { AIONUI_TIMESTAMP_SEPARATOR } from '@/common/config/constants';
 import directoryApi from '../directoryApi';
 import { apiRateLimiter } from '../middleware/security';
 import { registerWeixinLoginRoutes } from './weixinLoginRoutes';
+import { registerGovernanceRoutes } from './governanceRoutes';
 
 /** Max upload size in bytes (30MB per Issue #1233) */
 const MAX_UPLOAD_SIZE = 30 * 1024 * 1024;
@@ -643,6 +644,12 @@ export function registerApiRoutes(app: Express): void {
    * GET /api/channel/weixin/login
    */
   registerWeixinLoginRoutes(app, validateApiAccess);
+
+  /**
+   * TitanX Governance API routes (observability + security)
+   * GET/POST /api/governance/*
+   */
+  registerGovernanceRoutes(app);
 
   /**
    * 通用 API 端点 - Generic API endpoint
