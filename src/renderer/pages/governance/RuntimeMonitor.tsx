@@ -1,7 +1,7 @@
 /**
  * @license Apache-2.0
  * Runtime Monitor — live team agent statuses, task board, run history.
- * Includes hidden easter egg: Phaser pixel-art office toggle.
+ * Includes hidden easter egg: pixel-art office toggle.
  */
 
 import React, { Suspense, useState } from 'react';
@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { Card, Grid, Table, Tag, Button, Space, Spin, Empty, Collapse, Tooltip } from '@arco-design/web-react';
 import { Refresh, GamePs } from '@icon-park/react';
 import { useRuntimeData } from './hooks/useRuntimeData';
-import type { TTeam, TeamTask, TeammateStatus } from '@/common/types/teamTypes';
+import type { TeammateStatus } from '@/common/types/teamTypes';
 import type { IAgentRun } from '@/common/adapter/ipcBridge';
 
 const OfficeWorld = React.lazy(() => import('./office/OfficeWorld'));
