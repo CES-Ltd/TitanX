@@ -7,8 +7,9 @@
 import React, { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Tabs, Typography } from '@arco-design/web-react';
-import { DataDisplay, Shield, CheckCorrect, ListView, Performance } from '@icon-park/react';
+import { DataDisplay, Shield, CheckCorrect, ListView, Performance, Peoples } from '@icon-park/react';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
+import Organization from './organization/Organization';
 import WorkflowManager from './workflows/WorkflowManager';
 import SecretsManager from './SecretsManager';
 import IAMPolicies from './iam/IAMPolicies';
@@ -22,7 +23,7 @@ const GovernancePage: React.FC = () => {
   const layout = useLayoutContext();
   const isMobile = layout?.isMobile ?? false;
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState('workflows');
+  const [activeTab, setActiveTab] = useState('organization');
 
   const handleTabChange = useCallback((key: string) => {
     setActiveTab(key);
@@ -34,6 +35,17 @@ const GovernancePage: React.FC = () => {
         {t('governance.title', 'Governance')}
       </Title>
       <Tabs activeTab={activeTab} onChange={handleTabChange} type='rounded' className='flex-1 min-h-0'>
+        <TabPane
+          key='organization'
+          title={
+            <span className='flex items-center gap-1'>
+              <Peoples size={16} />
+              {t('governance.tabs.organization', 'Organization')}
+            </span>
+          }
+        >
+          <Organization />
+        </TabPane>
         <TabPane
           key='workflows'
           title={

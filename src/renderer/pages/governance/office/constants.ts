@@ -4,7 +4,7 @@
  */
 
 export const TILE_SIZE = 16;
-export const SCALE = 2; // Render at 2x for crisp pixels
+export const SCALE = 3; // Render at 3x to match pixel-agents reference size
 export const WALK_SPEED = 48; // px/sec at 1x scale
 export const WALK_FRAME_DURATION = 0.15; // seconds per walk frame
 export const TYPE_FRAME_DURATION = 0.3; // seconds per typing frame
