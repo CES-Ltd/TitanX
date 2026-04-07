@@ -9,7 +9,8 @@
     "activity": "Aktivite",
     "costs": "Maliyetler",
     "secrets": "Gizli Anahtarlar",
-    "approvals": "Onaylar"
+    "approvals": "Onaylar",
+    "runtime": "Çalışma Zamanı"
   },
   "totalRuns": "Toplam Çalıştırma",
   "successRate": "Başarı Oranı",
@@ -86,5 +87,27 @@
     "confirmApprove": "Onayı Onayla",
     "confirmReject": "Reddi Onayla",
     "notePlaceholder": "Not ekle (isteğe bağlı)"
+  },
+  "runtime": {
+    "teamOverview": "Takım Ajanları",
+    "taskBoard": "Görev Panosu",
+    "runHistory": "Son Çalıştırmalar",
+    "noTeams": "Henüz takım oluşturulmadı. Çalışma zamanı verilerini görmek için bir takım oluşturun.",
+    "noTasks": "Henüz görev atanmadı",
+    "noRuns": "Henüz ajan çalıştırması kaydedilmedi",
+    "agentName": "Ajan",
+    "agentType": "Tür",
+    "status": "Durum",
+    "lastMessage": "Son Mesaj",
+    "taskSubject": "Konu",
+    "taskOwner": "Sahip",
+    "taskStatus": "Durum",
+    "taskDeps": "Bağımlılıklar",
+    "tokens": "Token",
+    "cost": "Maliyet",
+    "started": "Başlangıç",
+    "officeView": "🎮 Ofis Görünümü",
+    "exitOffice": "Ofisten Çık",
+    "officeTooltip": "Piksel sanat ofisini aç (sürpriz)"
   }
 }

@@ -9,7 +9,8 @@
     "activity": "活動紀錄",
     "costs": "費用",
     "secrets": "金鑰管理",
-    "approvals": "審批"
+    "approvals": "審批",
+    "runtime": "執行時"
   },
   "totalRuns": "總執行次數",
   "successRate": "成功率",
@@ -86,5 +87,27 @@
     "confirmApprove": "確認批准",
     "confirmReject": "確認拒絕",
     "notePlaceholder": "新增備註（選填）"
+  },
+  "runtime": {
+    "teamOverview": "團隊智能體",
+    "taskBoard": "任務面板",
+    "runHistory": "最近執行",
+    "noTeams": "尚未建立團隊。建立團隊後可查看執行資料。",
+    "noTasks": "暫無分配任務",
+    "noRuns": "暫無執行紀錄",
+    "agentName": "智能體",
+    "agentType": "類型",
+    "status": "狀態",
+    "lastMessage": "最後訊息",
+    "taskSubject": "主題",
+    "taskOwner": "負責人",
+    "taskStatus": "狀態",
+    "taskDeps": "依賴",
+    "tokens": "Token",
+    "cost": "費用",
+    "started": "開始時間",
+    "officeView": "🎮 辦公室視圖",
+    "exitOffice": "退出辦公室",
+    "officeTooltip": "開啟像素風辦公室（彩蛋）"
   }
 }

@@ -9,7 +9,8 @@
     "activity": "활동",
     "costs": "비용",
     "secrets": "시크릿",
-    "approvals": "승인"
+    "approvals": "승인",
+    "runtime": "런타임"
   },
   "totalRuns": "총 실행 횟수",
   "successRate": "성공률",
@@ -86,5 +87,27 @@
     "confirmApprove": "승인 확인",
     "confirmReject": "거절 확인",
     "notePlaceholder": "메모 추가 (선택사항)"
+  },
+  "runtime": {
+    "teamOverview": "팀 에이전트",
+    "taskBoard": "작업 보드",
+    "runHistory": "최근 실행",
+    "noTeams": "아직 팀이 없습니다. 팀을 만들면 런타임 데이터를 볼 수 있습니다.",
+    "noTasks": "할당된 작업 없음",
+    "noRuns": "에이전트 실행 기록 없음",
+    "agentName": "에이전트",
+    "agentType": "유형",
+    "status": "상태",
+    "lastMessage": "마지막 메시지",
+    "taskSubject": "제목",
+    "taskOwner": "담당자",
+    "taskStatus": "상태",
+    "taskDeps": "의존성",
+    "tokens": "토큰",
+    "cost": "비용",
+    "started": "시작",
+    "officeView": "🎮 오피스 뷰",
+    "exitOffice": "오피스 닫기",
+    "officeTooltip": "픽셀아트 오피스 열기 (이스터 에그)"
   }
 }

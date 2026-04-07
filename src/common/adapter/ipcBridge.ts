@@ -1448,6 +1448,15 @@ export const approvals = {
   pendingCount: bridge.buildProvider<number, { userId: string }>('approvals.pending-count'),
 };
 
+export const governanceTeamTasks = {
+  list: bridge.buildProvider<import('@/common/types/teamTypes').TeamTask[], { teamId: string }>(
+    'governance.team-tasks.list'
+  ),
+  byOwner: bridge.buildProvider<import('@/common/types/teamTypes').TeamTask[], { teamId: string; owner: string }>(
+    'governance.team-tasks.by-owner'
+  ),
+};
+
 // Live events emitters for real-time UI updates
 export const liveEvents = {
   activity: bridge.buildEmitter<IActivityEntry>('live-event.activity'),

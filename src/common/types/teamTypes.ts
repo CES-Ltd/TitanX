@@ -37,6 +37,21 @@ export type TTeam = {
   updatedAt: number;
 };
 
+/** A unit of work tracked inside a team's shared task board (shared with renderer) */
+export type TeamTask = {
+  id: string;
+  teamId: string;
+  subject: string;
+  description?: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'deleted';
+  owner?: string;
+  blockedBy: string[];
+  blocks: string[];
+  metadata: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+};
+
 /** IPC event pushed to renderer when agent status changes */
 export type ITeamAgentStatusEvent = {
   teamId: string;

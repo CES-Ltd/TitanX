@@ -7,13 +7,14 @@
 import React, { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Tabs, Typography } from '@arco-design/web-react';
-import { DataDisplay, ListView, HoneyOne, Shield, CheckCorrect } from '@icon-park/react';
+import { DataDisplay, ListView, HoneyOne, Shield, CheckCorrect, Performance } from '@icon-park/react';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import GovernanceDashboard from './GovernanceDashboard';
 import ActivityLog from './ActivityLog';
 import CostDashboard from './CostDashboard';
 import SecretsManager from './SecretsManager';
 import ApprovalsList from './ApprovalsList';
+import RuntimeMonitor from './RuntimeMonitor';
 
 const { TabPane } = Tabs;
 const { Title } = Typography;
@@ -88,6 +89,17 @@ const GovernancePage: React.FC = () => {
           }
         >
           <ApprovalsList />
+        </TabPane>
+        <TabPane
+          key='runtime'
+          title={
+            <span className='flex items-center gap-1'>
+              <Performance size={16} />
+              {t('governance.tabs.runtime', 'Runtime')}
+            </span>
+          }
+        >
+          <RuntimeMonitor />
         </TabPane>
       </Tabs>
     </div>
