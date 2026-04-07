@@ -51,6 +51,7 @@ import { initAgentRunsBridge } from './agentRunsBridge';
 import { initApprovalsBridge } from './approvalsBridge';
 import { initTeamTasksBridge } from './teamTasksBridge';
 import { initSprintBridge } from './sprintBridge';
+import { initAgentGalleryBridge } from './agentGalleryBridge';
 import type { TeamSessionService } from '@process/team/TeamSessionService';
 
 export interface BridgeDependencies {
@@ -110,6 +111,7 @@ export function initAllBridges(deps: BridgeDependencies): void {
   initApprovalsBridge();
   initTeamTasksBridge();
   initSprintBridge();
+  initAgentGalleryBridge();
 }
 
 /**
@@ -134,6 +136,7 @@ export {
   initApprovalsBridge,
   initTeamTasksBridge,
   initSprintBridge,
+  initAgentGalleryBridge,
   initAcpConversationBridge,
   initApplicationBridge,
   initAuthBridge,

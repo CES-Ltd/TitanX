@@ -22,6 +22,7 @@ const TaskDetailPage = React.lazy(() => import('@renderer/pages/cron/ScheduledTa
 const TeamIndex = React.lazy(() => import('@renderer/pages/team'));
 const GovernancePage = React.lazy(() => import('@renderer/pages/governance'));
 const SprintBoard = React.lazy(() => import('@renderer/pages/team/sprint/SprintBoard'));
+const AgentGallery = React.lazy(() => import('@renderer/pages/team/gallery/AgentGallery'));
 
 const withRouteFallback = (Component: React.LazyExoticComponent<React.ComponentType>) => (
   <Suspense fallback={<AppLoader />}>
@@ -74,6 +75,7 @@ const PanelRoute: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
           <Route path='/test/components' element={withRouteFallback(ComponentsShowcase)} />
           <Route path='/governance' element={withRouteFallback(GovernancePage)} />
           <Route path='/team/:id/sprint' element={withRouteFallback(SprintBoard)} />
+          <Route path='/team/:id/gallery' element={withRouteFallback(AgentGallery)} />
           <Route path='/scheduled' element={withRouteFallback(ScheduledTasksPage)} />
           <Route path='/scheduled/:jobId' element={withRouteFallback(TaskDetailPage)} />
         </Route>
