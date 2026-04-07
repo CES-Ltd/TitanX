@@ -55,6 +55,7 @@ import { initAgentGalleryBridge } from './agentGalleryBridge';
 import { initWorkflowsBridge } from './workflowsBridge';
 import { initIAMBridge } from './iamBridge';
 import { initGitHubAuthBridge } from './githubAuthBridge';
+import { initProjectPlannerBridge } from './projectPlannerBridge';
 import type { TeamSessionService } from '@process/team/TeamSessionService';
 
 export interface BridgeDependencies {
@@ -118,6 +119,7 @@ export function initAllBridges(deps: BridgeDependencies): void {
   initWorkflowsBridge();
   initIAMBridge();
   initGitHubAuthBridge();
+  initProjectPlannerBridge();
 }
 
 /**
@@ -146,6 +148,7 @@ export {
   initWorkflowsBridge,
   initIAMBridge,
   initGitHubAuthBridge,
+  initProjectPlannerBridge,
   initAcpConversationBridge,
   initApplicationBridge,
   initAuthBridge,

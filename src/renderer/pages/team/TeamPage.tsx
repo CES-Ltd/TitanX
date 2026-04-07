@@ -427,6 +427,11 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({ team, onAddAgent, onR
                 label: t('team.live.title', 'Live'),
                 path: `/team/${team.id}/live`,
               },
+              {
+                icon: <span className='text-11px'>📅</span>,
+                label: 'Planner',
+                path: `/team/${team.id}/planner`,
+              },
             ].map((item) => (
               <button
                 key={item.path}
