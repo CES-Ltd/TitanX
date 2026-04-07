@@ -20,6 +20,7 @@ import type { SiderMenuItem } from './SiderItem';
 import SiderToolbar from './SiderToolbar';
 import SiderSearchEntry from './SiderSearchEntry';
 import SiderScheduledEntry from './SiderScheduledEntry';
+import SiderGovernanceEntry from './SiderGovernanceEntry';
 import SiderFooter from './SiderFooter';
 import CronJobSiderSection from './CronJobSiderSection';
 
@@ -157,6 +158,19 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
     }
   };
 
+  const handleGovernanceClick = () => {
+    cleanupSiderTooltips();
+    blurActiveElement();
+    closePreview();
+    setIsBatchMode(false);
+    Promise.resolve(navigate('/governance')).catch((error) => {
+      console.error('Navigation failed:', error);
+    });
+    if (onSessionClick) {
+      onSessionClick();
+    }
+  };
+
   const handleQuickThemeToggle = () => {
     void setTheme(theme === 'dark' ? 'light' : 'dark');
   };
@@ -213,6 +227,14 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
               collapsed={collapsed}
               siderTooltipProps={siderTooltipProps}
               onClick={handleScheduledClick}
+            />
+            {/* Governance hub entry */}
+            <SiderGovernanceEntry
+              isMobile={isMobile}
+              isActive={pathname === '/governance'}
+              collapsed={collapsed}
+              siderTooltipProps={siderTooltipProps}
+              onClick={handleGovernanceClick}
             />
             {/* Scrollable content: team + scheduled tasks + conversation history */}
             <div className='flex-1 min-h-0 overflow-y-auto'>
