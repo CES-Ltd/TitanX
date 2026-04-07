@@ -259,17 +259,10 @@ function loadContent(): void {
   if (!petWindow || !petHitWindow) return;
   const rendererUrl = process.env['ELECTRON_RENDERER_URL'];
 
-  // Read pet theme from config (sync-safe — called after config is loaded)
-  let petTheme = 'default';
-  try {
-    const stored = require('@process/utils/initStorage').ProcessConfig;
-    // ProcessConfig.get is async but we need sync here — use cached value or default
-    // The theme is set before createPetWindow is called, so it should be available
-    petTheme = ((globalThis as Record<string, unknown>).__petTheme as string) ?? 'default';
-  } catch {
-    // ignore
-  }
-  const themeQuery = petTheme !== 'default' ? `?theme=${petTheme}` : '';
+  // Read pet theme from globalThis (set by index.ts on startup and systemSettingsBridge on change)
+  const petTheme = ((globalThis as Record<string, unknown>).__petTheme as string) || 'default';
+  const themeQuery = petTheme !== 'default' ? `?theme=${encodeURIComponent(petTheme)}` : '';
+  console.log(`[Pet] Loading content with theme: ${petTheme}`);
 
   if (!app.isPackaged && rendererUrl) {
     petWindow.loadURL(`${rendererUrl}/pet/pet.html${themeQuery}`).catch((error) => {
@@ -355,6 +348,11 @@ function registerIpcHandlers(): void {
       stateMachine.requestState(data.side === 'left' ? 'poke-left' : 'poke-right');
     } else if (data.count === 1) {
       stateMachine.requestState('attention');
+    }
+
+    // Forward click to pet window to trigger speech bubble on every click
+    if (petWindow && !petWindow.isDestroyed()) {
+      petWindow.webContents.send('pet:show-speech');
     }
   });
 

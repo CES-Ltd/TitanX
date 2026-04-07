@@ -2,6 +2,7 @@ interface PetAPI {
   onStateChange: (cb: (state: string) => void) => void;
   onEyeMove: (cb: (data: { eyeDx: number; eyeDy: number; bodyDx: number; bodyRotate: number }) => void) => void;
   onResize: (cb: (size: number) => void) => void;
+  onShowSpeech: (cb: () => void) => void;
 }
 
 interface PetHitAPI {
