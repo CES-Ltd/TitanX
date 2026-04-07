@@ -30,7 +30,7 @@ const AionLogoMark: React.FC = () => (
 
 const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
   const { t } = useTranslation();
-  const appTitle = useMemo(() => 'AionUi', []);
+  const appTitle = useMemo(() => 'TitanX', []);
   const [workspaceCollapsed, setWorkspaceCollapsed] = useState(true);
   const [bollywoodMode, setBollywoodMode] = useState(() => {
     try {
@@ -288,7 +288,10 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
             <span className='app-titlebar__brand-text'>{mobileCenterTitle}</span>
           </span>
         ) : (
-          appTitle
+          <span className='flex items-center gap-6px'>
+            <img src={cesLogoMark} alt='' className='w-18px h-18px object-contain rd-3px' />
+            {appTitle}
+          </span>
         )}
       </div>
       <div ref={toolbarRef} className='app-titlebar__toolbar'>
