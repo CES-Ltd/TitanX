@@ -23,6 +23,7 @@ const TeamIndex = React.lazy(() => import('@renderer/pages/team'));
 const GovernancePage = React.lazy(() => import('@renderer/pages/governance'));
 const SprintBoard = React.lazy(() => import('@renderer/pages/team/sprint/SprintBoard'));
 const AgentGallery = React.lazy(() => import('@renderer/pages/team/gallery/AgentGallery'));
+const ObservabilityPage = React.lazy(() => import('@renderer/pages/observability'));
 
 const withRouteFallback = (Component: React.LazyExoticComponent<React.ComponentType>) => (
   <Suspense fallback={<AppLoader />}>
@@ -74,6 +75,7 @@ const PanelRoute: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
           <Route path='/settings' element={<Navigate to='/settings/gemini' replace />} />
           <Route path='/test/components' element={withRouteFallback(ComponentsShowcase)} />
           <Route path='/governance' element={withRouteFallback(GovernancePage)} />
+          <Route path='/observability' element={withRouteFallback(ObservabilityPage)} />
           <Route path='/team/:id/sprint' element={withRouteFallback(SprintBoard)} />
           <Route path='/team/:id/gallery' element={withRouteFallback(AgentGallery)} />
           <Route path='/scheduled' element={withRouteFallback(ScheduledTasksPage)} />

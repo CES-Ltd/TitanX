@@ -1545,6 +1545,75 @@ export const agentGallery = {
   remove: bridge.buildProvider<boolean, { agentId: string }>('gallery.delete'),
 };
 
+// ─── Workflow Rules ─────────────────────────────────────────────────────────
+
+export type IWorkflowRule = {
+  id: string;
+  userId: string;
+  type: 'approval' | 'escalation' | 'sla';
+  triggerCondition: Record<string, unknown>;
+  action: Record<string, unknown>;
+  enabled: boolean;
+  createdAt: number;
+};
+
+export const workflowRules = {
+  list: bridge.buildProvider<IWorkflowRule[], { userId: string; type?: string }>('workflows.list'),
+  create: bridge.buildProvider<
+    IWorkflowRule,
+    { userId: string; type: string; triggerCondition: Record<string, unknown>; action: Record<string, unknown> }
+  >('workflows.create'),
+  update: bridge.buildProvider<void, { ruleId: string; updates: Partial<IWorkflowRule> }>('workflows.update'),
+  remove: bridge.buildProvider<boolean, { ruleId: string }>('workflows.delete'),
+};
+
+// ─── IAM Policies ───────────────────────────────────────────────────────────
+
+export type IIAMPolicy = {
+  id: string;
+  userId: string;
+  name: string;
+  description?: string;
+  permissions: Record<string, unknown>;
+  ttlSeconds?: number;
+  createdAt: number;
+};
+
+export type IPolicyBinding = {
+  id: string;
+  agentGalleryId: string;
+  policyId: string;
+  expiresAt?: number;
+  createdAt: number;
+};
+
+export const iamPolicies = {
+  list: bridge.buildProvider<IIAMPolicy[], { userId: string }>('iam.list'),
+  create: bridge.buildProvider<
+    IIAMPolicy,
+    { userId: string; name: string; description?: string; permissions: Record<string, unknown>; ttlSeconds?: number }
+  >('iam.create'),
+  remove: bridge.buildProvider<boolean, { policyId: string }>('iam.delete'),
+  bind: bridge.buildProvider<IPolicyBinding, { agentGalleryId: string; policyId: string; ttlSeconds?: number }>(
+    'iam.bind'
+  ),
+  listBindings: bridge.buildProvider<IPolicyBinding[], { agentGalleryId: string }>('iam.list-bindings'),
+  unbind: bridge.buildProvider<boolean, { bindingId: string }>('iam.unbind'),
+};
+
+// ─── GitHub Device Flow ─────────────────────────────────────────────────────
+
+export const githubAuth = {
+  startDeviceFlow: bridge.buildProvider<
+    { deviceCode: string; userCode: string; verificationUri: string; expiresIn: number; interval: number },
+    { clientId: string }
+  >('github.start-device-flow'),
+  pollForToken: bridge.buildProvider<
+    { accessToken: string; tokenType: string } | { pending: true } | { error: string },
+    { clientId: string; deviceCode: string; interval: number }
+  >('github.poll-token'),
+};
+
 // Live events emitters for real-time UI updates
 export const liveEvents = {
   activity: bridge.buildEmitter<IActivityEntry>('live-event.activity'),
