@@ -66,67 +66,18 @@ function getRandomPhrase(): string {
   }
 }
 
-// ─── Speech bubble (rendered as HTML overlay positioned near pet) ─────────────
+// ─── Speech bubble (uses #speech-bubble element from pet.html) ───────────────
 
-let bubbleEl: HTMLDivElement | null = null;
+const speechBubble = document.getElementById('speech-bubble');
 let bubbleTimeout: ReturnType<typeof setTimeout> | null = null;
 
-function ensureBubble(): HTMLDivElement {
-  if (bubbleEl) return bubbleEl;
-  const el = document.createElement('div');
-  el.style.cssText = [
-    'position: absolute',
-    'bottom: 100%',
-    'left: 50%',
-    'transform: translateX(-50%) translateY(-4px)',
-    'background: rgba(255,255,255,0.95)',
-    'color: #333',
-    'font-size: 9px',
-    'line-height: 1.3',
-    'padding: 3px 7px',
-    'border-radius: 6px',
-    'white-space: nowrap',
-    'box-shadow: 0 1px 6px rgba(0,0,0,0.18)',
-    'border: 1px solid rgba(100,100,200,0.25)',
-    'pointer-events: none',
-    'opacity: 0',
-    'transition: opacity 0.25s ease',
-    'font-family: system-ui, -apple-system, sans-serif',
-    'max-width: 160px',
-    'overflow: hidden',
-    'text-overflow: ellipsis',
-    'z-index: 9999',
-  ].join('; ');
-  // Tail triangle
-  const tail = document.createElement('div');
-  tail.style.cssText = [
-    'position: absolute',
-    'top: 100%',
-    'left: 50%',
-    'transform: translateX(-50%)',
-    'width: 0',
-    'height: 0',
-    'border-left: 4px solid transparent',
-    'border-right: 4px solid transparent',
-    'border-top: 4px solid rgba(255,255,255,0.95)',
-  ].join('; ');
-  el.appendChild(tail);
-  document.body.style.position = 'relative';
-  document.body.appendChild(el);
-  bubbleEl = el;
-  return el;
-}
-
 function showBubble(text: string, durationMs = 3000): void {
-  const bubble = ensureBubble();
-  // Set text (keep tail as last child)
-  const tail = bubble.lastElementChild;
-  bubble.textContent = text;
-  if (tail) bubble.appendChild(tail);
-  bubble.style.opacity = '1';
+  if (!speechBubble) return;
+  speechBubble.textContent = text;
+  speechBubble.classList.add('visible');
   if (bubbleTimeout) clearTimeout(bubbleTimeout);
   bubbleTimeout = setTimeout(() => {
-    bubble.style.opacity = '0';
+    speechBubble.classList.remove('visible');
   }, durationMs);
 }
 
@@ -198,7 +149,8 @@ function loadSvg(svgPath: string): void {
     setupTransitions();
   });
 
-  document.body.appendChild(newObj);
+  const container = document.getElementById('pet-container');
+  (container || document.body).appendChild(newObj);
 }
 
 // Load initial SVG with theme-aware path
