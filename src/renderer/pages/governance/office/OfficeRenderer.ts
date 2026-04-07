@@ -31,6 +31,9 @@ import {
   PLANT_POSITIONS,
   SOFA_POSITIONS,
   CAFE_TABLE_POSITIONS,
+  BOOKSHELF_POSITIONS,
+  WHITEBOARD_POSITIONS,
+  CACTUS_POSITIONS,
   findPath,
   isWalkable,
 } from './officeMap';
@@ -123,6 +126,7 @@ export class OfficeRenderer {
       ['small_table', new URL('./assets/furniture/SMALL_TABLE/SMALL_TABLE_FRONT.png', import.meta.url).href],
       ['bookshelf', new URL('./assets/furniture/BOOKSHELF/BOOKSHELF.png', import.meta.url).href],
       ['cactus', new URL('./assets/furniture/CACTUS/CACTUS.png', import.meta.url).href],
+      ['whiteboard', new URL('./assets/furniture/WHITEBOARD/WHITEBOARD.png', import.meta.url).href],
     ];
     for (const [key, src] of furnitureFiles) {
       const img = new Image();
@@ -147,6 +151,9 @@ export class OfficeRenderer {
       this.blockedTiles.add(`${p.col + 1},${p.row}`);
     }
     for (const p of CAFE_TABLE_POSITIONS) this.blockedTiles.add(`${p.col},${p.row}`);
+    for (const p of BOOKSHELF_POSITIONS) this.blockedTiles.add(`${p.col},${p.row}`);
+    for (const p of WHITEBOARD_POSITIONS) this.blockedTiles.add(`${p.col},${p.row}`);
+    for (const p of CACTUS_POSITIONS) this.blockedTiles.add(`${p.col},${p.row}`);
   }
 
   private computeWalkableTiles(): void {
@@ -482,6 +489,24 @@ export class OfficeRenderer {
     // Cafe tables
     for (const p of CAFE_TABLE_POSITIONS) {
       const sprite = this.furnitureSprites.get('small_table');
+      if (sprite?.complete) ctx.drawImage(sprite, p.col * TILE_SIZE * s, p.row * TILE_SIZE * s, 16 * s, 16 * s);
+    }
+
+    // Bookshelves
+    for (const p of BOOKSHELF_POSITIONS) {
+      const sprite = this.furnitureSprites.get('bookshelf');
+      if (sprite?.complete) ctx.drawImage(sprite, p.col * TILE_SIZE * s, (p.row - 1) * TILE_SIZE * s, 16 * s, 32 * s);
+    }
+
+    // Whiteboards
+    for (const p of WHITEBOARD_POSITIONS) {
+      const sprite = this.furnitureSprites.get('whiteboard');
+      if (sprite?.complete) ctx.drawImage(sprite, p.col * TILE_SIZE * s, (p.row - 1) * TILE_SIZE * s, 16 * s, 32 * s);
+    }
+
+    // Cactus / pots
+    for (const p of CACTUS_POSITIONS) {
+      const sprite = this.furnitureSprites.get('cactus');
       if (sprite?.complete) ctx.drawImage(sprite, p.col * TILE_SIZE * s, p.row * TILE_SIZE * s, 16 * s, 16 * s);
     }
   }
