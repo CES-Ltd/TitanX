@@ -69,11 +69,18 @@ type AgentChar = {
 };
 
 const FLOOR_COLORS: Record<number, string> = {
-  0: '#2a2a3e', // wall
-  1: '#3a3a4e', // work floor
-  2: '#3e3a4a', // breakout floor
-  3: '#353548', // hallway
-  9: '#1a1a2e', // void
+  0: '#1e1e2e', // wall — dark navy like reference
+  1: '#8b6914', // work floor — warm brown wood planks
+  2: '#5a7a8a', // breakout/lounge — blue-gray carpet like reference
+  3: '#6b6b5a', // hallway — neutral stone
+  9: '#0e0e1e', // void
+};
+
+// Alternating floor tile shade for wood plank effect
+const FLOOR_COLORS_ALT: Record<number, string> = {
+  1: '#7d5f12', // slightly darker wood plank
+  2: '#527080', // slightly darker carpet
+  3: '#5f5f50', // slightly darker stone
 };
 
 const rand = (min: number, max: number) => min + Math.random() * (max - min);
@@ -424,16 +431,23 @@ export class OfficeRenderer {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-    // Draw floor tiles
+    // Draw floor tiles with alternating shade for wood plank effect
     for (let r = 0; r < OFFICE_ROWS; r++) {
       for (let c = 0; c < OFFICE_COLS; c++) {
         const tile = OFFICE_TILES[r * OFFICE_COLS + c];
-        ctx.fillStyle = FLOOR_COLORS[tile] ?? '#1a1a2e';
+        // Alternate color per column for wood planks (work floor), per checkerboard for others
+        const useAlt = tile === 1 ? c % 2 === 0 : (c + r) % 2 === 0;
+        ctx.fillStyle = (useAlt && FLOOR_COLORS_ALT[tile]) || FLOOR_COLORS[tile] || '#0e0e1e';
         ctx.fillRect(c * TILE_SIZE * s, r * TILE_SIZE * s, TILE_SIZE * s, TILE_SIZE * s);
-        // Grid lines
+        // Subtle grid lines for non-wall tiles
         if (tile > 0 && tile < 9) {
-          ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+          ctx.strokeStyle = 'rgba(0,0,0,0.12)';
           ctx.strokeRect(c * TILE_SIZE * s, r * TILE_SIZE * s, TILE_SIZE * s, TILE_SIZE * s);
+        }
+        // Wall top edge highlight
+        if (tile === 0 && r < OFFICE_ROWS - 1 && OFFICE_TILES[(r + 1) * OFFICE_COLS + c] > 0) {
+          ctx.fillStyle = '#333355';
+          ctx.fillRect(c * TILE_SIZE * s, (r + 1) * TILE_SIZE * s - 2 * s, TILE_SIZE * s, 2 * s);
         }
       }
     }
@@ -447,11 +461,11 @@ export class OfficeRenderer {
       this.drawAgent(ctx, agent, s);
     }
 
-    // Zone labels
-    ctx.fillStyle = 'rgba(136,136,204,0.6)';
-    ctx.font = `${10 * s}px monospace`;
-    ctx.fillText('💻 Work Area', 4 * TILE_SIZE * s, 1.8 * TILE_SIZE * s);
-    ctx.fillText('☕ Breakout', 21 * TILE_SIZE * s, 1.8 * TILE_SIZE * s);
+    // Zone labels — subtle, blended into wall area
+    ctx.fillStyle = 'rgba(180,180,220,0.35)';
+    ctx.font = `${3 * s}px monospace`;
+    ctx.fillText('💻 Work Area', 4 * TILE_SIZE * s, 1.5 * TILE_SIZE * s);
+    ctx.fillText('☕ Breakout', 21 * TILE_SIZE * s, 1.5 * TILE_SIZE * s);
     ctx.fillText('🏢 TitanX Office', 12 * TILE_SIZE * s, 23.5 * TILE_SIZE * s);
   }
 
@@ -517,53 +531,74 @@ export class OfficeRenderer {
     const sprite = this.charSprites[agent.spriteIdx % this.charSprites.length];
     if (!sprite?.complete) return;
 
-    // Spritesheet: 112x96 = 7 cols × 6 rows of 16x16 frames
-    // Rows: 0=down, 1=left, 2=right, 3=up (walk/idle cycles)
-    // Typing: row 4 (sitting), Reading: row 5
+    // Spritesheet: 112x96 PNG = 7 cols × 3 rows of 16×32 frames
+    // Each character frame is 16px wide × 32px tall (2 tile-heights)
+    // Row 0 (y=0..31): down-facing frames (idle + walk cycle)
+    // Row 1 (y=32..63): right-facing frames (idle + walk cycle; flip for left)
+    // Row 2 (y=64..95): up-facing frames (idle + walk cycle)
     const frameW = 16;
-    const frameH = 16;
+    const frameH = 32;
 
     let srcRow: number;
     let srcCol: number;
 
     if (agent.state === 'type' || agent.state === 'rest') {
-      srcRow = 4; // sitting/typing row
+      // Typing/sitting: use down-facing idle frame
+      srcRow = 0;
       srcCol = agent.frame % 2;
     } else {
-      // walk/idle — use direction row
-      srcRow = agent.dir;
+      // Walk/idle: direction-based rows
+      // 0=down, 1=left(mirror of right), 2=right, 3=up
+      if (agent.dir === 0)
+        srcRow = 0; // down
+      else if (agent.dir === 1 || agent.dir === 2)
+        srcRow = 1; // left/right (mirror handled below)
+      else srcRow = 2; // up
       srcCol = agent.state === 'walk' ? agent.frame % 4 : 0;
     }
 
     const sx = srcCol * frameW;
     const sy = srcRow * frameH;
 
-    ctx.drawImage(
-      sprite,
-      sx,
-      sy,
-      frameW,
-      frameH,
-      (agent.x - frameW / 2) * s,
-      (agent.y - frameH / 2) * s,
-      frameW * s,
-      frameH * s
-    );
+    // Handle left-facing by flipping the right-facing sprite
+    const flipH = agent.dir === 1 && agent.state !== 'type' && agent.state !== 'rest';
 
-    // Name tag
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.font = `${5 * s}px monospace`;
+    ctx.save();
+    if (flipH) {
+      ctx.translate((agent.x + frameW / 2) * s, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(sprite, sx, sy, frameW, frameH, 0, (agent.y - frameH / 2) * s, frameW * s, frameH * s);
+    } else {
+      ctx.drawImage(
+        sprite,
+        sx,
+        sy,
+        frameW,
+        frameH,
+        (agent.x - frameW / 2) * s,
+        (agent.y - frameH / 2) * s,
+        frameW * s,
+        frameH * s
+      );
+    }
+    ctx.restore();
+
+    // Name tag — positioned above the full 32px-tall sprite
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.font = `${4 * s}px monospace`;
     const nameW = ctx.measureText(agent.name).width;
-    ctx.fillRect((agent.x - frameW / 2) * s - 2, (agent.y - frameH / 2 - 5) * s, nameW + 4, 6 * s);
+    const nameX = (agent.x - frameW / 2) * s;
+    const nameY = (agent.y - frameH / 2 - 4) * s;
+    ctx.fillRect(nameX - 2, nameY - 4 * s, nameW + 6, 5 * s);
     ctx.fillStyle = agent.status === 'active' ? '#44ff66' : agent.status === 'failed' ? '#ff4444' : '#aabbff';
-    ctx.fillText(agent.name, (agent.x - frameW / 2) * s, (agent.y - frameH / 2 - 1) * s);
+    ctx.fillText(agent.name, nameX, nameY);
 
     // Chat bubble
     if (agent.chatBubble) {
       const bubbleW = Math.min(ctx.measureText(agent.chatBubble).width + 12, 120 * s);
       const bubbleH = 10 * s;
       const bx = agent.x * s - bubbleW / 2;
-      const by = (agent.y - frameH / 2 - 14) * s;
+      const by = (agent.y - frameH / 2 - 10) * s;
 
       // Bubble background
       ctx.fillStyle = 'rgba(255,255,255,0.92)';
