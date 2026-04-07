@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import classNames from 'classnames';
-import { ArrowCircleLeft, ExpandLeft, ExpandRight, MenuFold, MenuUnfold, Plus } from '@icon-park/react';
+import { ArrowCircleLeft, ExpandLeft, ExpandRight, MenuFold, MenuUnfold, Plus, PartyBalloon } from '@icon-park/react';
+import { Tooltip } from '@arco-design/web-react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 
@@ -31,6 +32,13 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
   const { t } = useTranslation();
   const appTitle = useMemo(() => 'AionUi', []);
   const [workspaceCollapsed, setWorkspaceCollapsed] = useState(true);
+  const [bollywoodMode, setBollywoodMode] = useState(() => {
+    try {
+      return localStorage.getItem('titanx:bollywood-mode') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const [mobileCenterTitle, setMobileCenterTitle] = useState(appTitle);
   const [mobileCenterOffset, setMobileCenterOffset] = useState(0);
   const layout = useLayoutContext();
@@ -210,6 +218,18 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
       } as React.CSSProperties)
     : undefined;
 
+  const handleBollywoodToggle = () => {
+    const next = !bollywoodMode;
+    setBollywoodMode(next);
+    try {
+      localStorage.setItem('titanx:bollywood-mode', String(next));
+      // Dispatch custom event so ThoughtDisplay can pick it up
+      window.dispatchEvent(new CustomEvent('titanx:bollywood-mode-changed', { detail: { enabled: next } }));
+    } catch {
+      // ignore
+    }
+  };
+
   const menuStyle: React.CSSProperties = useMemo(() => {
     if (!isMacRuntime || !showSiderToggle) return {};
 
@@ -272,6 +292,18 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
         )}
       </div>
       <div ref={toolbarRef} className='app-titlebar__toolbar'>
+        {/* Bollywood Mode Easter Egg Toggle */}
+        <Tooltip content={bollywoodMode ? 'Bollywood Mode 🎬 ON' : 'Bollywood Mode 🎬'} position='bottom' mini>
+          <button
+            type='button'
+            className={classNames('app-titlebar__button', layout?.isMobile && 'app-titlebar__button--mobile')}
+            onClick={handleBollywoodToggle}
+            aria-label='Toggle Bollywood Mode'
+            style={bollywoodMode ? { color: 'rgb(var(--warning-6))', transform: 'scale(1.15)' } : {}}
+          >
+            <PartyBalloon theme={bollywoodMode ? 'filled' : 'outline'} size={iconSize} fill='currentColor' />
+          </button>
+        </Tooltip>
         {showNewConversationButton && (
           <button
             type='button'

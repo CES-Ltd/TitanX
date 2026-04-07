@@ -5,9 +5,10 @@
  */
 
 import { Tag, Spin } from '@arco-design/web-react';
-import React, { useMemo, useEffect, useState, useRef } from 'react';
+import React, { useMemo, useEffect, useState, useRef, useCallback } from 'react';
 import { useThemeContext } from '@/renderer/hooks/context/ThemeContext';
 import { useTranslation } from 'react-i18next';
+import { getThinkingPhrase } from '@/renderer/utils/thinkingSpinner';
 
 export interface ThoughtData {
   subject: string;
@@ -45,6 +46,37 @@ const ThoughtDisplay: React.FC<ThoughtDisplayProps> = ({
   const { t } = useTranslation();
   const [elapsedTime, setElapsedTime] = useState(0);
   const startTimeRef = useRef<number>(Date.now());
+  const [spinnerPhrase, setSpinnerPhrase] = useState('');
+  const [bollywoodMode, setBollywoodMode] = useState(() => {
+    try {
+      return localStorage.getItem('titanx:bollywood-mode') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  // Listen for bollywood mode changes
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ enabled: boolean }>).detail;
+      setBollywoodMode(detail.enabled);
+    };
+    window.addEventListener('titanx:bollywood-mode-changed', handler);
+    return () => window.removeEventListener('titanx:bollywood-mode-changed', handler);
+  }, []);
+
+  // Rotate spinner phrases while running
+  useEffect(() => {
+    if (!running) {
+      setSpinnerPhrase('');
+      return;
+    }
+    setSpinnerPhrase(getThinkingPhrase(bollywoodMode));
+    const interval = setInterval(() => {
+      setSpinnerPhrase(getThinkingPhrase(bollywoodMode));
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [running, bollywoodMode]);
 
   // Timer for elapsed time
   useEffect(() => {
@@ -96,7 +128,7 @@ const ThoughtDisplay: React.FC<ThoughtDisplayProps> = ({
       >
         <Spin size={14} />
         <span className='text-t-secondary'>
-          {t('conversation.chat.processing')}
+          {spinnerPhrase || t('conversation.chat.processing')}
           <span className='ml-8px opacity-60'>({formatElapsedTime(elapsedTime)})</span>
         </span>
       </div>

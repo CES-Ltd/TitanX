@@ -119,6 +119,40 @@ export const CAFE_TABLE_POSITIONS = [
   { col: 24, row: 8 },
 ];
 
+/** Bookshelf positions (against walls) */
+export const BOOKSHELF_POSITIONS = [
+  { col: 2, row: 13 },
+  { col: 13, row: 13 },
+  { col: 19, row: 13 },
+  { col: 29, row: 13 },
+];
+
+/** Whiteboard positions (meeting areas) */
+export const WHITEBOARD_POSITIONS = [
+  { col: 14, row: 4 },
+  { col: 14, row: 8 },
+];
+
+/** Cactus / pot positions (decorative) */
+export const CACTUS_POSITIONS = [
+  { col: 21, row: 5 },
+  { col: 27, row: 5 },
+  { col: 21, row: 8 },
+  { col: 27, row: 8 },
+];
+
+/**
+ * Generate a unique office seed from team ID for slight layout variations.
+ * Returns a deterministic number 0-99 for each team.
+ */
+export function teamSeed(teamId: string): number {
+  let hash = 0;
+  for (let i = 0; i < teamId.length; i++) {
+    hash = teamId.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return Math.abs(hash) % 100;
+}
+
 export function isWalkable(col: number, row: number, blockedTiles: Set<string>): boolean {
   if (col < 0 || col >= OFFICE_COLS || row < 0 || row >= OFFICE_ROWS) return false;
   const tile = OFFICE_TILES[row * OFFICE_COLS + col];
