@@ -405,33 +405,54 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({ team, onAddAgent, onR
         workspacePath={effectiveWorkspace}
         onRenameTitle={onRenameTeam}
         headerExtra={
-          <div className='flex items-center gap-4px'>
+          <nav className='flex items-center gap-1px bg-fill-2 rd-8px px-2px py-1px'>
             {viewingAgent && (
               <button
                 type='button'
-                className='flex items-center gap-4px px-8px py-4px rd-6px text-12px text-primary hover:bg-fill-3 transition-colors cursor-pointer border-none bg-[rgba(var(--primary-6),0.08)]'
+                className='flex items-center gap-3px px-8px py-3px rd-6px text-11px text-primary hover:bg-fill-3 transition-colors cursor-pointer border-none bg-[rgba(var(--primary-6),0.08)]'
                 onClick={() => setViewingAgentSlotId(null)}
               >
-                ← {t('team.backToLead', 'Back to Lead')}
+                ← Lead
               </button>
             )}
-            <button
-              type='button'
-              className='flex items-center gap-4px px-8px py-4px rd-6px text-12px text-t-secondary hover:bg-fill-3 hover:text-t-primary transition-colors cursor-pointer border-none bg-transparent'
-              onClick={() => navigate(`/team/${team.id}/sprint`)}
-            >
-              <ApplicationMenu size={14} />
-              {t('sprint.title', 'Sprint')}
-            </button>
-            <button
-              type='button'
-              className='flex items-center gap-4px px-8px py-4px rd-6px text-12px text-t-secondary hover:bg-fill-3 hover:text-t-primary transition-colors cursor-pointer border-none bg-transparent'
-              onClick={() => navigate(`/team/${team.id}/gallery`)}
-            >
-              <AddUser size={14} />
-              {t('gallery.title', 'Gallery')}
-            </button>
-          </div>
+            {[
+              {
+                icon: <ApplicationMenu size={13} />,
+                label: t('sprint.title', 'Sprint'),
+                path: `/team/${team.id}/sprint`,
+              },
+              { icon: <AddUser size={13} />, label: t('gallery.title', 'Gallery'), path: `/team/${team.id}/gallery` },
+              {
+                icon: <span className='text-11px'>🔴</span>,
+                label: t('team.live.title', 'Live'),
+                path: `/team/${team.id}/live`,
+              },
+            ].map((item) => (
+              <button
+                key={item.path}
+                type='button'
+                className='flex items-center gap-3px px-8px py-3px rd-6px text-11px text-t-secondary hover:bg-fill-3 hover:text-t-primary transition-colors cursor-pointer border-none bg-transparent whitespace-nowrap'
+                onClick={() => navigate(item.path)}
+              >
+                {item.icon}
+                {item.label}
+              </button>
+            ))}
+            <span className='w-1px h-14px bg-[var(--border-base)] mx-2px' />
+            {[
+              { label: '🛡 ' + t('governance.title', 'Governance'), path: '/governance' },
+              { label: '📊 ' + t('observability.title', 'Observability'), path: '/observability' },
+            ].map((item) => (
+              <button
+                key={item.path}
+                type='button'
+                className='flex items-center gap-3px px-6px py-3px rd-6px text-10px text-t-quaternary hover:bg-fill-3 hover:text-t-secondary transition-colors cursor-pointer border-none bg-transparent whitespace-nowrap'
+                onClick={() => navigate(item.path)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
         }
       >
         {/* Command Center: Lead or selected agent chat + spawned agent cards */}
@@ -462,23 +483,7 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({ team, onAddAgent, onR
               </div>
             )}
           </div>
-          {/* Spawned agent cards — compact strip at bottom (only shown when viewing lead) */}
-          {!viewingAgent && spawnedAgents.length > 0 && (
-            <div className='shrink-0 border-t border-solid border-[color:var(--border-base)] bg-fill-1 max-h-[200px] overflow-y-auto py-4px'>
-              {spawnedAgents.map((agent) => {
-                const live = statusMap.get(agent.slotId);
-                return (
-                  <SpawnedAgentCard
-                    key={agent.slotId}
-                    agent={agent}
-                    status={live?.status ?? agent.status}
-                    lastMessage={live?.lastMessage}
-                    onViewDetail={handleAgentClickMain}
-                  />
-                );
-              })}
-            </div>
-          )}
+          {/* Spawned agents moved to /team/:id/live — accessible via "Live" header nav button */}
         </div>
       </ChatLayout>
     </TeamPermissionProvider>

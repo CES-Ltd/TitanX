@@ -5,6 +5,7 @@
  */
 
 import { ipcBridge } from '@/common';
+import cesAppLogo from '@renderer/assets/logos/brand/app.png';
 import { ConfigStorage, type ICssTheme } from '@/common/config/storage';
 import PwaPullToRefresh from '@/renderer/components/layout/PwaPullToRefresh';
 import Titlebar from '@/renderer/components/layout/Titlebar';
@@ -444,35 +445,19 @@ const Layout: React.FC<{
               )}
             >
               <div
-                className={classNames('bg-black shrink-0 size-40px relative rd-0.5rem', {
+                className={classNames('shrink-0 size-40px relative rd-0.5rem overflow-hidden', {
                   '!size-24px': collapsed,
                 })}
                 onClick={onClick}
               >
-                <svg
-                  className={classNames('w-5.5 h-5.5 absolute inset-0 m-auto', {
-                    ' scale-140': !collapsed,
-                  })}
-                  viewBox='0 0 80 80'
-                  fill='none'
-                >
-                  <path
-                    key='logo-path-1'
-                    d='M40 20 Q38 22 25 40 Q23 42 26 42 L30 42 Q32 40 40 30 Q48 40 50 42 L54 42 Q57 42 55 40 Q42 22 40 20'
-                    fill='white'
-                  ></path>
-                  <circle key='logo-circle' cx='40' cy='46' r='3' fill='white'></circle>
-                  <path
-                    key='logo-path-2'
-                    d='M18 50 Q40 70 62 50'
-                    stroke='white'
-                    strokeWidth='3.5'
-                    fill='none'
-                    strokeLinecap='round'
-                  ></path>
-                </svg>
+                <img
+                  src={cesAppLogo}
+                  alt='TitanX'
+                  className='absolute inset-0 w-full h-full object-contain'
+                  style={{ borderRadius: '0.5rem' }}
+                />
               </div>
-              <div className='flex-1 text-20px text-1 collapsed-hidden font-bold'>AionUi</div>
+              <div className='flex-1 text-20px text-1 collapsed-hidden font-bold'>TitanX</div>
               {isMobile && !collapsed && (
                 <button
                   type='button'

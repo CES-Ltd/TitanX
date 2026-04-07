@@ -507,7 +507,7 @@
   "needHelpTooltip": "如需幫助，請查看",
   "googleCloudProjectPlaceholder": "請輸入 Google Cloud Project ID",
   "noAvailableModels": "暫無可用模型",
-  "appDescription": "Free, local, open-source GUI app for Gemini CLI",
+  "appDescription": "TitanX 是一款強大的工具，旨在提升您的生產力並簡化工作流程，同時注重企業安全",
   "helpDocumentation": "幫助文檔",
   "updateLog": "更新日誌",
   "feedback": "意見反饋",
@@ -807,5 +807,6 @@
     "pendingTimeout": "審批請求已過期（5 分鐘）。請重試。",
     "pendingCancel": "取消",
     "pendingTimeRemaining": "剩餘時間：{{time}}"
-  }
+  },
+  "appTagline": "您的 AI 數位團隊 — 以閃電般的速度實現 10 倍效率 ⚡"
 }

@@ -507,7 +507,7 @@
   "needHelpTooltip": "Yardıma ihtiyacınız varsa, lütfen kontrol edin",
   "googleCloudProjectPlaceholder": "Google Cloud Proje ID'nizi girin",
   "noAvailableModels": "Mevcut model yok",
-  "appDescription": "Gemini CLI için ücretsiz, yerel, açık kaynaklı GUI uygulaması",
+  "appDescription": "TitanX, kurumsal güvenliği ön planda tutarak üretkenliğinizi artırmak ve iş akışınızı kolaylaştırmak için tasarlanmış güçlü bir araçtır",
   "helpDocumentation": "Yardım Dokümantasyonu",
   "updateLog": "Güncelleme Günlüğü",
   "feedback": "Geri Bildirim",
@@ -805,5 +805,6 @@
     "pendingTimeout": "Onay isteği süresi doldu (5 dakika). Lütfen tekrar deneyin.",
     "pendingCancel": "İptal",
     "pendingTimeRemaining": "Kalan süre: {{time}}"
-  }
+  },
+  "appTagline": "AI Dijital İş Gücünüz — Ajan Takımlarıyla 10 Kat Hızlı ⚡"
 }

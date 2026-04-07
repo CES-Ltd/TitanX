@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { Tabs, Typography } from '@arco-design/web-react';
 import { DataDisplay, HoneyOne, Performance, GamePs } from '@icon-park/react';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
-import GovernanceDashboard from '@renderer/pages/governance/GovernanceDashboard';
+import CommandCenter from './CommandCenter';
 import CostDashboard from '@renderer/pages/governance/CostDashboard';
 import RuntimeMonitor from '@renderer/pages/governance/RuntimeMonitor';
 
@@ -41,7 +41,7 @@ const ObservabilityPage: React.FC = () => {
             </span>
           }
         >
-          <GovernanceDashboard />
+          <CommandCenter />
         </TabPane>
         <TabPane
           key='costs'

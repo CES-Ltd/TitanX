@@ -11,6 +11,7 @@ import { WORKSPACE_STATE_EVENT, dispatchWorkspaceToggleEvent } from '@renderer/u
 import type { WorkspaceStateDetail } from '@renderer/utils/workspace/workspaceEvents';
 import { useLayoutContext } from '@/renderer/hooks/context/LayoutContext';
 import { isElectronDesktop, isMacOS } from '@/renderer/utils/platform';
+import cesLogoMark from '@renderer/assets/logos/brand/app-mark.png';
 import './titlebar.css';
 
 interface TitlebarProps {
@@ -18,19 +19,18 @@ interface TitlebarProps {
 }
 
 const AionLogoMark: React.FC = () => (
-  <svg className='app-titlebar__brand-logo' viewBox='0 0 80 80' fill='none' aria-hidden='true' focusable='false'>
-    <path
-      d='M40 20 Q38 22 25 40 Q23 42 26 42 L30 42 Q32 40 40 30 Q48 40 50 42 L54 42 Q57 42 55 40 Q42 22 40 20'
-      fill='currentColor'
-    ></path>
-    <circle cx='40' cy='46' r='3' fill='currentColor'></circle>
-    <path d='M18 50 Q40 70 62 50' stroke='currentColor' strokeWidth='3.5' fill='none' strokeLinecap='round'></path>
-  </svg>
+  <img
+    src={cesLogoMark}
+    className='app-titlebar__brand-logo'
+    alt='TitanX'
+    aria-hidden='true'
+    style={{ width: 20, height: 20, objectFit: 'contain', borderRadius: 4 }}
+  />
 );
 
 const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
   const { t } = useTranslation();
-  const appTitle = useMemo(() => 'AionUi', []);
+  const appTitle = useMemo(() => 'TitanX', []);
   const [workspaceCollapsed, setWorkspaceCollapsed] = useState(true);
   const [bollywoodMode, setBollywoodMode] = useState(() => {
     try {
@@ -288,7 +288,10 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
             <span className='app-titlebar__brand-text'>{mobileCenterTitle}</span>
           </span>
         ) : (
-          appTitle
+          <span className='flex items-center gap-6px'>
+            <img src={cesLogoMark} alt='' className='w-18px h-18px object-contain rd-3px' />
+            {appTitle}
+          </span>
         )}
       </div>
       <div ref={toolbarRef} className='app-titlebar__toolbar'>
