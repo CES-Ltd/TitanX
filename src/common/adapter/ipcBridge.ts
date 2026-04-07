@@ -1506,6 +1506,45 @@ export const sprintBoard = {
   >('sprint.add-comment'),
 };
 
+// ─── Agent Gallery ──────────────────────────────────────────────────────────
+
+export type IGalleryAgent = {
+  id: string;
+  userId: string;
+  name: string;
+  agentType: string;
+  description?: string;
+  avatarSpriteIdx: number;
+  capabilities: string[];
+  config: Record<string, unknown>;
+  whitelisted: boolean;
+  maxBudgetCents?: number;
+  allowedTools: string[];
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type ICreateGalleryAgentInput = {
+  userId: string;
+  name: string;
+  agentType: string;
+  description?: string;
+  avatarSpriteIdx?: number;
+  capabilities?: string[];
+  config?: Record<string, unknown>;
+  whitelisted?: boolean;
+  maxBudgetCents?: number;
+  allowedTools?: string[];
+};
+
+export const agentGallery = {
+  list: bridge.buildProvider<IGalleryAgent[], { userId: string; whitelistedOnly?: boolean }>('gallery.list'),
+  get: bridge.buildProvider<IGalleryAgent | null, { agentId: string }>('gallery.get'),
+  create: bridge.buildProvider<IGalleryAgent, ICreateGalleryAgentInput>('gallery.create'),
+  update: bridge.buildProvider<void, { agentId: string; updates: Partial<IGalleryAgent> }>('gallery.update'),
+  remove: bridge.buildProvider<boolean, { agentId: string }>('gallery.delete'),
+};
+
 // Live events emitters for real-time UI updates
 export const liveEvents = {
   activity: bridge.buildEmitter<IActivityEntry>('live-event.activity'),

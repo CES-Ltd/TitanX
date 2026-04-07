@@ -1,5 +1,5 @@
 import { Message, Spin } from '@arco-design/web-react';
-import { CloseOne, FullScreen, OffScreen, ApplicationMenu } from '@icon-park/react';
+import { CloseOne, FullScreen, OffScreen, ApplicationMenu, AddUser } from '@icon-park/react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -422,6 +422,14 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({ team, onAddAgent, onR
             >
               <ApplicationMenu size={14} />
               {t('sprint.title', 'Sprint')}
+            </button>
+            <button
+              type='button'
+              className='flex items-center gap-4px px-8px py-4px rd-6px text-12px text-t-secondary hover:bg-fill-3 hover:text-t-primary transition-colors cursor-pointer border-none bg-transparent'
+              onClick={() => navigate(`/team/${team.id}/gallery`)}
+            >
+              <AddUser size={14} />
+              {t('gallery.title', 'Gallery')}
             </button>
           </div>
         }
