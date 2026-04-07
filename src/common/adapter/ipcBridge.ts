@@ -1457,6 +1457,55 @@ export const governanceTeamTasks = {
   ),
 };
 
+// ─── Sprint Board ───────────────────────────────────────────────────────────
+
+export type ISprintTask = {
+  id: string;
+  teamId: string;
+  title: string;
+  description?: string;
+  status: 'backlog' | 'todo' | 'in_progress' | 'review' | 'done';
+  assigneeSlotId?: string;
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  labels: string[];
+  blockedBy: string[];
+  comments: Array<{
+    id: string;
+    author: string;
+    authorType: 'user' | 'agent';
+    content: string;
+    mentions: string[];
+    createdAt: number;
+  }>;
+  sprintNumber?: number;
+  storyPoints?: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type ICreateSprintTaskInput = {
+  teamId: string;
+  title: string;
+  description?: string;
+  assigneeSlotId?: string;
+  priority?: 'low' | 'medium' | 'high' | 'critical';
+  labels?: string[];
+  sprintNumber?: number;
+  storyPoints?: number;
+};
+
+export const sprintBoard = {
+  list: bridge.buildProvider<ISprintTask[], { teamId: string }>('sprint.list'),
+  get: bridge.buildProvider<ISprintTask | null, { taskId: string }>('sprint.get'),
+  create: bridge.buildProvider<ISprintTask, ICreateSprintTaskInput>('sprint.create'),
+  update: bridge.buildProvider<void, { taskId: string; updates: Partial<ISprintTask> }>('sprint.update'),
+  remove: bridge.buildProvider<boolean, { taskId: string }>('sprint.delete'),
+  addComment: bridge.buildProvider<
+    ISprintTask['comments'][0],
+    { taskId: string; author: string; authorType: 'user' | 'agent'; content: string }
+  >('sprint.add-comment'),
+};
+
 // Live events emitters for real-time UI updates
 export const liveEvents = {
   activity: bridge.buildEmitter<IActivityEntry>('live-event.activity'),

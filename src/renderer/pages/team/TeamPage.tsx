@@ -1,7 +1,8 @@
 import { Message, Spin } from '@arco-design/web-react';
-import { CloseOne, FullScreen, OffScreen } from '@icon-park/react';
+import { CloseOne, FullScreen, OffScreen, ApplicationMenu } from '@icon-park/react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import useSWR, { useSWRConfig } from 'swr';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
 import { ipcBridge } from '@/common';
@@ -184,6 +185,7 @@ const AgentChatSlot: React.FC<{
 /** Inner component that reads active tab from context and renders the chat layout */
 const TeamPageContent: React.FC<TeamPageContentProps> = ({ team, onAddAgent, onRenameTeam }) => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { agents, activeSlotId, statusMap, switchTab } = useTeamTabs();
   const [, messageContext] = Message.useMessage({ maxCount: 1 });
 
@@ -371,6 +373,16 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({ team, onAddAgent, onR
         agentName={undefined}
         workspacePath={effectiveWorkspace}
         onRenameTitle={onRenameTeam}
+        headerExtra={
+          <button
+            type='button'
+            className='flex items-center gap-4px px-8px py-4px rd-6px text-12px text-t-secondary hover:bg-fill-3 hover:text-t-primary transition-colors cursor-pointer border-none bg-transparent'
+            onClick={() => navigate(`/team/${team.id}/sprint`)}
+          >
+            <ApplicationMenu size={14} />
+            {t('sprint.title', 'Sprint')}
+          </button>
+        }
       >
         {/* Command Center: Lead agent chat + spawned agent cards */}
         <div className='flex flex-col h-full'>
