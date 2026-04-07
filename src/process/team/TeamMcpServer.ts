@@ -13,6 +13,9 @@ import * as path from 'node:path';
 import type { Mailbox } from './Mailbox';
 import type { TaskManager } from './TaskManager';
 import type { TeamAgent } from './types';
+import { getDatabase } from '@process/services/database';
+import * as sprintService from '@process/services/sprintTasks';
+import * as activityLogService from '@process/services/activityLog';
 
 type SpawnAgentFn = (agentName: string, agentType?: string) => Promise<TeamAgent>;
 
@@ -388,6 +391,37 @@ export class TeamMcpServer {
     const owner = args.owner ? String(args.owner) : undefined;
 
     const task = await taskManager.create({ teamId, subject, description, owner });
+
+    // Also create in sprint_tasks so it shows in Sprint Board
+    try {
+      const db = await getDatabase();
+      const driver = db.getDriver();
+      const agents = this.params.getAgents();
+      const assigneeSlotId = owner
+        ? agents.find((a) => a.agentName.toLowerCase() === owner.toLowerCase())?.slotId
+        : undefined;
+      const sprintTask = sprintService.createTask(driver, {
+        teamId,
+        title: subject,
+        description,
+        assigneeSlotId,
+        priority: 'medium',
+      });
+      sprintService.updateTask(driver, sprintTask.id, { status: 'todo' });
+      // Audit log
+      activityLogService.logActivity(driver, {
+        userId: 'system_default_user',
+        actorType: 'agent',
+        actorId: 'mcp',
+        action: 'task.created',
+        entityType: 'sprint_task',
+        entityId: sprintTask.id,
+        details: { title: subject, assignee: owner, teamId },
+      });
+    } catch {
+      // Non-critical
+    }
+
     return `Task created: [${task.id.slice(0, 8)}] "${subject}"${owner ? ` (assigned to ${owner})` : ''}`;
   }
 
@@ -410,6 +444,43 @@ export class TeamMcpServer {
     if (status === 'completed') {
       await taskManager.checkUnblocks(taskId);
     }
+
+    // Sync to sprint_tasks + audit
+    try {
+      const db = await getDatabase();
+      const driver = db.getDriver();
+      const teamId = this.params.teamId;
+      const sprintTasks = sprintService.listTasks(driver, teamId);
+      const statusMap: Record<string, string> = {
+        pending: 'todo',
+        in_progress: 'in_progress',
+        completed: 'done',
+        deleted: 'done',
+      };
+      const mappedStatus = status ? (statusMap[status] ?? status) : undefined;
+      if (mappedStatus) {
+        for (const st of sprintTasks) {
+          if (st.id === taskId || st.title === taskId) {
+            sprintService.updateTask(driver, st.id, {
+              status: mappedStatus as 'backlog' | 'todo' | 'in_progress' | 'review' | 'done',
+            });
+            break;
+          }
+        }
+      }
+      activityLogService.logActivity(driver, {
+        userId: 'system_default_user',
+        actorType: 'agent',
+        actorId: 'mcp',
+        action: 'task.updated',
+        entityType: 'sprint_task',
+        entityId: taskId,
+        details: { status, owner, teamId },
+      });
+    } catch {
+      // Non-critical
+    }
+
     return `Task ${taskId.slice(0, 8)} updated.${status ? ` Status: ${status}.` : ''}${owner ? ` Owner: ${owner}.` : ''}`;
   }
 
