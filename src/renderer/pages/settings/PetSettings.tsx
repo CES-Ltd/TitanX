@@ -120,15 +120,26 @@ const PetSettings: React.FC = () => {
       key: 'theme',
       label: t('pet.theme', 'Character'),
       component: (
-        <Radio.Group value={theme} onChange={handleThemeChange} disabled={!enabled}>
+        <div className='flex gap-6px flex-wrap'>
           {PET_THEMES.map((pt) => (
-            <Radio key={pt.key} value={pt.key}>
-              <span className='text-13px'>
-                {pt.emoji} {pt.label}
+            <button
+              key={pt.key}
+              type='button'
+              disabled={!enabled}
+              onClick={() => handleThemeChange(pt.key)}
+              className={`flex flex-col items-center gap-2px px-10px py-6px rd-10px border-2 border-solid cursor-pointer transition-all ${
+                theme === pt.key
+                  ? 'border-[rgb(var(--primary-6))] bg-[rgba(var(--primary-6),0.08)] shadow-sm'
+                  : 'border-transparent bg-fill-2 hover:bg-fill-3'
+              } ${!enabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+            >
+              <span className='text-24px leading-none'>{pt.emoji}</span>
+              <span className={`text-10px ${theme === pt.key ? 'text-primary font-medium' : 'text-t-secondary'}`}>
+                {pt.label}
               </span>
-            </Radio>
+            </button>
           ))}
-        </Radio.Group>
+        </div>
       ),
     },
     {

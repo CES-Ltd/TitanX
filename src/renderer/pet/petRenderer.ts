@@ -1,6 +1,124 @@
 const LOAD_TIMEOUT = 3000;
 
-// Determine theme from URL query param (passed by petManager)
+// ─── Thinking / Bollywood phrases ────────────────────────────────────────────
+
+const THINKING_PHRASES = [
+  'Krahing',
+  'Caffeinating',
+  'Yak-shaving',
+  'Bikeshedding',
+  'Docker-containerizing',
+  'Git-pushing',
+  'Nat-twentying',
+  'Speed-running',
+  'Mind-melding',
+  'Matrixing',
+  'Lateralizing',
+  'Koan-contemplating',
+  'Zazen-meditating',
+  'Pour-overing',
+  'Bug-bountying',
+  'Chmod-777ing',
+  'Ship-of-Theseusing',
+  'Amor-fati-ing',
+  'Spiraling-out',
+  'Kaizen-improving',
+  'Wabi-sabi-accepting',
+  'Dragon-slaying',
+  'Side-questing',
+  'Neuromancing',
+  'Boldly going',
+  'Making it so',
+  'Backpropagating',
+  'Self-attending',
+  'Chain-of-thought-reasoning',
+  'Seppuku-refactoring',
+  'Samurai-coding',
+  'Consciousness-pondering',
+  'Foundation-building',
+  'Psychohistorying',
+  'Stormlight-archiving',
+];
+
+const BOLLYWOOD_DIALOGUES = [
+  'Mogambo khush hua! 🎬',
+  'Kitne aadmi the? 🤔',
+  'Seh lenge thoda 😤',
+  'Abhi maza aaega na bhidu! 🎉',
+  '50 rupees kaat overacting ka ✂️',
+  'Jor jor se bolke sabko scheme bata de! 📢',
+  'Mujhe ghar jana hai 🏠',
+  'Tension lene ka nahi, sirf dene ka 😎',
+  "How's the josh? HIGH SAAAAR! 🫡",
+  'All izz well 🙆',
+  'Picture abhi baaki hai mere dost 🎬',
+  'Babumoshai, zindagi badi honi chahiye 🎭',
+  'Pushpa, I hate tears 😭',
+  'Jal lijiye 🥤',
+  'Hera Pheri chal rahi hai yahan 🎪',
+];
+
+function getRandomPhrase(): string {
+  try {
+    const isBollywood = localStorage.getItem('titanx:bollywood-mode') === 'true';
+    const list = isBollywood ? BOLLYWOOD_DIALOGUES : THINKING_PHRASES;
+    return list[Math.floor(Math.random() * list.length)];
+  } catch {
+    return THINKING_PHRASES[Math.floor(Math.random() * THINKING_PHRASES.length)];
+  }
+}
+
+// ─── Speech bubble ───────────────────────────────────────────────────────────
+
+let bubbleEl: HTMLDivElement | null = null;
+let bubbleTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function createBubble(): HTMLDivElement {
+  if (bubbleEl) return bubbleEl;
+  const el = document.createElement('div');
+  el.style.cssText = `
+    position: fixed; top: -8px; left: 50%; transform: translateX(-50%);
+    background: rgba(255,255,255,0.95); color: #333; font-size: 10px;
+    padding: 4px 8px; border-radius: 8px; white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15); border: 1px solid rgba(100,100,200,0.2);
+    pointer-events: none; opacity: 0; transition: opacity 0.3s ease;
+    font-family: system-ui, sans-serif; max-width: 180px; overflow: hidden;
+    text-overflow: ellipsis; z-index: 9999;
+  `;
+  document.body.appendChild(el);
+  bubbleEl = el;
+  return el;
+}
+
+function showBubble(text: string, durationMs = 3000): void {
+  const bubble = createBubble();
+  bubble.textContent = text;
+  bubble.style.opacity = '1';
+  if (bubbleTimeout) clearTimeout(bubbleTimeout);
+  bubbleTimeout = setTimeout(() => {
+    bubble.style.opacity = '0';
+  }, durationMs);
+}
+
+// ─── Click handler — show thinking phrase ────────────────────────────────────
+
+document.addEventListener('click', () => {
+  showBubble(getRandomPhrase(), 3000);
+});
+
+// ─── Random idle speech (every 15-45 seconds) ────────────────────────────────
+
+function scheduleRandomSpeech(): void {
+  const delay = 15000 + Math.random() * 30000; // 15-45 sec
+  setTimeout(() => {
+    showBubble(getRandomPhrase(), 4000);
+    scheduleRandomSpeech();
+  }, delay);
+}
+scheduleRandomSpeech();
+
+// ─── Theme resolution ────────────────────────────────────────────────────────
+
 function resolveBasePath(): string {
   try {
     const params = new URLSearchParams(window.location.search);
@@ -57,8 +175,9 @@ function loadSvg(svgPath: string): void {
   document.body.appendChild(newObj);
 }
 
-// Setup transitions for initial SVG
+// Load initial SVG with theme-aware path
 if (currentObject) {
+  currentObject.data = getStateAssetPath('idle');
   currentObject.addEventListener('load', () => {
     setupTransitions();
   });
@@ -66,6 +185,10 @@ if (currentObject) {
 
 window.petAPI.onStateChange((state: string) => {
   loadSvg(getStateAssetPath(state));
+  // Show a thinking phrase when entering thinking/working states
+  if (state === 'thinking' || state === 'working' || state === 'building') {
+    showBubble(getRandomPhrase(), 4000);
+  }
 });
 
 window.petAPI.onEyeMove(({ eyeDx, eyeDy, bodyDx, bodyRotate }) => {
