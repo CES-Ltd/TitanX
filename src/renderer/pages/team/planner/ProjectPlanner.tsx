@@ -129,10 +129,10 @@ const ProjectPlanner: React.FC = () => {
     return currentDate.toLocaleDateString('en-US', opts);
   };
 
-  if (loading) return <Spin className='flex justify-center mt-8' />;
+  if (loading) return <Spin className='flex justify-center mt-16' />;
 
   return (
-    <div className='h-full flex flex-col px-16px pt-8px'>
+    <div className='flex flex-col px-16px pt-8px' style={{ height: '100vh', maxHeight: '100vh' }}>
       {/* Header */}
       <div className='flex items-center justify-between mb-8px shrink-0'>
         <div className='flex items-center gap-8px'>
@@ -254,7 +254,7 @@ const ProjectPlanner: React.FC = () => {
                   className='w-24px h-24px rd-full border-2 border-solid cursor-pointer'
                   style={{
                     backgroundColor: c,
-                    borderColor: form.getFieldValue('color') === c ? '#333' : 'transparent',
+                    borderColor: 'transparent',
                   }}
                   onClick={() => form.setFieldsValue({ color: c })}
                 />
