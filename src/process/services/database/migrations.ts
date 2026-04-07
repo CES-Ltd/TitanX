@@ -1447,6 +1447,50 @@ const migration_v29: IMigration = {
 /**
  * All migrations in order
  */
+/**
+ * Migration v29 -> v30: Add project_plans table and enhance sprint_tasks
+ */
+const migration_v30: IMigration = {
+  version: 30,
+  name: 'Add project_plans table and sprint task enhancements',
+  up: (db) => {
+    // Project plans with calendar scheduling
+    db.exec(`CREATE TABLE IF NOT EXISTS project_plans (
+      id TEXT PRIMARY KEY,
+      team_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      scheduled_date INTEGER NOT NULL,
+      scheduled_time TEXT,
+      duration_minutes INTEGER DEFAULT 60,
+      recurrence TEXT,
+      color TEXT DEFAULT '#165dff',
+      sprint_task_ids TEXT DEFAULT '[]',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_project_plans_team ON project_plans(team_id, scheduled_date)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_project_plans_status ON project_plans(status, scheduled_date)');
+
+    // Enhance sprint_tasks with new columns
+    const cols = new Set((db.pragma('table_info(sprint_tasks)') as Array<{ name: string }>).map((c) => c.name));
+    if (!cols.has('linked_tasks')) db.exec("ALTER TABLE sprint_tasks ADD COLUMN linked_tasks TEXT DEFAULT '[]'");
+    if (!cols.has('scheduled_at')) db.exec('ALTER TABLE sprint_tasks ADD COLUMN scheduled_at INTEGER');
+    if (!cols.has('plan_id')) db.exec('ALTER TABLE sprint_tasks ADD COLUMN plan_id TEXT');
+    if (!cols.has('due_date')) db.exec('ALTER TABLE sprint_tasks ADD COLUMN due_date INTEGER');
+
+    console.log('[Migration v30] Added project_plans table and sprint task enhancements');
+  },
+  down: (db) => {
+    db.exec('DROP TABLE IF EXISTS project_plans');
+    console.log('[Migration v30] Rolled back: Removed project_plans table');
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -1455,6 +1499,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v19, migration_v20, migration_v21, migration_v22,
   migration_v23, migration_v24, migration_v25,
   migration_v26, migration_v27, migration_v28, migration_v29,
+  migration_v30,
 ];
 
 /**

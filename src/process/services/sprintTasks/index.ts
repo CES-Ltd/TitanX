@@ -24,6 +24,10 @@ export type SprintTask = {
   comments: SprintComment[];
   sprintNumber?: number;
   storyPoints?: number;
+  linkedTasks: string[];
+  scheduledAt?: number;
+  planId?: string;
+  dueDate?: number;
   createdAt: number;
   updatedAt: number;
 };
@@ -105,6 +109,10 @@ export function createTask(db: ISqliteDriver, input: CreateTaskInput): SprintTas
     comments: [],
     sprintNumber: input.sprintNumber,
     storyPoints: input.storyPoints,
+    linkedTasks: [],
+    scheduledAt: undefined,
+    planId: undefined,
+    dueDate: undefined,
     createdAt: now,
     updatedAt: now,
   };
@@ -236,6 +244,10 @@ function rowToTask(row: Record<string, unknown>): SprintTask {
     comments: JSON.parse((row.comments as string) || '[]'),
     sprintNumber: (row.sprint_number as number) ?? undefined,
     storyPoints: (row.story_points as number) ?? undefined,
+    linkedTasks: JSON.parse((row.linked_tasks as string) || '[]'),
+    scheduledAt: (row.scheduled_at as number) ?? undefined,
+    planId: (row.plan_id as string) ?? undefined,
+    dueDate: (row.due_date as number) ?? undefined,
     createdAt: row.created_at as number,
     updatedAt: row.updated_at as number,
   };

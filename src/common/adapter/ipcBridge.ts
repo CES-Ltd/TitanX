@@ -1497,6 +1497,10 @@ export type ISprintTask = {
   }>;
   sprintNumber?: number;
   storyPoints?: number;
+  linkedTasks: string[];
+  scheduledAt?: number;
+  planId?: string;
+  dueDate?: number;
   createdAt: number;
   updatedAt: number;
 };
@@ -1630,6 +1634,47 @@ export const githubAuth = {
     { accessToken: string; tokenType: string } | { pending: true } | { error: string },
     { clientId: string; deviceCode: string; interval: number }
   >('github.poll-token'),
+};
+
+// ─── Project Planner ────────────────────────────────────────────────────────
+
+export type IProjectPlan = {
+  id: string;
+  teamId: string;
+  userId: string;
+  title: string;
+  description?: string;
+  status: 'active' | 'paused' | 'completed' | 'archived';
+  scheduledDate: number;
+  scheduledTime?: string;
+  durationMinutes: number;
+  recurrence?: string;
+  color: string;
+  sprintTaskIds: string[];
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type ICreatePlanInput = {
+  teamId: string;
+  userId: string;
+  title: string;
+  description?: string;
+  scheduledDate: number;
+  scheduledTime?: string;
+  durationMinutes?: number;
+  recurrence?: string;
+  color?: string;
+};
+
+export const projectPlanner = {
+  list: bridge.buildProvider<IProjectPlan[], { teamId: string; fromDate?: number; toDate?: number; status?: string }>(
+    'planner.list'
+  ),
+  get: bridge.buildProvider<IProjectPlan | null, { planId: string }>('planner.get'),
+  create: bridge.buildProvider<IProjectPlan, ICreatePlanInput>('planner.create'),
+  update: bridge.buildProvider<void, { planId: string; updates: Partial<IProjectPlan> }>('planner.update'),
+  remove: bridge.buildProvider<boolean, { planId: string }>('planner.delete'),
 };
 
 // Live events emitters for real-time UI updates
