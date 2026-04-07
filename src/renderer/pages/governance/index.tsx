@@ -1,20 +1,19 @@
 /**
  * @license Apache-2.0
- * TitanX Governance Hub — unified page for observability & security features.
- * Contains tabbed views: Dashboard, Activity, Costs, Secrets, Approvals.
+ * TitanX Governance Hub — enterprise security and compliance.
+ * Tabs: Workflows, Credentials, IAM Policies, Approvals, Audit Log.
  */
 
 import React, { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Tabs, Typography } from '@arco-design/web-react';
-import { DataDisplay, ListView, HoneyOne, Shield, CheckCorrect, Performance } from '@icon-park/react';
+import { DataDisplay, Shield, CheckCorrect, ListView, Performance } from '@icon-park/react';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
-import GovernanceDashboard from './GovernanceDashboard';
-import ActivityLog from './ActivityLog';
-import CostDashboard from './CostDashboard';
+import WorkflowManager from './workflows/WorkflowManager';
 import SecretsManager from './SecretsManager';
+import IAMPolicies from './iam/IAMPolicies';
 import ApprovalsList from './ApprovalsList';
-import RuntimeMonitor from './RuntimeMonitor';
+import ActivityLog from './ActivityLog';
 
 const { TabPane } = Tabs;
 const { Title } = Typography;
@@ -23,7 +22,7 @@ const GovernancePage: React.FC = () => {
   const layout = useLayoutContext();
   const isMobile = layout?.isMobile ?? false;
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState('workflows');
 
   const handleTabChange = useCallback((key: string) => {
     setActiveTab(key);
@@ -36,48 +35,37 @@ const GovernancePage: React.FC = () => {
       </Title>
       <Tabs activeTab={activeTab} onChange={handleTabChange} type='rounded' className='flex-1 min-h-0'>
         <TabPane
-          key='dashboard'
+          key='workflows'
           title={
             <span className='flex items-center gap-1'>
               <DataDisplay size={16} />
-              {t('governance.tabs.dashboard', 'Dashboard')}
+              {t('governance.tabs.workflows', 'Workflows')}
             </span>
           }
         >
-          <GovernanceDashboard />
+          <WorkflowManager />
         </TabPane>
         <TabPane
-          key='activity'
-          title={
-            <span className='flex items-center gap-1'>
-              <ListView size={16} />
-              {t('governance.tabs.activity', 'Activity')}
-            </span>
-          }
-        >
-          <ActivityLog />
-        </TabPane>
-        <TabPane
-          key='costs'
-          title={
-            <span className='flex items-center gap-1'>
-              <HoneyOne size={16} />
-              {t('governance.tabs.costs', 'Costs')}
-            </span>
-          }
-        >
-          <CostDashboard />
-        </TabPane>
-        <TabPane
-          key='secrets'
+          key='credentials'
           title={
             <span className='flex items-center gap-1'>
               <Shield size={16} />
-              {t('governance.tabs.secrets', 'Secrets')}
+              {t('governance.tabs.credentials', 'Credentials')}
             </span>
           }
         >
           <SecretsManager />
+        </TabPane>
+        <TabPane
+          key='iam'
+          title={
+            <span className='flex items-center gap-1'>
+              <Performance size={16} />
+              {t('governance.tabs.iam', 'IAM Policies')}
+            </span>
+          }
+        >
+          <IAMPolicies />
         </TabPane>
         <TabPane
           key='approvals'
@@ -91,15 +79,15 @@ const GovernancePage: React.FC = () => {
           <ApprovalsList />
         </TabPane>
         <TabPane
-          key='runtime'
+          key='audit'
           title={
             <span className='flex items-center gap-1'>
-              <Performance size={16} />
-              {t('governance.tabs.runtime', 'Runtime')}
+              <ListView size={16} />
+              {t('governance.tabs.audit', 'Audit Log')}
             </span>
           }
         >
-          <RuntimeMonitor />
+          <ActivityLog />
         </TabPane>
       </Tabs>
     </div>
