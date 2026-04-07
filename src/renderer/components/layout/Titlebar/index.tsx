@@ -11,13 +11,12 @@ import { WORKSPACE_STATE_EVENT, dispatchWorkspaceToggleEvent } from '@renderer/u
 import type { WorkspaceStateDetail } from '@renderer/utils/workspace/workspaceEvents';
 import { useLayoutContext } from '@/renderer/hooks/context/LayoutContext';
 import { isElectronDesktop, isMacOS } from '@/renderer/utils/platform';
+import cesLogoMark from '@renderer/assets/logos/brand/app-mark.png';
 import './titlebar.css';
 
 interface TitlebarProps {
   workspaceAvailable: boolean;
 }
-
-import cesLogoMark from '@/renderer/assets/logos/brand/app-mark.png';
 
 const AionLogoMark: React.FC = () => (
   <img
