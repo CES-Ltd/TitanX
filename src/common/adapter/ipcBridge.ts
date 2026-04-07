@@ -1260,6 +1260,202 @@ export type IAddTeamAgentParams = {
   agent: Omit<import('@process/team/types').TeamAgent, 'slotId'>;
 };
 
+// ─── TitanX Observability & Security Types ─────────────────────────────────
+
+export type IActivityEntry = {
+  id: string;
+  userId: string;
+  actorType: 'user' | 'agent' | 'system';
+  actorId: string;
+  action: string;
+  entityType: string;
+  entityId?: string;
+  agentId?: string;
+  details?: Record<string, unknown>;
+  createdAt: number;
+};
+
+export type IActivityListParams = {
+  userId: string;
+  entityType?: string;
+  agentId?: string;
+  action?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export type ISecretMeta = {
+  id: string;
+  userId: string;
+  name: string;
+  provider: string;
+  currentVersion: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type ICostEventInput = {
+  userId: string;
+  conversationId?: string;
+  agentType?: string;
+  provider: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  costCents: number;
+  billingType: string;
+  occurredAt: number;
+};
+
+export type ICostSummary = {
+  totalCostCents: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  eventCount: number;
+};
+
+export type IAgentCostBreakdown = {
+  agentType: string;
+  totalCostCents: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  eventCount: number;
+};
+
+export type IProviderCostBreakdown = {
+  provider: string;
+  model: string;
+  totalCostCents: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  eventCount: number;
+};
+
+export type IWindowSpend = {
+  windowLabel: string;
+  windowMs: number;
+  totalCostCents: number;
+};
+
+export type IBudgetPolicy = {
+  id: string;
+  userId: string;
+  scopeType: string;
+  scopeId: string | null;
+  amountCents: number;
+  windowKind: string;
+  active: boolean;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type IBudgetPolicyInput = Omit<IBudgetPolicy, 'id' | 'createdAt' | 'updatedAt'>;
+
+export type IBudgetIncident = {
+  id: string;
+  policyId: string;
+  userId: string;
+  status: string;
+  spendCents: number;
+  limitCents: number;
+  pausedResources: string[];
+  createdAt: number;
+  resolvedAt: number | null;
+};
+
+export type IAgentRun = {
+  id: string;
+  userId: string;
+  conversationId: string;
+  agentType: string;
+  status: 'running' | 'done' | 'error';
+  startedAt: number;
+  finishedAt: number | null;
+  inputTokens: number;
+  outputTokens: number;
+  costCents: number;
+  exitCode: number | null;
+  error: string | null;
+};
+
+export type IAgentRunStats = {
+  totalRuns: number;
+  successfulRuns: number;
+  errorRuns: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCostCents: number;
+  avgDurationMs: number;
+};
+
+export type IApproval = {
+  id: string;
+  userId: string;
+  type: string;
+  status: 'pending' | 'approved' | 'rejected';
+  requestedBy: string;
+  payload: Record<string, unknown>;
+  decisionNote: string | null;
+  decidedAt: number | null;
+  createdAt: number;
+};
+
+// ─── TitanX Observability & Security Bridges ────────────────────────────────
+
+export const activityLog = {
+  list: bridge.buildProvider<{ data: IActivityEntry[]; total: number }, IActivityListParams>('activity-log.list'),
+  forEntity: bridge.buildProvider<IActivityEntry[], { entityType: string; entityId: string }>(
+    'activity-log.for-entity'
+  ),
+};
+
+export const secrets = {
+  list: bridge.buildProvider<ISecretMeta[], { userId: string }>('secrets.list'),
+  create: bridge.buildProvider<ISecretMeta, { userId: string; name: string; value: string }>('secrets.create'),
+  rotate: bridge.buildProvider<ISecretMeta, { secretId: string; value: string }>('secrets.rotate'),
+  remove: bridge.buildProvider<boolean, { secretId: string }>('secrets.delete'),
+  resolve: bridge.buildProvider<string, { secretId: string; version?: number }>('secrets.resolve'),
+};
+
+export const costTracking = {
+  record: bridge.buildProvider<void, ICostEventInput>('costs.record'),
+  summary: bridge.buildProvider<ICostSummary, { userId: string; fromDate?: number }>('costs.summary'),
+  byAgent: bridge.buildProvider<IAgentCostBreakdown[], { userId: string; fromDate?: number }>('costs.by-agent'),
+  byProvider: bridge.buildProvider<IProviderCostBreakdown[], { userId: string; fromDate?: number }>(
+    'costs.by-provider'
+  ),
+  windowSpend: bridge.buildProvider<IWindowSpend[], { userId: string }>('costs.window-spend'),
+};
+
+export const budgets = {
+  listPolicies: bridge.buildProvider<IBudgetPolicy[], { userId: string }>('budgets.list-policies'),
+  upsertPolicy: bridge.buildProvider<IBudgetPolicy, IBudgetPolicyInput>('budgets.upsert-policy'),
+  listIncidents: bridge.buildProvider<IBudgetIncident[], { userId: string; status?: string }>('budgets.list-incidents'),
+  resolveIncident: bridge.buildProvider<void, { incidentId: string; status: string }>('budgets.resolve-incident'),
+};
+
+export const agentRuns = {
+  list: bridge.buildProvider<IAgentRun[], { userId: string; conversationId?: string; limit?: number }>(
+    'agent-runs.list'
+  ),
+  stats: bridge.buildProvider<IAgentRunStats, { userId: string; fromDate?: number }>('agent-runs.stats'),
+};
+
+export const approvals = {
+  list: bridge.buildProvider<IApproval[], { userId: string; status?: string }>('approvals.list'),
+  decide: bridge.buildProvider<void, { approvalId: string; status: string; note?: string }>('approvals.decide'),
+  pendingCount: bridge.buildProvider<number, { userId: string }>('approvals.pending-count'),
+};
+
+// Live events emitters for real-time UI updates
+export const liveEvents = {
+  activity: bridge.buildEmitter<IActivityEntry>('live-event.activity'),
+  cost: bridge.buildEmitter<ICostEventInput>('live-event.cost'),
+  budgetIncident: bridge.buildEmitter<IBudgetIncident>('live-event.budget-incident'),
+  agentRun: bridge.buildEmitter<{ runId: string; status: string; agentType: string }>('live-event.agent-run'),
+};
+
 export const team = {
   create: bridge.buildProvider<import('@process/team/types').TTeam, ICreateTeamParams>('team.create'),
   list: bridge.buildProvider<import('@process/team/types').TTeam[], { userId: string }>('team.list'),

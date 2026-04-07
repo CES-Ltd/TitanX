@@ -43,6 +43,12 @@ import { initWorkspaceSnapshotBridge } from './workspaceSnapshotBridge';
 import { initRemoteAgentBridge } from './remoteAgentBridge';
 import { initHubBridge } from './hubBridge';
 import { initTeamBridge } from './teamBridge';
+import { initActivityLogBridge } from './activityLogBridge';
+import { initSecretsBridge } from './secretsBridge';
+import { initCostTrackingBridge } from './costTrackingBridge';
+import { initBudgetsBridge } from './budgetsBridge';
+import { initAgentRunsBridge } from './agentRunsBridge';
+import { initApprovalsBridge } from './approvalsBridge';
 import type { TeamSessionService } from '@process/team/TeamSessionService';
 
 export interface BridgeDependencies {
@@ -92,6 +98,14 @@ export function initAllBridges(deps: BridgeDependencies): void {
   initRemoteAgentBridge();
   initHubBridge();
   initTeamBridge(deps.teamSessionService);
+
+  // TitanX Observability & Security bridges
+  initActivityLogBridge();
+  initSecretsBridge();
+  initCostTrackingBridge();
+  initBudgetsBridge();
+  initAgentRunsBridge();
+  initApprovalsBridge();
 }
 
 /**
@@ -108,6 +122,12 @@ export async function initializeAcpDetector(): Promise<void> {
 // 导出初始化函数供单独使用
 
 export {
+  initActivityLogBridge,
+  initSecretsBridge,
+  initCostTrackingBridge,
+  initBudgetsBridge,
+  initAgentRunsBridge,
+  initApprovalsBridge,
   initAcpConversationBridge,
   initApplicationBridge,
   initAuthBridge,

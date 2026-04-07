@@ -51,7 +51,15 @@ export function createSecret(db: ISqliteDriver, input: { userId: string; name: s
     ).run(versionId, secretId, material, hash, now);
   })();
 
-  return { id: secretId, userId: input.userId, name: input.name, provider: 'local_encrypted', currentVersion: 1, createdAt: now, updatedAt: now };
+  return {
+    id: secretId,
+    userId: input.userId,
+    name: input.name,
+    provider: 'local_encrypted',
+    currentVersion: 1,
+    createdAt: now,
+    updatedAt: now,
+  };
 }
 
 /**
@@ -65,7 +73,9 @@ export function rotateSecret(db: ISqliteDriver, input: { secretId: string; value
   const material = encrypt(input.value, masterKey);
   const hash = sha256(input.value);
 
-  const secret = db.prepare('SELECT * FROM secrets WHERE id = ?').get(input.secretId) as Record<string, unknown> | undefined;
+  const secret = db.prepare('SELECT * FROM secrets WHERE id = ?').get(input.secretId) as
+    | Record<string, unknown>
+    | undefined;
   if (!secret) throw new Error(`Secret not found: ${input.secretId}`);
 
   const newVersion = (secret.current_version as number) + 1;
@@ -76,9 +86,11 @@ export function rotateSecret(db: ISqliteDriver, input: { secretId: string; value
        VALUES (?, ?, ?, ?, ?, ?)`
     ).run(versionId, input.secretId, newVersion, material, hash, now);
 
-    db.prepare(
-      `UPDATE secrets SET current_version = ?, updated_at = ? WHERE id = ?`
-    ).run(newVersion, now, input.secretId);
+    db.prepare(`UPDATE secrets SET current_version = ?, updated_at = ? WHERE id = ?`).run(
+      newVersion,
+      now,
+      input.secretId
+    );
   })();
 
   return {
@@ -100,9 +112,13 @@ export function resolveSecretValue(db: ISqliteDriver, secretId: string, version?
 
   let row: Record<string, unknown> | undefined;
   if (version) {
-    row = db.prepare('SELECT material FROM secret_versions WHERE secret_id = ? AND version = ?').get(secretId, version) as Record<string, unknown> | undefined;
+    row = db
+      .prepare('SELECT material FROM secret_versions WHERE secret_id = ? AND version = ?')
+      .get(secretId, version) as Record<string, unknown> | undefined;
   } else {
-    row = db.prepare('SELECT material FROM secret_versions WHERE secret_id = ? ORDER BY version DESC LIMIT 1').get(secretId) as Record<string, unknown> | undefined;
+    row = db
+      .prepare('SELECT material FROM secret_versions WHERE secret_id = ? ORDER BY version DESC LIMIT 1')
+      .get(secretId) as Record<string, unknown> | undefined;
   }
 
   if (!row) throw new Error(`Secret version not found: ${secretId}${version ? `@v${version}` : ''}`);
@@ -114,7 +130,9 @@ export function resolveSecretValue(db: ISqliteDriver, secretId: string, version?
  * List all secrets for a user (without decrypted values).
  */
 export function listSecrets(db: ISqliteDriver, userId: string): SecretMeta[] {
-  const rows = db.prepare('SELECT * FROM secrets WHERE user_id = ? ORDER BY name ASC').all(userId) as Array<Record<string, unknown>>;
+  const rows = db.prepare('SELECT * FROM secrets WHERE user_id = ? ORDER BY name ASC').all(userId) as Array<
+    Record<string, unknown>
+  >;
   return rows.map((row) => ({
     id: row.id as string,
     userId: row.user_id as string,

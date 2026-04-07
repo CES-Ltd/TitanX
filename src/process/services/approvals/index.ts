@@ -55,11 +55,14 @@ export function createApproval(db: ISqliteDriver, input: CreateApprovalInput): A
 /**
  * Approve or reject an approval request.
  */
-export function decideApproval(db: ISqliteDriver, input: {
-  approvalId: string;
-  status: 'approved' | 'rejected';
-  decisionNote?: string;
-}): void {
+export function decideApproval(
+  db: ISqliteDriver,
+  input: {
+    approvalId: string;
+    status: 'approved' | 'rejected';
+    decisionNote?: string;
+  }
+): void {
   const decidedAt = Date.now();
 
   db.prepare(
@@ -88,9 +91,9 @@ export function listApprovals(db: ISqliteDriver, userId: string, status?: string
  * Get count of pending approvals for badge display.
  */
 export function getPendingCount(db: ISqliteDriver, userId: string): number {
-  const row = db.prepare(
-    'SELECT COUNT(*) as count FROM approvals WHERE user_id = ? AND status = \'pending\''
-  ).get(userId) as { count: number };
+  const row = db
+    .prepare("SELECT COUNT(*) as count FROM approvals WHERE user_id = ? AND status = 'pending'")
+    .get(userId) as { count: number };
   return row.count;
 }
 
