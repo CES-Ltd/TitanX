@@ -259,17 +259,26 @@ function loadContent(): void {
   if (!petWindow || !petHitWindow) return;
   const rendererUrl = process.env['ELECTRON_RENDERER_URL'];
 
+  // Read pet theme from globalThis (set by index.ts on startup and systemSettingsBridge on change)
+  const petTheme = ((globalThis as Record<string, unknown>).__petTheme as string) || 'default';
+  const themeQuery = petTheme !== 'default' ? `?theme=${encodeURIComponent(petTheme)}` : '';
+  console.log(`[Pet] Loading content with theme: ${petTheme}`);
+
   if (!app.isPackaged && rendererUrl) {
-    petWindow.loadURL(`${rendererUrl}/pet/pet.html`).catch((error) => {
+    petWindow.loadURL(`${rendererUrl}/pet/pet.html${themeQuery}`).catch((error) => {
       console.error('[Pet] loadURL failed for pet window:', error);
     });
     petHitWindow.loadURL(`${rendererUrl}/pet/pet-hit.html`).catch((error) => {
       console.error('[Pet] loadURL failed for pet-hit window:', error);
     });
   } else {
-    petWindow.loadFile(path.join(RENDERER_DIR, 'pet.html')).catch((error) => {
-      console.error('[Pet] loadFile failed for pet window:', error);
-    });
+    petWindow
+      .loadFile(path.join(RENDERER_DIR, 'pet.html'), {
+        query: petTheme !== 'default' ? { theme: petTheme } : undefined,
+      })
+      .catch((error) => {
+        console.error('[Pet] loadFile failed for pet window:', error);
+      });
     petHitWindow.loadFile(path.join(RENDERER_DIR, 'pet-hit.html')).catch((error) => {
       console.error('[Pet] loadFile failed for pet-hit window:', error);
     });
@@ -339,6 +348,11 @@ function registerIpcHandlers(): void {
       stateMachine.requestState(data.side === 'left' ? 'poke-left' : 'poke-right');
     } else if (data.count === 1) {
       stateMachine.requestState('attention');
+    }
+
+    // Forward click to pet window to trigger speech bubble on every click
+    if (petWindow && !petWindow.isDestroyed()) {
+      petWindow.webContents.send('pet:show-speech');
     }
   });
 

@@ -16,4 +16,7 @@ contextBridge.exposeInMainWorld('petAPI', {
   onResize: (cb: (size: number) => void) => {
     ipcRenderer.on('pet:resize', (_e, size: number) => cb(size));
   },
+  onShowSpeech: (cb: () => void) => {
+    ipcRenderer.on('pet:show-speech', () => cb());
+  },
 });

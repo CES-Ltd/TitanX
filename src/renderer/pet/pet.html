@@ -11,17 +11,78 @@
       body {
         width: 100%;
         height: 100%;
-        overflow: hidden;
+        overflow: visible;
         background: transparent;
+      }
+      #pet-container {
+        position: relative;
+        width: 100%;
+        height: 100%;
       }
       #pet {
         width: 100%;
         height: 100%;
       }
+      /* SVG overlay for comic chat bubble */
+      #speech-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 10;
+      }
+      #speech-group {
+        opacity: 0;
+        transition: opacity 0.2s ease;
+      }
+      #speech-group.visible {
+        opacity: 1;
+      }
+      #speech-bubble-bg {
+        fill: white;
+        stroke: #b0b8d0;
+        stroke-width: 0.5;
+        filter: drop-shadow(0 0.5px 1.5px rgba(0, 0, 0, 0.12));
+      }
+      #speech-bubble-tail {
+        fill: white;
+        stroke: #b0b8d0;
+        stroke-width: 0.5;
+      }
+      /* White rect to cover the tail-bubble seam line */
+      #speech-tail-cover {
+        fill: white;
+        stroke: none;
+      }
+      #speech-bubble-text {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        font-size: 3.2px;
+        font-weight: 500;
+        fill: #333;
+        dominant-baseline: middle;
+        text-anchor: middle;
+      }
     </style>
   </head>
   <body>
-    <object id="pet" type="image/svg+xml" data="../pet-states/idle.svg"></object>
+    <div id="pet-container">
+      <!-- SVG overlay: comic chat bubble rendered near pet -->
+      <svg id="speech-overlay" viewBox="-18 -18 58 58" xmlns="http://www.w3.org/2000/svg">
+        <g id="speech-group">
+          <!-- Bubble body (rounded rect) -->
+          <rect id="speech-bubble-bg" x="-8" y="-16" width="38" height="10" rx="3" ry="3" />
+          <!-- Tail triangle pointing down to pet -->
+          <polygon id="speech-bubble-tail" points="8,-6 11,-3 14,-6" />
+          <!-- Cover the seam between tail and bubble -->
+          <rect id="speech-tail-cover" x="8.5" y="-6.5" width="5" height="1" />
+          <!-- Text -->
+          <text id="speech-bubble-text" x="11" y="-11"></text>
+        </g>
+      </svg>
+      <object id="pet" type="image/svg+xml" data="../pet-states/idle.svg"></object>
+    </div>
     <script type="module" src="./petRenderer.ts"></script>
   </body>
 </html>

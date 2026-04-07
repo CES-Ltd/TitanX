@@ -19,6 +19,10 @@ import jaJP from './locales/ja-JP/index';
 import zhTW from './locales/zh-TW/index';
 import koKR from './locales/ko-KR/index';
 import trTR from './locales/tr-TR/index';
+import esES from './locales/es-ES/index';
+import frFR from './locales/fr-FR/index';
+import itIT from './locales/it-IT/index';
+import hiIN from './locales/hi-IN/index';
 
 export type { I18nKey, I18nModule } from './i18n-keys';
 
@@ -35,6 +39,10 @@ const localeData: LocaleData = {
   'zh-TW': zhTW,
   'ko-KR': koKR,
   'tr-TR': trTR,
+  'es-ES': esES,
+  'fr-FR': frFR,
+  'it-IT': itIT,
+  'hi-IN': hiIN,
 };
 
 const fallbackLocale = localeData[DEFAULT_LANGUAGE] ?? {};

@@ -13,9 +13,18 @@ import PreferenceRow from '@/renderer/components/settings/SettingsModal/contents
 import AionScrollArea from '@/renderer/components/base/AionScrollArea';
 import { useSettingsViewMode } from '@/renderer/components/settings/SettingsModal/settingsViewContext';
 
+const PET_THEMES = [
+  { key: 'default', label: 'Default Blob', emoji: '🟣' },
+  { key: 'cat', label: 'Cat', emoji: '🐱' },
+  { key: 'wizard', label: 'Wizard', emoji: '🧙' },
+  { key: 'robot', label: 'Robot', emoji: '🤖' },
+  { key: 'ninja', label: 'Ninja', emoji: '🥷' },
+];
+
 const PetSettings: React.FC = () => {
   const [enabled, setEnabled] = useState(true);
   const [size, setSize] = useState(280);
+  const [theme, setTheme] = useState('default');
   const [dnd, setDnd] = useState(false);
   const [confirmEnabled, setConfirmEnabled] = useState(true);
   const { t } = useTranslation();
@@ -27,6 +36,13 @@ const PetSettings: React.FC = () => {
     systemSettings.getPetEnabled
       .invoke()
       .then((val) => setEnabled(val))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    systemSettings.getPetTheme
+      .invoke()
+      .then((val) => setTheme(val))
       .catch(() => {});
   }, []);
 
@@ -58,6 +74,17 @@ const PetSettings: React.FC = () => {
     });
   }, []);
 
+  const handleThemeChange = useCallback(
+    (val: string) => {
+      const prevTheme = theme;
+      setTheme(val);
+      systemSettings.setPetTheme.invoke({ theme: val }).catch(() => {
+        setTheme(prevTheme);
+      });
+    },
+    [theme]
+  );
+
   const handleSizeChange = useCallback(
     (val: number) => {
       const prevSize = size;
@@ -88,6 +115,32 @@ const PetSettings: React.FC = () => {
       key: 'enabled',
       label: t('pet.enable'),
       component: <Switch checked={enabled} onChange={handleEnabledChange} />,
+    },
+    {
+      key: 'theme',
+      label: t('pet.theme', 'Character'),
+      component: (
+        <div className='flex gap-6px flex-wrap'>
+          {PET_THEMES.map((pt) => (
+            <button
+              key={pt.key}
+              type='button'
+              disabled={!enabled}
+              onClick={() => handleThemeChange(pt.key)}
+              className={`flex flex-col items-center gap-2px px-10px py-6px rd-10px border-2 border-solid cursor-pointer transition-all ${
+                theme === pt.key
+                  ? 'border-[rgb(var(--primary-6))] bg-[rgba(var(--primary-6),0.08)] shadow-sm'
+                  : 'border-transparent bg-fill-2 hover:bg-fill-3'
+              } ${!enabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+            >
+              <span className='text-24px leading-none'>{pt.emoji}</span>
+              <span className={`text-10px ${theme === pt.key ? 'text-primary font-medium' : 'text-t-secondary'}`}>
+                {pt.label}
+              </span>
+            </button>
+          ))}
+        </div>
+      ),
     },
     {
       key: 'size',

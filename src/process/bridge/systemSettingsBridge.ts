@@ -139,6 +139,30 @@ export function initSystemSettingsBridge(): void {
   });
 
   // Desktop pet settings
+  ipcBridge.systemSettings.getPetTheme.provider(async () => {
+    const value = await ProcessConfig.get('pet.theme');
+    return value ?? 'default';
+  });
+
+  ipcBridge.systemSettings.setPetTheme.provider(async ({ theme }) => {
+    await ProcessConfig.set('pet.theme', theme);
+    // Update the global so petManager.loadContent() reads the new theme
+    (globalThis as Record<string, unknown>).__petTheme = theme;
+    // Reload pet with new theme by destroying and recreating
+    try {
+      const { destroyPetWindow, createPetWindow } = await import('@process/pet/petManager');
+      const petEnabled = await ProcessConfig.get('pet.enabled');
+      if (petEnabled) {
+        destroyPetWindow();
+        // Small delay to ensure window is fully destroyed before recreating
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        createPetWindow();
+      }
+    } catch {
+      // ignore
+    }
+  });
+
   ipcBridge.systemSettings.getPetEnabled.provider(async () => {
     const value = await ProcessConfig.get('pet.enabled');
     return value ?? false;
