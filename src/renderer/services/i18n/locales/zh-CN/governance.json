@@ -9,7 +9,8 @@
     "activity": "活动日志",
     "costs": "费用",
     "secrets": "密钥管理",
-    "approvals": "审批"
+    "approvals": "审批",
+    "runtime": "运行时"
   },
   "totalRuns": "总运行次数",
   "successRate": "成功率",
@@ -86,5 +87,27 @@
     "confirmApprove": "确认批准",
     "confirmReject": "确认拒绝",
     "notePlaceholder": "添加备注（可选）"
+  },
+  "runtime": {
+    "teamOverview": "团队智能体",
+    "taskBoard": "任务面板",
+    "runHistory": "最近运行",
+    "noTeams": "尚未创建团队。创建团队后可查看运行数据。",
+    "noTasks": "暂无分配任务",
+    "noRuns": "暂无运行记录",
+    "agentName": "智能体",
+    "agentType": "类型",
+    "status": "状态",
+    "lastMessage": "最后消息",
+    "taskSubject": "主题",
+    "taskOwner": "负责人",
+    "taskStatus": "状态",
+    "taskDeps": "依赖",
+    "tokens": "Token",
+    "cost": "费用",
+    "started": "开始时间",
+    "officeView": "🎮 办公室视图",
+    "exitOffice": "退出办公室",
+    "officeTooltip": "打开像素风办公室（彩蛋）"
   }
 }
