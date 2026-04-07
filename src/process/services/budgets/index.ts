@@ -44,11 +44,13 @@ type BudgetCheckResult = {
  */
 export function checkBudget(db: ISqliteDriver, userId: string, scopeType: string, scopeId?: string): BudgetCheckResult {
   // Check for active incidents first
-  const incident = db.prepare(
-    `SELECT id, paused_resources FROM budget_incidents
+  const incident = db
+    .prepare(
+      `SELECT id, paused_resources FROM budget_incidents
      WHERE user_id = ? AND status = 'active'
      ORDER BY created_at DESC LIMIT 1`
-  ).get(userId) as Record<string, unknown> | undefined;
+    )
+    .get(userId) as Record<string, unknown> | undefined;
 
   if (incident) {
     const paused: string[] = JSON.parse((incident.paused_resources as string) || '[]');
@@ -67,9 +69,11 @@ export function upsertPolicy(db: ISqliteDriver, input: BudgetPolicyInput): Budge
   const now = Date.now();
 
   // Check for existing policy with same scope
-  const existing = db.prepare(
-    `SELECT id FROM budget_policies WHERE user_id = ? AND scope_type = ? AND (scope_id = ? OR (scope_id IS NULL AND ? IS NULL))`
-  ).get(input.userId, input.scopeType, input.scopeId, input.scopeId) as { id: string } | undefined;
+  const existing = db
+    .prepare(
+      `SELECT id FROM budget_policies WHERE user_id = ? AND scope_type = ? AND (scope_id = ? OR (scope_id IS NULL AND ? IS NULL))`
+    )
+    .get(input.userId, input.scopeType, input.scopeId, input.scopeId) as { id: string } | undefined;
 
   if (existing) {
     db.prepare(
@@ -83,7 +87,17 @@ export function upsertPolicy(db: ISqliteDriver, input: BudgetPolicyInput): Budge
   db.prepare(
     `INSERT INTO budget_policies (id, user_id, scope_type, scope_id, amount_cents, window_kind, active, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(id, input.userId, input.scopeType, input.scopeId, input.amountCents, input.windowKind, input.active ? 1 : 0, now, now);
+  ).run(
+    id,
+    input.userId,
+    input.scopeType,
+    input.scopeId,
+    input.amountCents,
+    input.windowKind,
+    input.active ? 1 : 0,
+    now,
+    now
+  );
 
   return { ...input, id, createdAt: now, updatedAt: now };
 }
@@ -92,7 +106,9 @@ export function upsertPolicy(db: ISqliteDriver, input: BudgetPolicyInput): Budge
  * List all budget policies for a user.
  */
 export function listPolicies(db: ISqliteDriver, userId: string): BudgetPolicy[] {
-  const rows = db.prepare('SELECT * FROM budget_policies WHERE user_id = ? ORDER BY scope_type, scope_id').all(userId) as Array<Record<string, unknown>>;
+  const rows = db
+    .prepare('SELECT * FROM budget_policies WHERE user_id = ? ORDER BY scope_type, scope_id')
+    .all(userId) as Array<Record<string, unknown>>;
   return rows.map(rowToPolicy);
 }
 
@@ -115,7 +131,11 @@ export function listIncidents(db: ISqliteDriver, userId: string, status?: string
  * Resolve or dismiss a budget incident.
  */
 export function resolveIncident(db: ISqliteDriver, incidentId: string, status: 'resolved' | 'dismissed'): void {
-  db.prepare('UPDATE budget_incidents SET status = ?, resolved_at = ? WHERE id = ?').run(status, Date.now(), incidentId);
+  db.prepare('UPDATE budget_incidents SET status = ?, resolved_at = ? WHERE id = ?').run(
+    status,
+    Date.now(),
+    incidentId
+  );
 }
 
 /**
@@ -123,9 +143,9 @@ export function resolveIncident(db: ISqliteDriver, incidentId: string, status: '
  * Creates incidents when spend exceeds limits. Returns any blocked agent types.
  */
 export function enforceBudgets(db: ISqliteDriver, userId: string): string[] {
-  const policies = db.prepare(
-    'SELECT * FROM budget_policies WHERE user_id = ? AND active = 1'
-  ).all(userId) as Array<Record<string, unknown>>;
+  const policies = db.prepare('SELECT * FROM budget_policies WHERE user_id = ? AND active = 1').all(userId) as Array<
+    Record<string, unknown>
+  >;
 
   const blocked: string[] = [];
 
@@ -134,19 +154,25 @@ export function enforceBudgets(db: ISqliteDriver, userId: string): string[] {
     let spend: number;
 
     if (policy.scope_type === 'global') {
-      const row = db.prepare(
-        'SELECT CAST(COALESCE(SUM(cost_cents), 0) AS INTEGER) as total FROM cost_events WHERE user_id = ? AND occurred_at >= ?'
-      ).get(userId, windowStart) as { total: number };
+      const row = db
+        .prepare(
+          'SELECT CAST(COALESCE(SUM(cost_cents), 0) AS INTEGER) as total FROM cost_events WHERE user_id = ? AND occurred_at >= ?'
+        )
+        .get(userId, windowStart) as { total: number };
       spend = row.total;
     } else if (policy.scope_type === 'agent_type') {
-      const row = db.prepare(
-        'SELECT CAST(COALESCE(SUM(cost_cents), 0) AS INTEGER) as total FROM cost_events WHERE user_id = ? AND agent_type = ? AND occurred_at >= ?'
-      ).get(userId, policy.scope_id, windowStart) as { total: number };
+      const row = db
+        .prepare(
+          'SELECT CAST(COALESCE(SUM(cost_cents), 0) AS INTEGER) as total FROM cost_events WHERE user_id = ? AND agent_type = ? AND occurred_at >= ?'
+        )
+        .get(userId, policy.scope_id, windowStart) as { total: number };
       spend = row.total;
     } else if (policy.scope_type === 'provider') {
-      const row = db.prepare(
-        'SELECT CAST(COALESCE(SUM(cost_cents), 0) AS INTEGER) as total FROM cost_events WHERE user_id = ? AND provider = ? AND occurred_at >= ?'
-      ).get(userId, policy.scope_id, windowStart) as { total: number };
+      const row = db
+        .prepare(
+          'SELECT CAST(COALESCE(SUM(cost_cents), 0) AS INTEGER) as total FROM cost_events WHERE user_id = ? AND provider = ? AND occurred_at >= ?'
+        )
+        .get(userId, policy.scope_id, windowStart) as { total: number };
       spend = row.total;
     } else {
       continue;
@@ -155,9 +181,9 @@ export function enforceBudgets(db: ISqliteDriver, userId: string): string[] {
     const limit = policy.amount_cents as number;
     if (spend > limit) {
       // Check if incident already exists for this policy
-      const existing = db.prepare(
-        'SELECT id FROM budget_incidents WHERE policy_id = ? AND status = \'active\''
-      ).get(policy.id) as { id: string } | undefined;
+      const existing = db
+        .prepare("SELECT id FROM budget_incidents WHERE policy_id = ? AND status = 'active'")
+        .get(policy.id) as { id: string } | undefined;
 
       if (!existing) {
         const pausedResources = policy.scope_id ? [policy.scope_id as string] : [];

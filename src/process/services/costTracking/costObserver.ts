@@ -110,7 +110,10 @@ export class CostObserver {
  * Check if an agent type is blocked by budget enforcement.
  * Call before starting an agent execution to prevent overspend.
  */
-export async function isBudgetBlocked(userId: string, agentType: string): Promise<{ blocked: boolean; reason?: string }> {
+export async function isBudgetBlocked(
+  userId: string,
+  agentType: string
+): Promise<{ blocked: boolean; reason?: string }> {
   const db = await getDatabase();
   return budgetService.checkBudget(db.getDriver(), userId, 'agent_type', agentType);
 }

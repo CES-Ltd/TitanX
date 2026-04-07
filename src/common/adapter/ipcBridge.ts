@@ -1431,9 +1431,7 @@ export const costTracking = {
 export const budgets = {
   listPolicies: bridge.buildProvider<IBudgetPolicy[], { userId: string }>('budgets.list-policies'),
   upsertPolicy: bridge.buildProvider<IBudgetPolicy, IBudgetPolicyInput>('budgets.upsert-policy'),
-  listIncidents: bridge.buildProvider<IBudgetIncident[], { userId: string; status?: string }>(
-    'budgets.list-incidents'
-  ),
+  listIncidents: bridge.buildProvider<IBudgetIncident[], { userId: string; status?: string }>('budgets.list-incidents'),
   resolveIncident: bridge.buildProvider<void, { incidentId: string; status: string }>('budgets.resolve-incident'),
 };
 

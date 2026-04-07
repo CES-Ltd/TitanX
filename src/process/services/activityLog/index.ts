@@ -44,9 +44,25 @@ export function logActivity(db: ISqliteDriver, input: LogActivityInput): Activit
   db.prepare(
     `INSERT INTO activity_log (id, user_id, actor_type, actor_id, action, entity_type, entity_id, agent_id, details, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(id, input.userId, input.actorType, input.actorId, input.action, input.entityType, input.entityId ?? null, input.agentId ?? null, sanitizedDetails, createdAt);
+  ).run(
+    id,
+    input.userId,
+    input.actorType,
+    input.actorId,
+    input.action,
+    input.entityType,
+    input.entityId ?? null,
+    input.agentId ?? null,
+    sanitizedDetails,
+    createdAt
+  );
 
-  return { ...input, id, createdAt, details: input.details ? (sanitizeRecord(input.details) as Record<string, unknown>) : undefined };
+  return {
+    ...input,
+    id,
+    createdAt,
+    details: input.details ? (sanitizeRecord(input.details) as Record<string, unknown>) : undefined,
+  };
 }
 
 /**
@@ -73,11 +89,13 @@ export function listActivities(db: ISqliteDriver, params: ListParams): { data: A
   const limit = params.limit ?? 50;
   const offset = params.offset ?? 0;
 
-  const total = (db.prepare(`SELECT COUNT(*) as count FROM activity_log WHERE ${where}`).get(...args) as { count: number }).count;
+  const total = (
+    db.prepare(`SELECT COUNT(*) as count FROM activity_log WHERE ${where}`).get(...args) as { count: number }
+  ).count;
 
-  const rows = db.prepare(
-    `SELECT * FROM activity_log WHERE ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
-  ).all(...args, limit, offset) as Array<Record<string, unknown>>;
+  const rows = db
+    .prepare(`SELECT * FROM activity_log WHERE ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`)
+    .all(...args, limit, offset) as Array<Record<string, unknown>>;
 
   const data = rows.map(rowToActivityEntry);
   return { data, total };
@@ -87,9 +105,9 @@ export function listActivities(db: ISqliteDriver, params: ListParams): { data: A
  * Get activities for a specific entity.
  */
 export function getActivitiesForEntity(db: ISqliteDriver, entityType: string, entityId: string): ActivityLogEntry[] {
-  const rows = db.prepare(
-    `SELECT * FROM activity_log WHERE entity_type = ? AND entity_id = ? ORDER BY created_at DESC LIMIT 100`
-  ).all(entityType, entityId) as Array<Record<string, unknown>>;
+  const rows = db
+    .prepare(`SELECT * FROM activity_log WHERE entity_type = ? AND entity_id = ? ORDER BY created_at DESC LIMIT 100`)
+    .all(entityType, entityId) as Array<Record<string, unknown>>;
 
   return rows.map(rowToActivityEntry);
 }

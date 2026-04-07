@@ -63,7 +63,20 @@ export function recordCost(db: ISqliteDriver, input: CostEventInput): CostEvent 
   db.prepare(
     `INSERT INTO cost_events (id, user_id, conversation_id, agent_type, provider, model, input_tokens, output_tokens, cached_input_tokens, cost_cents, billing_type, occurred_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(id, input.userId, input.conversationId ?? null, input.agentType ?? null, input.provider, input.model, input.inputTokens, input.outputTokens, input.cachedInputTokens, input.costCents, input.billingType, input.occurredAt);
+  ).run(
+    id,
+    input.userId,
+    input.conversationId ?? null,
+    input.agentType ?? null,
+    input.provider,
+    input.model,
+    input.inputTokens,
+    input.outputTokens,
+    input.cachedInputTokens,
+    input.costCents,
+    input.billingType,
+    input.occurredAt
+  );
 
   return { ...input, id };
 }
@@ -73,14 +86,16 @@ export function recordCost(db: ISqliteDriver, input: CostEventInput): CostEvent 
  */
 export function getCostSummary(db: ISqliteDriver, userId: string, fromDate?: number): CostSummary {
   const from = fromDate ?? getMonthStart();
-  const row = db.prepare(
-    `SELECT
+  const row = db
+    .prepare(
+      `SELECT
        CAST(COALESCE(SUM(cost_cents), 0) AS INTEGER) as total_cost_cents,
        CAST(COALESCE(SUM(input_tokens), 0) AS INTEGER) as total_input_tokens,
        CAST(COALESCE(SUM(output_tokens), 0) AS INTEGER) as total_output_tokens,
        COUNT(*) as event_count
      FROM cost_events WHERE user_id = ? AND occurred_at >= ?`
-  ).get(userId, from) as Record<string, number>;
+    )
+    .get(userId, from) as Record<string, number>;
 
   return {
     totalCostCents: row.total_cost_cents,
@@ -95,8 +110,9 @@ export function getCostSummary(db: ISqliteDriver, userId: string, fromDate?: num
  */
 export function getCostByAgent(db: ISqliteDriver, userId: string, fromDate?: number): AgentCostBreakdown[] {
   const from = fromDate ?? getMonthStart();
-  const rows = db.prepare(
-    `SELECT
+  const rows = db
+    .prepare(
+      `SELECT
        agent_type,
        CAST(COALESCE(SUM(cost_cents), 0) AS INTEGER) as total_cost_cents,
        CAST(COALESCE(SUM(input_tokens), 0) AS INTEGER) as total_input_tokens,
@@ -104,7 +120,8 @@ export function getCostByAgent(db: ISqliteDriver, userId: string, fromDate?: num
        COUNT(*) as event_count
      FROM cost_events WHERE user_id = ? AND occurred_at >= ? AND agent_type IS NOT NULL
      GROUP BY agent_type ORDER BY total_cost_cents DESC`
-  ).all(userId, from) as Array<Record<string, unknown>>;
+    )
+    .all(userId, from) as Array<Record<string, unknown>>;
 
   return rows.map((r) => ({
     agentType: r.agent_type as string,
@@ -120,8 +137,9 @@ export function getCostByAgent(db: ISqliteDriver, userId: string, fromDate?: num
  */
 export function getCostByProvider(db: ISqliteDriver, userId: string, fromDate?: number): ProviderCostBreakdown[] {
   const from = fromDate ?? getMonthStart();
-  const rows = db.prepare(
-    `SELECT
+  const rows = db
+    .prepare(
+      `SELECT
        provider, model,
        CAST(COALESCE(SUM(cost_cents), 0) AS INTEGER) as total_cost_cents,
        CAST(COALESCE(SUM(input_tokens), 0) AS INTEGER) as total_input_tokens,
@@ -129,7 +147,8 @@ export function getCostByProvider(db: ISqliteDriver, userId: string, fromDate?: 
        COUNT(*) as event_count
      FROM cost_events WHERE user_id = ? AND occurred_at >= ?
      GROUP BY provider, model ORDER BY total_cost_cents DESC`
-  ).all(userId, from) as Array<Record<string, unknown>>;
+    )
+    .all(userId, from) as Array<Record<string, unknown>>;
 
   return rows.map((r) => ({
     provider: r.provider as string,
@@ -154,10 +173,12 @@ export function getWindowSpend(db: ISqliteDriver, userId: string): WindowSpend[]
 
   return windows.map(({ label, ms }) => {
     const from = now - ms;
-    const row = db.prepare(
-      `SELECT CAST(COALESCE(SUM(cost_cents), 0) AS INTEGER) as total
+    const row = db
+      .prepare(
+        `SELECT CAST(COALESCE(SUM(cost_cents), 0) AS INTEGER) as total
        FROM cost_events WHERE user_id = ? AND occurred_at >= ?`
-    ).get(userId, from) as { total: number };
+      )
+      .get(userId, from) as { total: number };
 
     return { windowLabel: label, windowMs: ms, totalCostCents: row.total };
   });

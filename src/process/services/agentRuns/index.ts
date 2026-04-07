@@ -35,7 +35,10 @@ type AgentRunStats = {
 /**
  * Start tracking a new agent run.
  */
-export function startRun(db: ISqliteDriver, input: { userId: string; conversationId: string; agentType: string }): AgentRun {
+export function startRun(
+  db: ISqliteDriver,
+  input: { userId: string; conversationId: string; agentType: string }
+): AgentRun {
   const id = crypto.randomUUID();
   const startedAt = Date.now();
 
@@ -63,15 +66,18 @@ export function startRun(db: ISqliteDriver, input: { userId: string; conversatio
 /**
  * Complete an agent run with final status and metrics.
  */
-export function finishRun(db: ISqliteDriver, input: {
-  runId: string;
-  status: 'done' | 'error';
-  inputTokens?: number;
-  outputTokens?: number;
-  costCents?: number;
-  exitCode?: number;
-  error?: string;
-}): void {
+export function finishRun(
+  db: ISqliteDriver,
+  input: {
+    runId: string;
+    status: 'done' | 'error';
+    inputTokens?: number;
+    outputTokens?: number;
+    costCents?: number;
+    exitCode?: number;
+    error?: string;
+  }
+): void {
   const finishedAt = Date.now();
 
   db.prepare(
@@ -86,19 +92,22 @@ export function finishRun(db: ISqliteDriver, input: {
     input.costCents ?? 0,
     input.exitCode ?? null,
     input.error ?? null,
-    input.runId,
+    input.runId
   );
 }
 
 /**
  * List agent runs with optional filters.
  */
-export function listRuns(db: ISqliteDriver, params: {
-  userId: string;
-  conversationId?: string;
-  agentType?: string;
-  limit?: number;
-}): AgentRun[] {
+export function listRuns(
+  db: ISqliteDriver,
+  params: {
+    userId: string;
+    conversationId?: string;
+    agentType?: string;
+    limit?: number;
+  }
+): AgentRun[] {
   const conditions: string[] = ['user_id = ?'];
   const args: unknown[] = [params.userId];
 
@@ -112,9 +121,9 @@ export function listRuns(db: ISqliteDriver, params: {
   }
 
   const limit = params.limit ?? 50;
-  const rows = db.prepare(
-    `SELECT * FROM agent_runs WHERE ${conditions.join(' AND ')} ORDER BY started_at DESC LIMIT ?`
-  ).all(...args, limit) as Array<Record<string, unknown>>;
+  const rows = db
+    .prepare(`SELECT * FROM agent_runs WHERE ${conditions.join(' AND ')} ORDER BY started_at DESC LIMIT ?`)
+    .all(...args, limit) as Array<Record<string, unknown>>;
 
   return rows.map(rowToRun);
 }
@@ -125,8 +134,9 @@ export function listRuns(db: ISqliteDriver, params: {
 export function getRunStats(db: ISqliteDriver, userId: string, fromDate?: number): AgentRunStats {
   const from = fromDate ?? new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
 
-  const row = db.prepare(
-    `SELECT
+  const row = db
+    .prepare(
+      `SELECT
        COUNT(*) as total_runs,
        CAST(COALESCE(SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END), 0) AS INTEGER) as successful_runs,
        CAST(COALESCE(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END), 0) AS INTEGER) as error_runs,
@@ -135,7 +145,8 @@ export function getRunStats(db: ISqliteDriver, userId: string, fromDate?: number
        CAST(COALESCE(SUM(cost_cents), 0) AS INTEGER) as total_cost_cents,
        CAST(COALESCE(AVG(CASE WHEN finished_at IS NOT NULL THEN finished_at - started_at END), 0) AS INTEGER) as avg_duration_ms
      FROM agent_runs WHERE user_id = ? AND started_at >= ?`
-  ).get(userId, from) as Record<string, number>;
+    )
+    .get(userId, from) as Record<string, number>;
 
   return {
     totalRuns: row.total_runs,
