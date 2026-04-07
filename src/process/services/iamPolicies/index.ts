@@ -13,6 +13,8 @@ export type IAMPolicy = {
   description?: string;
   permissions: Record<string, unknown>;
   ttlSeconds?: number;
+  agentIds: string[];
+  credentialIds: string[];
   createdAt: number;
 };
 
@@ -32,13 +34,15 @@ export function createPolicy(
     description?: string;
     permissions: Record<string, unknown>;
     ttlSeconds?: number;
+    agentIds?: string[];
+    credentialIds?: string[];
   }
 ): IAMPolicy {
   const id = crypto.randomUUID();
   const now = Date.now();
 
   db.prepare(
-    'INSERT INTO iam_policies (id, user_id, name, description, permissions, ttl_seconds, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO iam_policies (id, user_id, name, description, permissions, ttl_seconds, agent_ids, credential_ids, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(
     id,
     input.userId,
@@ -46,6 +50,8 @@ export function createPolicy(
     input.description ?? null,
     JSON.stringify(input.permissions),
     input.ttlSeconds ?? null,
+    JSON.stringify(input.agentIds ?? []),
+    JSON.stringify(input.credentialIds ?? []),
     now
   );
 
@@ -56,6 +62,8 @@ export function createPolicy(
     description: input.description,
     permissions: input.permissions,
     ttlSeconds: input.ttlSeconds,
+    agentIds: input.agentIds ?? [],
+    credentialIds: input.credentialIds ?? [],
     createdAt: now,
   };
 }
@@ -71,6 +79,8 @@ export function listPolicies(db: ISqliteDriver, userId: string): IAMPolicy[] {
     description: (r.description as string) ?? undefined,
     permissions: JSON.parse((r.permissions as string) || '{}'),
     ttlSeconds: (r.ttl_seconds as number) ?? undefined,
+    agentIds: JSON.parse((r.agent_ids as string) || '[]'),
+    credentialIds: JSON.parse((r.credential_ids as string) || '[]'),
     createdAt: r.created_at as number,
   }));
 }

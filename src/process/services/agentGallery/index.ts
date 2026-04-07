@@ -8,6 +8,11 @@
 import crypto from 'crypto';
 import type { ISqliteDriver } from '../database/drivers/ISqliteDriver';
 
+export type EnvBinding =
+  | string
+  | { type: 'plain'; value: string }
+  | { type: 'secret_ref'; secretId: string; version?: number };
+
 export type GalleryAgent = {
   id: string;
   userId: string;
@@ -18,8 +23,15 @@ export type GalleryAgent = {
   capabilities: string[];
   config: Record<string, unknown>;
   whitelisted: boolean;
+  published: boolean;
   maxBudgetCents?: number;
   allowedTools: string[];
+  instructionsMd?: string;
+  skillsMd?: string;
+  heartbeatMd?: string;
+  heartbeatIntervalSec: number;
+  heartbeatEnabled: boolean;
+  envBindings: Record<string, EnvBinding>;
   createdAt: number;
   updatedAt: number;
 };
@@ -70,8 +82,15 @@ export function createAgent(db: ISqliteDriver, input: CreateGalleryAgentInput): 
     capabilities: input.capabilities ?? [],
     config: input.config ?? {},
     whitelisted: input.whitelisted !== false,
+    published: false,
     maxBudgetCents: input.maxBudgetCents,
     allowedTools: input.allowedTools ?? [],
+    instructionsMd: undefined,
+    skillsMd: undefined,
+    heartbeatMd: undefined,
+    heartbeatIntervalSec: 0,
+    heartbeatEnabled: false,
+    envBindings: {},
     createdAt: now,
     updatedAt: now,
   };
@@ -173,8 +192,15 @@ function rowToAgent(row: Record<string, unknown>): GalleryAgent {
     capabilities: JSON.parse((row.capabilities as string) || '[]'),
     config: JSON.parse((row.config as string) || '{}'),
     whitelisted: (row.whitelisted as number) === 1,
+    published: (row.published as number) === 1,
     maxBudgetCents: (row.max_budget_cents as number) ?? undefined,
     allowedTools: JSON.parse((row.allowed_tools as string) || '[]'),
+    instructionsMd: (row.instructions_md as string) ?? undefined,
+    skillsMd: (row.skills_md as string) ?? undefined,
+    heartbeatMd: (row.heartbeat_md as string) ?? undefined,
+    heartbeatIntervalSec: (row.heartbeat_interval_sec as number) ?? 0,
+    heartbeatEnabled: (row.heartbeat_enabled as number) === 1,
+    envBindings: JSON.parse((row.env_bindings as string) || '{}'),
     createdAt: row.created_at as number,
     updatedAt: row.updated_at as number,
   };

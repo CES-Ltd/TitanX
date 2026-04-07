@@ -1491,6 +1491,56 @@ const migration_v30: IMigration = {
   },
 };
 
+/**
+ * Migration v30 -> v31: Agent templates, IAM agent/credential binding, credential access tokens
+ */
+const migration_v31: IMigration = {
+  version: 31,
+  name: 'Agent templates, IAM credential binding, access tokens',
+  up: (db) => {
+    // Agent gallery template fields
+    const galleryCols = new Set((db.pragma('table_info(agent_gallery)') as Array<{ name: string }>).map((c) => c.name));
+    if (!galleryCols.has('published')) db.exec('ALTER TABLE agent_gallery ADD COLUMN published INTEGER DEFAULT 0');
+    if (!galleryCols.has('instructions_md')) db.exec('ALTER TABLE agent_gallery ADD COLUMN instructions_md TEXT');
+    if (!galleryCols.has('skills_md')) db.exec('ALTER TABLE agent_gallery ADD COLUMN skills_md TEXT');
+    if (!galleryCols.has('heartbeat_md')) db.exec('ALTER TABLE agent_gallery ADD COLUMN heartbeat_md TEXT');
+    if (!galleryCols.has('heartbeat_interval_sec'))
+      db.exec('ALTER TABLE agent_gallery ADD COLUMN heartbeat_interval_sec INTEGER DEFAULT 0');
+    if (!galleryCols.has('heartbeat_enabled'))
+      db.exec('ALTER TABLE agent_gallery ADD COLUMN heartbeat_enabled INTEGER DEFAULT 0');
+    if (!galleryCols.has('env_bindings'))
+      db.exec("ALTER TABLE agent_gallery ADD COLUMN env_bindings TEXT DEFAULT '{}'");
+
+    // IAM policy agent + credential lists
+    const iamCols = new Set((db.pragma('table_info(iam_policies)') as Array<{ name: string }>).map((c) => c.name));
+    if (!iamCols.has('agent_ids')) db.exec("ALTER TABLE iam_policies ADD COLUMN agent_ids TEXT DEFAULT '[]'");
+    if (!iamCols.has('credential_ids')) db.exec("ALTER TABLE iam_policies ADD COLUMN credential_ids TEXT DEFAULT '[]'");
+
+    // Credential access tokens — time-limited secrets issued to agents
+    db.exec(`CREATE TABLE IF NOT EXISTS credential_access_tokens (
+      id TEXT PRIMARY KEY,
+      agent_gallery_id TEXT NOT NULL,
+      policy_id TEXT NOT NULL,
+      secret_id TEXT NOT NULL,
+      token_hash TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      revoked INTEGER DEFAULT 0,
+      FOREIGN KEY (agent_gallery_id) REFERENCES agent_gallery(id) ON DELETE CASCADE,
+      FOREIGN KEY (policy_id) REFERENCES iam_policies(id) ON DELETE CASCADE,
+      FOREIGN KEY (secret_id) REFERENCES secrets(id) ON DELETE CASCADE
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_cat_agent ON credential_access_tokens(agent_gallery_id, revoked)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_cat_expires ON credential_access_tokens(expires_at)');
+
+    console.log('[Migration v31] Added agent templates, IAM credential binding, access tokens');
+  },
+  down: (db) => {
+    db.exec('DROP TABLE IF EXISTS credential_access_tokens');
+    console.log('[Migration v31] Rolled back: Removed credential_access_tokens');
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -1499,7 +1549,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v19, migration_v20, migration_v21, migration_v22,
   migration_v23, migration_v24, migration_v25,
   migration_v26, migration_v27, migration_v28, migration_v29,
-  migration_v30,
+  migration_v30, migration_v31,
 ];
 
 /**
