@@ -7,6 +7,11 @@ import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import { blurActiveElement } from '@renderer/utils/ui/focus';
 import { useThemeContext } from '@renderer/hooks/context/ThemeContext';
 import { useAllCronJobs } from '@renderer/pages/cron/useCronJobs';
+import { useTeamList } from '@renderer/pages/team/hooks/useTeamList';
+import { Peoples, Plus } from '@icon-park/react';
+import { Tooltip } from '@arco-design/web-react';
+import TeamCreateModal from '@renderer/pages/team/components/TeamCreateModal';
+import { ipcBridge } from '@/common';
 import SiderToolbar from './SiderToolbar';
 import SiderSearchEntry from './SiderSearchEntry';
 import SiderScheduledEntry from './SiderScheduledEntry';
@@ -34,6 +39,8 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
   const { closePreview } = usePreviewContext();
   const { theme, setTheme } = useThemeContext();
   const [isBatchMode, setIsBatchMode] = useState(false);
+  const [createTeamVisible, setCreateTeamVisible] = useState(false);
+  const { teams, mutate: refreshTeams } = useTeamList();
   const { jobs: cronJobs } = useAllCronJobs();
   const isSettings = pathname.startsWith('/settings');
   const lastNonSettingsPathRef = useRef('/guid');
@@ -201,8 +208,68 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
                 collapsed ? 'mx-6px' : 'mx-10px'
               )}
             />
-            {/* Scrollable content: scheduled tasks + conversation history */}
+            {/* Scrollable content: teams + scheduled tasks + conversation history */}
             <div className={classNames('flex-1 min-h-0 overflow-y-auto', siderStyles.scrollArea)}>
+              {/* Teams section */}
+              {!collapsed && (
+                <div className='shrink-0 mb-4px'>
+                  <div className='flex items-center justify-between px-12px py-8px'>
+                    <span className='text-13px text-t-secondary font-bold leading-20px'>Teams</span>
+                    <div
+                      className='h-20px w-20px rd-4px flex items-center justify-center cursor-pointer hover:bg-fill-3 transition-all shrink-0'
+                      onClick={() => setCreateTeamVisible(true)}
+                    >
+                      <Plus theme='outline' size='14' fill='var(--color-text-2)' />
+                    </div>
+                  </div>
+                  {teams.map((team) => {
+                    const isActive = pathname.startsWith(`/team/${team.id}`);
+                    return (
+                      <div
+                        key={team.id}
+                        className={classNames(
+                          'flex items-center gap-8px px-12px py-6px mx-4px rd-6px cursor-pointer transition-colors',
+                          isActive ? 'bg-[rgba(var(--primary-6),0.12)] text-primary' : 'hover:bg-fill-3 text-t-primary'
+                        )}
+                        onClick={() => {
+                          cleanupSiderTooltips();
+                          blurActiveElement();
+                          Promise.resolve(navigate(`/team/${team.id}`)).catch(console.error);
+                          if (onSessionClick) onSessionClick();
+                        }}
+                      >
+                        <Peoples theme='outline' size='16' fill={isActive ? 'rgb(var(--primary-6))' : 'currentColor'} />
+                        <span className='text-13px truncate'>{team.name}</span>
+                        <span className='text-10px text-t-quaternary ml-auto shrink-0'>{team.agents.length}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {collapsed &&
+                teams.map((team) => {
+                  const isActive = pathname.startsWith(`/team/${team.id}`);
+                  return (
+                    <Tooltip key={team.id} content={team.name} position='right'>
+                      <div
+                        className={classNames(
+                          'w-full py-6px flex items-center justify-center cursor-pointer transition-colors rd-8px',
+                          isActive
+                            ? 'bg-[rgba(var(--primary-6),0.12)] text-primary'
+                            : 'hover:bg-fill-3 active:bg-fill-4'
+                        )}
+                        onClick={() => {
+                          cleanupSiderTooltips();
+                          blurActiveElement();
+                          Promise.resolve(navigate(`/team/${team.id}`)).catch(console.error);
+                          if (onSessionClick) onSessionClick();
+                        }}
+                      >
+                        <Peoples theme='outline' size='20' fill={isActive ? 'rgb(var(--primary-6))' : 'currentColor'} />
+                      </div>
+                    </Tooltip>
+                  );
+                })}
               {/* Scheduled section */}
               {!collapsed && (
                 <CronJobSiderSection jobs={cronJobs} pathname={pathname} onNavigate={handleCronNavigate} />
@@ -223,6 +290,14 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
         siderTooltipProps={siderTooltipProps}
         onSettingsClick={handleSettingsClick}
         onThemeToggle={handleQuickThemeToggle}
+      />
+      <TeamCreateModal
+        visible={createTeamVisible}
+        onClose={() => setCreateTeamVisible(false)}
+        onCreated={(team) => {
+          void refreshTeams();
+          Promise.resolve(navigate(`/team/${team.id}`)).catch(console.error);
+        }}
       />
     </div>
   );
