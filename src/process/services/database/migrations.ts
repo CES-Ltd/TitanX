@@ -1117,6 +1117,193 @@ const migration_v22: IMigration = {
 };
 
 /**
+ * Migration v22 -> v23: Add activity_log and secrets tables (TitanX observability + security)
+ */
+const migration_v23: IMigration = {
+  version: 23,
+  name: 'Add activity_log and secrets tables',
+  up: (db) => {
+    // Immutable audit trail
+    db.exec(`CREATE TABLE IF NOT EXISTS activity_log (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      actor_type TEXT NOT NULL DEFAULT 'user',
+      actor_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT,
+      agent_id TEXT,
+      details TEXT DEFAULT '{}',
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_activity_log_user ON activity_log(user_id, created_at DESC)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_activity_log_entity ON activity_log(entity_type, entity_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_activity_log_action ON activity_log(action)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_activity_log_agent ON activity_log(agent_id)');
+
+    // Encrypted secrets vault
+    db.exec(`CREATE TABLE IF NOT EXISTS secrets (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      provider TEXT NOT NULL DEFAULT 'local_encrypted',
+      current_version INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE(user_id, name)
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_secrets_user ON secrets(user_id)');
+
+    // Secret version history (encrypted values)
+    db.exec(`CREATE TABLE IF NOT EXISTS secret_versions (
+      id TEXT PRIMARY KEY,
+      secret_id TEXT NOT NULL,
+      version INTEGER NOT NULL,
+      material TEXT NOT NULL,
+      value_sha256 TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (secret_id) REFERENCES secrets(id) ON DELETE CASCADE,
+      UNIQUE(secret_id, version)
+    )`);
+
+    console.log('[Migration v23] Added activity_log and secrets tables');
+  },
+  down: (db) => {
+    db.exec('DROP TABLE IF EXISTS secret_versions');
+    db.exec('DROP TABLE IF EXISTS secrets');
+    db.exec('DROP INDEX IF EXISTS idx_activity_log_agent');
+    db.exec('DROP INDEX IF EXISTS idx_activity_log_action');
+    db.exec('DROP INDEX IF EXISTS idx_activity_log_entity');
+    db.exec('DROP INDEX IF EXISTS idx_activity_log_user');
+    db.exec('DROP TABLE IF EXISTS activity_log');
+    console.log('[Migration v23] Rolled back: Removed activity_log and secrets tables');
+  },
+};
+
+/**
+ * Migration v23 -> v24: Add cost tracking and budget tables (TitanX observability)
+ */
+const migration_v24: IMigration = {
+  version: 24,
+  name: 'Add cost_events, budget_policies, and budget_incidents tables',
+  up: (db) => {
+    // Cost event ledger
+    db.exec(`CREATE TABLE IF NOT EXISTS cost_events (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      conversation_id TEXT,
+      agent_type TEXT,
+      provider TEXT NOT NULL,
+      model TEXT NOT NULL,
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+      cost_cents INTEGER NOT NULL DEFAULT 0,
+      billing_type TEXT DEFAULT 'metered_api',
+      occurred_at INTEGER NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_cost_events_user ON cost_events(user_id, occurred_at DESC)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_cost_events_agent ON cost_events(agent_type, occurred_at DESC)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_cost_events_provider ON cost_events(provider, model)');
+
+    // Budget policies
+    db.exec(`CREATE TABLE IF NOT EXISTS budget_policies (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      scope_type TEXT NOT NULL,
+      scope_id TEXT,
+      amount_cents INTEGER NOT NULL,
+      window_kind TEXT NOT NULL DEFAULT 'monthly',
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_budget_policies_user ON budget_policies(user_id, scope_type)');
+
+    // Budget incidents (overage alerts)
+    db.exec(`CREATE TABLE IF NOT EXISTS budget_incidents (
+      id TEXT PRIMARY KEY,
+      policy_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      spend_cents INTEGER NOT NULL,
+      limit_cents INTEGER NOT NULL,
+      paused_resources TEXT DEFAULT '[]',
+      created_at INTEGER NOT NULL,
+      resolved_at INTEGER,
+      FOREIGN KEY (policy_id) REFERENCES budget_policies(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_budget_incidents_user ON budget_incidents(user_id, status)');
+
+    console.log('[Migration v24] Added cost_events, budget_policies, and budget_incidents tables');
+  },
+  down: (db) => {
+    db.exec('DROP TABLE IF EXISTS budget_incidents');
+    db.exec('DROP TABLE IF EXISTS budget_policies');
+    db.exec('DROP TABLE IF EXISTS cost_events');
+    console.log('[Migration v24] Rolled back: Removed cost tracking and budget tables');
+  },
+};
+
+/**
+ * Migration v24 -> v25: Add agent_runs and approvals tables (TitanX observability + security)
+ */
+const migration_v25: IMigration = {
+  version: 25,
+  name: 'Add agent_runs and approvals tables',
+  up: (db) => {
+    // Agent run tracking
+    db.exec(`CREATE TABLE IF NOT EXISTS agent_runs (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      conversation_id TEXT NOT NULL,
+      agent_type TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'running',
+      started_at INTEGER NOT NULL,
+      finished_at INTEGER,
+      input_tokens INTEGER DEFAULT 0,
+      output_tokens INTEGER DEFAULT 0,
+      cost_cents INTEGER DEFAULT 0,
+      exit_code INTEGER,
+      error TEXT,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_agent_runs_conversation ON agent_runs(conversation_id, started_at DESC)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_agent_runs_agent ON agent_runs(agent_type, started_at DESC)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_agent_runs_status ON agent_runs(status)');
+
+    // Approval workflows
+    db.exec(`CREATE TABLE IF NOT EXISTS approvals (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      requested_by TEXT NOT NULL,
+      payload TEXT NOT NULL DEFAULT '{}',
+      decision_note TEXT,
+      decided_at INTEGER,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_approvals_user ON approvals(user_id, status)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status, created_at DESC)');
+
+    console.log('[Migration v25] Added agent_runs and approvals tables');
+  },
+  down: (db) => {
+    db.exec('DROP TABLE IF EXISTS approvals');
+    db.exec('DROP TABLE IF EXISTS agent_runs');
+    console.log('[Migration v25] Rolled back: Removed agent_runs and approvals tables');
+  },
+};
+
+/**
  * All migrations in order
  */
 // prettier-ignore
@@ -1125,6 +1312,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v7, migration_v8, migration_v9, migration_v10, migration_v11, migration_v12,
   migration_v13, migration_v14, migration_v15, migration_v16, migration_v17, migration_v18,
   migration_v19, migration_v20, migration_v21, migration_v22,
+  migration_v23, migration_v24, migration_v25,
 ];
 
 /**
