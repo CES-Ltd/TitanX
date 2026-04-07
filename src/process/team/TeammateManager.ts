@@ -11,6 +11,8 @@ import type { TaskManager } from './TaskManager';
 import type { AgentResponse } from './adapters/PlatformAdapter';
 import { createPlatformAdapter } from './adapters/PlatformAdapter';
 import { acpDetector } from '@process/agent/acp/AcpDetector';
+import { getDatabase } from '@process/services/database';
+import * as sprintService from '@process/services/sprintTasks';
 
 type SpawnAgentFn = (agentName: string, agentType?: string) => Promise<TeamAgent>;
 
@@ -494,6 +496,25 @@ export class TeammateManager extends EventEmitter {
           description: action.description,
           owner: action.owner,
         });
+
+        // Also create in sprint_tasks so it shows in Sprint Board
+        try {
+          const db = await getDatabase();
+          const assigneeSlotId = action.owner
+            ? this.agents.find((a) => a.agentName.toLowerCase() === action.owner?.toLowerCase())?.slotId
+            : undefined;
+          const sprintTask = sprintService.createTask(db.getDriver(), {
+            teamId: this.teamId,
+            title: action.subject,
+            description: action.description,
+            assigneeSlotId,
+            priority: 'medium',
+          });
+          // Move from backlog to todo immediately
+          sprintService.updateTask(db.getDriver(), sprintTask.id, { status: 'todo' });
+        } catch (err) {
+          console.error('[TeammateManager] Failed to create sprint task:', err);
+        }
         break;
       }
 
@@ -504,6 +525,32 @@ export class TeammateManager extends EventEmitter {
         });
         if (action.status === 'completed') {
           await this.taskManager.checkUnblocks(action.taskId);
+        }
+
+        // Sync status to sprint_tasks
+        try {
+          const db = await getDatabase();
+          const sprintTasks = sprintService.listTasks(db.getDriver(), this.teamId);
+          // Find matching sprint task by subject (best-effort match)
+          const statusMap: Record<string, string> = {
+            pending: 'todo',
+            in_progress: 'in_progress',
+            completed: 'done',
+            deleted: 'done',
+          };
+          const mappedStatus = action.status ? (statusMap[action.status] ?? action.status) : undefined;
+          if (mappedStatus) {
+            for (const st of sprintTasks) {
+              if (st.id === action.taskId || st.title === action.taskId) {
+                sprintService.updateTask(db.getDriver(), st.id, {
+                  status: mappedStatus as 'backlog' | 'todo' | 'in_progress' | 'review' | 'done',
+                });
+                break;
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[TeammateManager] Failed to update sprint task:', err);
         }
         break;
       }
