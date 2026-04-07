@@ -66,19 +66,18 @@ function getRandomPhrase(): string {
   }
 }
 
-// ─── Speech bubble (uses #speech-bubble element from pet.html) ───────────────
+// ─── Speech text (SVG floating text — same pattern as ZZZ in sleeping.svg) ───
 
-const speechBubble = document.getElementById('speech-bubble');
-let bubbleTimeout: ReturnType<typeof setTimeout> | null = null;
+const speechText = document.getElementById('speech-text');
 
-function showBubble(text: string, durationMs = 3000): void {
-  if (!speechBubble) return;
-  speechBubble.textContent = text;
-  speechBubble.classList.add('visible');
-  if (bubbleTimeout) clearTimeout(bubbleTimeout);
-  bubbleTimeout = setTimeout(() => {
-    speechBubble.classList.remove('visible');
-  }, durationMs);
+function showBubble(text: string, _durationMs = 3500): void {
+  if (!speechText) return;
+  // Reset animation by removing class, forcing reflow, then re-adding
+  speechText.classList.remove('visible');
+  speechText.textContent = text;
+  // Force reflow so the animation restarts
+  void speechText.offsetWidth;
+  speechText.classList.add('visible');
 }
 
 // ─── IPC: speech bubble on every click (forwarded from petManager) ───────────
