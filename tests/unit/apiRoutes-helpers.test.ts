@@ -24,6 +24,7 @@ vi.mock('@process/webserver/auth/middleware/TokenMiddleware', () => ({
   TokenMiddleware: {
     validateToken: vi.fn().mockReturnValue((req: any, res: any, next: any) => next()),
   },
+  createAuthMiddleware: vi.fn().mockReturnValue((req: any, res: any, next: any) => next()),
 }));
 
 vi.mock('@process/extensions', () => ({
