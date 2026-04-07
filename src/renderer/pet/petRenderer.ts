@@ -69,12 +69,61 @@ function getRandomPhrase(): string {
 // ─── Comic chat bubble (SVG bubble rendered near pet) ────────────────────────
 
 const speechGroup = document.getElementById('speech-group');
-const speechBubbleText = document.getElementById('speech-bubble-text');
+const speechBubbleText = document.getElementById('speech-bubble-text') as unknown as SVGTextElement | null;
+const speechBubbleBg = document.getElementById('speech-bubble-bg');
+const speechTailCover = document.getElementById('speech-tail-cover');
+const speechOverlay = document.getElementById('speech-overlay');
 let bubbleHideTimer: ReturnType<typeof setTimeout> | null = null;
 
+const BUBBLE_PADDING_X = 4; // horizontal padding inside bubble
+const BUBBLE_PADDING_Y = 3; // vertical padding
+const BUBBLE_HEIGHT = 10;
+const BUBBLE_Y = -16;
+const PET_CENTER_X = 11; // center of pet in viewBox coords
+
 function showBubble(text: string, durationMs = 3000): void {
-  if (!speechGroup || !speechBubbleText) return;
+  if (!speechGroup || !speechBubbleText || !speechBubbleBg || !speechOverlay) return;
+
+  // Set text first so we can measure it
   speechBubbleText.textContent = text;
+
+  // Measure text width in SVG coordinates
+  let textWidth: number;
+  try {
+    textWidth = speechBubbleText.getComputedTextLength();
+  } catch {
+    // Fallback: estimate ~2px per character at font-size 3.2px
+    textWidth = text.length * 2;
+  }
+
+  // Calculate bubble width with padding (minimum 20 units)
+  const bubbleWidth = Math.max(20, textWidth + BUBBLE_PADDING_X * 2);
+  // Center the bubble over the pet
+  const bubbleX = PET_CENTER_X - bubbleWidth / 2;
+
+  // Update bubble rect
+  speechBubbleBg.setAttribute('x', String(bubbleX));
+  speechBubbleBg.setAttribute('width', String(bubbleWidth));
+  speechBubbleBg.setAttribute('y', String(BUBBLE_Y));
+  speechBubbleBg.setAttribute('height', String(BUBBLE_HEIGHT));
+
+  // Update text position (centered in bubble)
+  speechBubbleText.setAttribute('x', String(PET_CENTER_X));
+  speechBubbleText.setAttribute('y', String(BUBBLE_Y + BUBBLE_HEIGHT / 2));
+
+  // Update tail cover position
+  if (speechTailCover) {
+    speechTailCover.setAttribute('x', String(PET_CENTER_X - 3));
+    speechTailCover.setAttribute('y', String(BUBBLE_Y + BUBBLE_HEIGHT - 0.5));
+    speechTailCover.setAttribute('width', '6');
+  }
+
+  // Expand viewBox if bubble extends beyond current bounds
+  const minX = Math.min(-18, bubbleX - 2);
+  const totalWidth = Math.max(58, bubbleWidth + 8);
+  speechOverlay.setAttribute('viewBox', `${minX} -20 ${totalWidth} 62`);
+
+  // Show
   speechGroup.classList.add('visible');
   if (bubbleHideTimer) clearTimeout(bubbleHideTimer);
   bubbleHideTimer = setTimeout(() => {
