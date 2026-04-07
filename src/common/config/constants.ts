@@ -58,8 +58,8 @@ export const WEBUI_DEFAULT_PORT = (() => {
   return 25809;
 })();
 
-/** Team mode entry points are temporarily hidden until the feature is usable again. */
-export const TEAM_MODE_ENABLED = false;
+/** Team mode is a core feature of TitanX command center — always enabled. */
+export const TEAM_MODE_ENABLED = true;
 
 // ===== AI Provider 相关常量 =====
 
