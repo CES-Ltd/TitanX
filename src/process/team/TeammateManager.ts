@@ -13,6 +13,8 @@ import { createPlatformAdapter } from './adapters/PlatformAdapter';
 import { acpDetector } from '@process/agent/acp/AcpDetector';
 import { getDatabase } from '@process/services/database';
 import * as sprintService from '@process/services/sprintTasks';
+import * as costTrackingService from '@process/services/costTracking';
+import * as activityLogService from '@process/services/activityLog';
 
 type SpawnAgentFn = (agentName: string, agentType?: string) => Promise<TeamAgent>;
 
@@ -415,6 +417,46 @@ export class TeammateManager extends EventEmitter {
       }
     }
 
+    // Record cost event and audit log for this turn
+    try {
+      const db = await getDatabase();
+      const driver = db.getDriver();
+      const textLen = accumulatedText.length;
+      // Estimate tokens from text length (~4 chars per token)
+      const estimatedOutputTokens = Math.ceil(textLen / 4);
+      costTrackingService.recordCost(driver, {
+        userId: 'system_default_user',
+        conversationId,
+        agentType: agent.agentType,
+        provider: agent.agentType === 'gemini' ? 'google' : 'anthropic',
+        model: agent.agentType,
+        inputTokens: 0,
+        outputTokens: estimatedOutputTokens,
+        cachedInputTokens: 0,
+        costCents: 0, // Actual cost not available from stream — tracked as token usage
+        billingType: 'metered_api',
+        occurredAt: Date.now(),
+      });
+      // Audit log: agent turn completed
+      activityLogService.logActivity(driver, {
+        userId: 'system_default_user',
+        actorType: 'agent',
+        actorId: agent.slotId,
+        action: 'agent.turn_completed',
+        entityType: 'conversation',
+        entityId: conversationId,
+        agentId: agent.slotId,
+        details: {
+          agentName: agent.agentName,
+          agentType: agent.agentType,
+          actionsExecuted: actions.length,
+          outputTokensEstimate: estimatedOutputTokens,
+        },
+      });
+    } catch {
+      // Non-critical — don't block agent flow
+    }
+
     // Only set idle if executeAction did not already change status (e.g. idle_notification)
     const currentAgent = this.agents.find((a) => a.slotId === agent.slotId);
     if (currentAgent?.status === 'active') {
@@ -512,6 +554,16 @@ export class TeammateManager extends EventEmitter {
           });
           // Move from backlog to todo immediately
           sprintService.updateTask(db.getDriver(), sprintTask.id, { status: 'todo' });
+          // Audit log
+          activityLogService.logActivity(db.getDriver(), {
+            userId: 'system_default_user',
+            actorType: 'agent',
+            actorId: fromSlotId,
+            action: 'task.created',
+            entityType: 'sprint_task',
+            entityId: sprintTask.id,
+            details: { title: action.subject, assignee: action.owner, teamId: this.teamId },
+          });
         } catch (err) {
           console.error('[TeammateManager] Failed to create sprint task:', err);
         }
@@ -549,6 +601,16 @@ export class TeammateManager extends EventEmitter {
               }
             }
           }
+          // Audit log
+          activityLogService.logActivity(db.getDriver(), {
+            userId: 'system_default_user',
+            actorType: 'agent',
+            actorId: fromSlotId,
+            action: 'task.updated',
+            entityType: 'sprint_task',
+            entityId: action.taskId,
+            details: { status: action.status, owner: action.owner, teamId: this.teamId },
+          });
         } catch (err) {
           console.error('[TeammateManager] Failed to update sprint task:', err);
         }
