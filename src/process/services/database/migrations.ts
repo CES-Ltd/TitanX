@@ -1304,6 +1304,147 @@ const migration_v25: IMigration = {
 };
 
 /**
+ * Migration v25 -> v26: Add sprint board tables (TitanX Agent Sprint)
+ */
+const migration_v26: IMigration = {
+  version: 26,
+  name: 'Add sprint_tasks and sprint_counters tables',
+  up: (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS sprint_tasks (
+      id TEXT PRIMARY KEY,
+      team_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      status TEXT NOT NULL DEFAULT 'backlog',
+      assignee_slot_id TEXT,
+      priority TEXT DEFAULT 'medium',
+      labels TEXT DEFAULT '[]',
+      blocked_by TEXT DEFAULT '[]',
+      comments TEXT DEFAULT '[]',
+      sprint_number INTEGER,
+      story_points INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_sprint_tasks_team ON sprint_tasks(team_id, status)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_sprint_tasks_assignee ON sprint_tasks(assignee_slot_id)');
+
+    db.exec(`CREATE TABLE IF NOT EXISTS sprint_counters (
+      team_id TEXT PRIMARY KEY,
+      next_id INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+    )`);
+
+    console.log('[Migration v26] Added sprint_tasks and sprint_counters tables');
+  },
+  down: (db) => {
+    db.exec('DROP TABLE IF EXISTS sprint_counters');
+    db.exec('DROP TABLE IF EXISTS sprint_tasks');
+    console.log('[Migration v26] Rolled back: Removed sprint tables');
+  },
+};
+
+/**
+ * Migration v26 -> v27: Add agent gallery table (TitanX Agent Gallery)
+ */
+const migration_v27: IMigration = {
+  version: 27,
+  name: 'Add agent_gallery table',
+  up: (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS agent_gallery (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      agent_type TEXT NOT NULL,
+      description TEXT,
+      avatar_sprite_idx INTEGER DEFAULT 0,
+      capabilities TEXT DEFAULT '[]',
+      config TEXT DEFAULT '{}',
+      whitelisted INTEGER DEFAULT 1,
+      max_budget_cents INTEGER,
+      allowed_tools TEXT DEFAULT '[]',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_agent_gallery_user ON agent_gallery(user_id, whitelisted)');
+
+    console.log('[Migration v27] Added agent_gallery table');
+  },
+  down: (db) => {
+    db.exec('DROP TABLE IF EXISTS agent_gallery');
+    console.log('[Migration v27] Rolled back: Removed agent_gallery table');
+  },
+};
+
+/**
+ * Migration v27 -> v28: Add workflow_rules table (TitanX Governance)
+ */
+const migration_v28: IMigration = {
+  version: 28,
+  name: 'Add workflow_rules table',
+  up: (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS workflow_rules (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      trigger_condition TEXT NOT NULL,
+      action TEXT NOT NULL,
+      enabled INTEGER DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_workflow_rules_user ON workflow_rules(user_id, type)');
+
+    console.log('[Migration v28] Added workflow_rules table');
+  },
+  down: (db) => {
+    db.exec('DROP TABLE IF EXISTS workflow_rules');
+    console.log('[Migration v28] Rolled back: Removed workflow_rules table');
+  },
+};
+
+/**
+ * Migration v28 -> v29: Add IAM policy tables (TitanX Governance)
+ */
+const migration_v29: IMigration = {
+  version: 29,
+  name: 'Add iam_policies and agent_policy_bindings tables',
+  up: (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS iam_policies (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      permissions TEXT NOT NULL,
+      ttl_seconds INTEGER,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_iam_policies_user ON iam_policies(user_id)');
+
+    db.exec(`CREATE TABLE IF NOT EXISTS agent_policy_bindings (
+      id TEXT PRIMARY KEY,
+      agent_gallery_id TEXT NOT NULL,
+      policy_id TEXT NOT NULL,
+      expires_at INTEGER,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (agent_gallery_id) REFERENCES agent_gallery(id) ON DELETE CASCADE,
+      FOREIGN KEY (policy_id) REFERENCES iam_policies(id) ON DELETE CASCADE
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_agent_policy_bindings ON agent_policy_bindings(agent_gallery_id)');
+
+    console.log('[Migration v29] Added iam_policies and agent_policy_bindings tables');
+  },
+  down: (db) => {
+    db.exec('DROP TABLE IF EXISTS agent_policy_bindings');
+    db.exec('DROP TABLE IF EXISTS iam_policies');
+    console.log('[Migration v29] Rolled back: Removed IAM tables');
+  },
+};
+
+/**
  * All migrations in order
  */
 // prettier-ignore
@@ -1313,6 +1454,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v13, migration_v14, migration_v15, migration_v16, migration_v17, migration_v18,
   migration_v19, migration_v20, migration_v21, migration_v22,
   migration_v23, migration_v24, migration_v25,
+  migration_v26, migration_v27, migration_v28, migration_v29,
 ];
 
 /**
