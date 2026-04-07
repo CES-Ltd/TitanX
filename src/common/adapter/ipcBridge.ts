@@ -1540,8 +1540,15 @@ export type IGalleryAgent = {
   capabilities: string[];
   config: Record<string, unknown>;
   whitelisted: boolean;
+  published: boolean;
   maxBudgetCents?: number;
   allowedTools: string[];
+  instructionsMd?: string;
+  skillsMd?: string;
+  heartbeatMd?: string;
+  heartbeatIntervalSec: number;
+  heartbeatEnabled: boolean;
+  envBindings: Record<string, unknown>;
   createdAt: number;
   updatedAt: number;
 };
@@ -1598,6 +1605,8 @@ export type IIAMPolicy = {
   description?: string;
   permissions: Record<string, unknown>;
   ttlSeconds?: number;
+  agentIds: string[];
+  credentialIds: string[];
   createdAt: number;
 };
 
@@ -1634,6 +1643,21 @@ export const githubAuth = {
     { accessToken: string; tokenType: string } | { pending: true } | { error: string },
     { clientId: string; deviceCode: string; interval: number }
   >('github.poll-token'),
+};
+
+// ─── Credential Access Control ──────────────────────────────────────────────
+
+export const credentialAccess = {
+  check: bridge.buildProvider<
+    { allowed: boolean; policyId?: string; ttlSeconds?: number },
+    { agentGalleryId: string; secretId: string }
+  >('credential-access.check'),
+  issue: bridge.buildProvider<
+    { token: string; expiresAt: number },
+    { agentGalleryId: string; policyId: string; secretId: string }
+  >('credential-access.issue'),
+  resolve: bridge.buildProvider<string, { token: string; secretId: string }>('credential-access.resolve'),
+  revokeExpired: bridge.buildProvider<number, void>('credential-access.revoke-expired'),
 };
 
 // ─── Project Planner ────────────────────────────────────────────────────────
