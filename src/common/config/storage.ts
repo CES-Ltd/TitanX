@@ -158,6 +158,8 @@ export interface IConfigStorageRefer {
   };
   // Skills Market: whether the aionui-skills builtin skill is enabled
   'skillsMarket.enabled'?: boolean;
+  // Desktop Pet: character theme ('default' | 'cat' | 'wizard' | 'robot' | 'ninja')
+  'pet.theme'?: string;
   // Desktop Pet: whether the desktop pet feature is enabled
   'pet.enabled'?: boolean;
   // Desktop Pet: size in pixels (200, 280, or 360)

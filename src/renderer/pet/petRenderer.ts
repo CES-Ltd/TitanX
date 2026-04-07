@@ -1,5 +1,18 @@
 const LOAD_TIMEOUT = 3000;
-const PET_STATES_BASE_PATH = '../pet-states';
+
+// Determine theme from URL query param (passed by petManager)
+function resolveBasePath(): string {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const theme = params.get('theme') || 'default';
+    if (theme !== 'default') return `../pet-themes/${theme}`;
+  } catch {
+    // ignore
+  }
+  return '../pet-states';
+}
+
+const PET_STATES_BASE_PATH = resolveBasePath();
 let currentObject: HTMLObjectElement | null = document.getElementById('pet') as HTMLObjectElement;
 
 function getStateAssetPath(state: string): string {

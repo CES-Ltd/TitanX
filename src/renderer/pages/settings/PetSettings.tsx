@@ -13,9 +13,18 @@ import PreferenceRow from '@/renderer/components/settings/SettingsModal/contents
 import AionScrollArea from '@/renderer/components/base/AionScrollArea';
 import { useSettingsViewMode } from '@/renderer/components/settings/SettingsModal/settingsViewContext';
 
+const PET_THEMES = [
+  { key: 'default', label: 'Default Blob', emoji: '🟣' },
+  { key: 'cat', label: 'Cat', emoji: '🐱' },
+  { key: 'wizard', label: 'Wizard', emoji: '🧙' },
+  { key: 'robot', label: 'Robot', emoji: '🤖' },
+  { key: 'ninja', label: 'Ninja', emoji: '🥷' },
+];
+
 const PetSettings: React.FC = () => {
   const [enabled, setEnabled] = useState(true);
   const [size, setSize] = useState(280);
+  const [theme, setTheme] = useState('default');
   const [dnd, setDnd] = useState(false);
   const [confirmEnabled, setConfirmEnabled] = useState(true);
   const { t } = useTranslation();
@@ -27,6 +36,13 @@ const PetSettings: React.FC = () => {
     systemSettings.getPetEnabled
       .invoke()
       .then((val) => setEnabled(val))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    systemSettings.getPetTheme
+      .invoke()
+      .then((val) => setTheme(val))
       .catch(() => {});
   }, []);
 
@@ -58,6 +74,17 @@ const PetSettings: React.FC = () => {
     });
   }, []);
 
+  const handleThemeChange = useCallback(
+    (val: string) => {
+      const prevTheme = theme;
+      setTheme(val);
+      systemSettings.setPetTheme.invoke({ theme: val }).catch(() => {
+        setTheme(prevTheme);
+      });
+    },
+    [theme]
+  );
+
   const handleSizeChange = useCallback(
     (val: number) => {
       const prevSize = size;
@@ -88,6 +115,21 @@ const PetSettings: React.FC = () => {
       key: 'enabled',
       label: t('pet.enable'),
       component: <Switch checked={enabled} onChange={handleEnabledChange} />,
+    },
+    {
+      key: 'theme',
+      label: t('pet.theme', 'Character'),
+      component: (
+        <Radio.Group value={theme} onChange={handleThemeChange} disabled={!enabled}>
+          {PET_THEMES.map((pt) => (
+            <Radio key={pt.key} value={pt.key}>
+              <span className='text-13px'>
+                {pt.emoji} {pt.label}
+              </span>
+            </Radio>
+          ))}
+        </Radio.Group>
+      ),
     },
     {
       key: 'size',

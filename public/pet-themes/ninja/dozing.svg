@@ -1,0 +1,65 @@
+<svg viewBox="-18 -18 58 58" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .idle-body {
+        transform-origin: 11px 18px;
+        animation: idle-breathe 3.2s ease-in-out infinite, idle-sway 6s ease-in-out infinite;
+        
+      }
+      .idle-eye {
+        transform-origin: 11px 11px;
+        animation: idle-blink 4s ease-in-out infinite;
+      }
+      .idle-shadow {
+        transform-origin: 11px 22.5px;
+        animation: idle-shadow-pulse 3.2s ease-in-out infinite;
+      }
+      .think-bubble { animation: think-bubble-float 3s ease-in-out infinite; }
+      .zzz text { animation: zzz-float 2s ease-in-out infinite; }
+      @keyframes idle-breathe {
+        0%,100% { transform: scaleY(1) translateY(0); }
+        50%     { transform: scaleY(0.97) translateY(0.3px); }
+      }
+      @keyframes idle-sway {
+        0%,100% { transform: rotate(0deg); }
+        25%     { transform: rotate(1.2deg); }
+        75%     { transform: rotate(-1.2deg); }
+      }
+      @keyframes idle-blink {
+        0%,8%,100% { transform: scaleY(1); }
+        4%          { transform: scaleY(0.08); }
+      }
+      @keyframes idle-shadow-pulse {
+        0%,100% { transform: scaleX(1); opacity: 0.35; }
+        50%     { transform: scaleX(0.96); opacity: 0.28; }
+      }
+      @keyframes wk-bob {
+        0%,100% { transform: translateY(0); }
+        50%     { transform: translateY(-1.5px); }
+      }
+      @keyframes happy-bounce {
+        0%,100% { transform: translateY(0) rotate(0); }
+        50%     { transform: translateY(-3px) rotate(3deg); }
+      }
+      @keyframes think-bubble-float {
+        0%,100% { transform: translateY(0); opacity: 0.8; }
+        50%     { transform: translateY(-2px); opacity: 1; }
+      }
+      @keyframes zzz-float {
+        0%,100% { transform: translateY(0); opacity: 0.3; }
+        50%     { transform: translateY(-3px); opacity: 0.8; }
+      }
+    </style>
+  </defs>
+  <ellipse class="idle-shadow" cx="11" cy="22.5" rx="4" ry="0.6" fill="#c0c0c0"/>
+  <g class="idle-body">
+    <!-- bandana --><rect x="4" y="8" width="14" height="3" rx="1" fill="#D44444"/><polygon points="17,9 22,7 20,11" fill="#D44444"/><!-- mask --><rect x="5" y="10" width="12" height="5" rx="2" fill="#2A2A3A"/>
+    <rect x="5" y="6" width="12" height="12" rx="6" fill="#3A3A4A"/>
+    <g class="idle-eye">
+      <rect x="9" y="10" width="2" height="2" fill="#FFFFFF"/>
+      <rect x="12" y="10" width="2" height="2" fill="#FFFFFF"/>
+    </g>
+    <path d="M9 14 Q11 16 13 14" stroke="#FFFFFF" stroke-width="0.8" stroke-linecap="round" fill="none"/>
+  </g>
+  <g class='zzz'><text x='18' y='2' font-size='4' fill='#D44444' opacity='0.6'>z</text><text x='21' y='-2' font-size='5' fill='#D44444' opacity='0.4'>z</text><text x='24' y='-6' font-size='6' fill='#D44444' opacity='0.3'>Z</text></g>
+</svg>

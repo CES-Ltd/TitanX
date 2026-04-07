@@ -720,6 +720,8 @@ export const systemSettings = {
     'system-settings:set-save-upload-to-workspace'
   ),
   // Desktop pet settings
+  getPetTheme: bridge.buildProvider<string, void>('system-settings:get-pet-theme'),
+  setPetTheme: bridge.buildProvider<void, { theme: string }>('system-settings:set-pet-theme'),
   getPetEnabled: bridge.buildProvider<boolean, void>('system-settings:get-pet-enabled'),
   setPetEnabled: bridge.buildProvider<void, { enabled: boolean }>('system-settings:set-pet-enabled'),
   getPetSize: bridge.buildProvider<number, void>('system-settings:get-pet-size'),
