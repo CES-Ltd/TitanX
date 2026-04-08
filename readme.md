@@ -34,43 +34,43 @@ While AionUI provides the foundational multi-agent desktop experience (20+ LLM p
 
 ### 🏢 Command Center & Team Management
 
-| Feature | Description |
-|---------|-------------|
-| **Team Command Center** | Lead-agent-only chat with spawned agent output cards — not a horizontal scroll of all agents |
-| **Workforce Panel** | Right-side pane showing org hierarchy with live status indicators for every agent |
-| **Agent Team Live** | Dedicated full-page view of all spawned agents with real-time streaming status |
-| **Organization View** | Canvas-rendered org hierarchy tree for every team — lead → teammates with connecting lines |
-| **Modern Header Nav** | Pill-style navigation bar: Sprint \| Gallery \| Live \| Planner \| Governance \| Observability |
+| Feature                 | Description                                                                                    |
+| ----------------------- | ---------------------------------------------------------------------------------------------- |
+| **Team Command Center** | Lead-agent-only chat with spawned agent output cards — not a horizontal scroll of all agents   |
+| **Workforce Panel**     | Right-side pane showing org hierarchy with live status indicators for every agent              |
+| **Agent Team Live**     | Dedicated full-page view of all spawned agents with real-time streaming status                 |
+| **Organization View**   | Canvas-rendered org hierarchy tree for every team — lead → teammates with connecting lines     |
+| **Modern Header Nav**   | Pill-style navigation bar: Sprint \| Gallery \| Live \| Planner \| Governance \| Observability |
 
 ### 📋 Agent Sprint Board (JIRA-like)
 
-| Feature | Description |
-|---------|-------------|
-| **Swimlane View** | Kanban board with drag-drop across columns: Backlog → Todo → In Progress → Review → Done |
-| **List View** | Sortable table with priority tags, assignee avatars, status badges |
-| **Auto-generated IDs** | Tasks get sequential IDs (TASK-001, TASK-002) per team |
-| **@ Mention Chatter** | Tag agents in task comments with `@agentName` to trigger their attention |
-| **Task Dependencies** | Block/unblock relationships between tasks with automatic cascade |
-| **Real-time Sync** | Agent task creation via MCP tools automatically appears in Sprint Board |
+| Feature                | Description                                                                              |
+| ---------------------- | ---------------------------------------------------------------------------------------- |
+| **Swimlane View**      | Kanban board with drag-drop across columns: Backlog → Todo → In Progress → Review → Done |
+| **List View**          | Sortable table with priority tags, assignee avatars, status badges                       |
+| **Auto-generated IDs** | Tasks get sequential IDs (TASK-001, TASK-002) per team                                   |
+| **@ Mention Chatter**  | Tag agents in task comments with `@agentName` to trigger their attention                 |
+| **Task Dependencies**  | Block/unblock relationships between tasks with automatic cascade                         |
+| **Real-time Sync**     | Agent task creation via MCP tools automatically appears in Sprint Board                  |
 
 ### 👥 Agent Gallery & Templates
 
-| Feature | Description |
-|---------|-------------|
-| **8 Pre-seeded Agent Templates** | Senior Developer, QA Engineer, Research Analyst, DevOps Engineer, Security Auditor, Technical Writer, Frontend Specialist, Data Engineer |
-| **AGENTS.md / Skills / Heartbeat** | Each template includes instruction markdown, skills definition, and heartbeat protocol |
-| **Hire Me Button** | One-click agent recruitment with team/provider/model selection |
-| **Whitelisting** | Only published, whitelisted agents can be recruited into teams |
-| **Budget Caps** | Per-session budget limits on each gallery agent |
+| Feature                            | Description                                                                                                                              |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| **8 Pre-seeded Agent Templates**   | Senior Developer, QA Engineer, Research Analyst, DevOps Engineer, Security Auditor, Technical Writer, Frontend Specialist, Data Engineer |
+| **AGENTS.md / Skills / Heartbeat** | Each template includes instruction markdown, skills definition, and heartbeat protocol                                                   |
+| **Hire Me Button**                 | One-click agent recruitment with team/provider/model selection                                                                           |
+| **Whitelisting**                   | Only published, whitelisted agents can be recruited into teams                                                                           |
+| **Budget Caps**                    | Per-session budget limits on each gallery agent                                                                                          |
 
 ### 📅 Project Planner
 
-| Feature | Description |
-|---------|-------------|
-| **Calendar Views** | Day, Week, Month, Year views for project scheduling |
+| Feature                  | Description                                                |
+| ------------------------ | ---------------------------------------------------------- |
+| **Calendar Views**       | Day, Week, Month, Year views for project scheduling        |
 | **Plan → Sprint Bridge** | Plans automatically create sprint tasks at scheduled times |
-| **Recurrence** | Daily, weekly, monthly recurring plans |
-| **Color-coded Events** | Visual project tracking on the calendar |
+| **Recurrence**           | Daily, weekly, monthly recurring plans                     |
+| **Color-coded Events**   | Visual project tracking on the calendar                    |
 
 ---
 
@@ -164,13 +164,13 @@ Every significant event is captured in the immutable audit trail:
 
 An animated companion that lives on your desktop:
 
-| Theme | Character |
-|-------|-----------|
-| 🟣 **Default** | Round blob with orange hat |
-| 🐱 **Cat** | Orange body, pointed ears, whiskers |
-| 🧙 **Wizard** | Purple robe, blue hat, golden stars |
-| 🤖 **Robot** | Boxy gray, blue LED antenna |
-| 🥷 **Ninja** | Dark body, red bandana, masked face |
+| Theme          | Character                           |
+| -------------- | ----------------------------------- |
+| 🟣 **Default** | Round blob with orange hat          |
+| 🐱 **Cat**     | Orange body, pointed ears, whiskers |
+| 🧙 **Wizard**  | Purple robe, blue hat, golden stars |
+| 🤖 **Robot**   | Boxy gray, blue LED antenna         |
+| 🥷 **Ninja**   | Dark body, red bandana, masked face |
 
 - **Comic speech bubbles** with funny thinking phrases on every click
 - **Random idle speech** every 20-50 seconds
@@ -188,8 +188,9 @@ An animated companion that lives on your desktop:
 ### Thinking Spinner Phrases
 
 95+ tech phrases + 29 Bollywood dialogues shown while agents process:
-- Normal mode: *"Yak-shaving"*, *"Docker-containerizing"*, *"Nat-twentying"*
-- Bollywood mode: *"Mogambo khush hua! 🎬"*, *"Kitne aadmi the? 🤔"*, *"All izz well 🙆"*
+
+- Normal mode: _"Yak-shaving"_, _"Docker-containerizing"_, _"Nat-twentying"_
+- Bollywood mode: _"Mogambo khush hua! 🎬"_, _"Kitne aadmi the? 🤔"_, _"All izz well 🙆"_
 
 ---
 
@@ -198,28 +199,28 @@ An animated companion that lives on your desktop:
 **10 languages** with country flag emoji selector:
 
 | Flag | Language | Flag | Language |
-|------|----------|------|----------|
-| 🇺🇸 | English | 🇪🇸 | Español |
-| 🇨🇳 | 简体中文 | 🇫🇷 | Français |
-| 🇹🇼 | 繁體中文 | 🇮🇹 | Italiano |
-| 🇯🇵 | 日本語 | 🇮🇳 | हिन्दी |
-| 🇰🇷 | 한국어 | 🇹🇷 | Türkçe |
+| ---- | -------- | ---- | -------- |
+| 🇺🇸   | English  | 🇪🇸   | Español  |
+| 🇨🇳   | 简体中文 | 🇫🇷   | Français |
+| 🇹🇼   | 繁體中文 | 🇮🇹   | Italiano |
+| 🇯🇵   | 日本語   | 🇮🇳   | हिन्दी   |
+| 🇰🇷   | 한국어   | 🇹🇷   | Türkçe   |
 
 ---
 
 ## 🛠 Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| **Desktop** | Electron 37 |
-| **Frontend** | React 19, TypeScript (strict), Arco Design, UnoCSS |
-| **Database** | SQLite (better-sqlite3) with WAL mode, 31 migrations |
-| **IPC** | Custom bridge pattern (`@office-ai/platform`) |
-| **Security** | AES-256-GCM encryption, SHA-256 token hashing, bcrypt passwords |
-| **Auth** | JWT tokens, CSRF protection, rate limiting |
-| **AI Providers** | 20+ LLM providers (Claude, GPT, Gemini, Codex, OpenCode, Hermes, etc.) |
-| **Testing** | Vitest 4, 310+ test files, 80% coverage target |
-| **Package Manager** | Bun |
+| Layer               | Technology                                                             |
+| ------------------- | ---------------------------------------------------------------------- |
+| **Desktop**         | Electron 37                                                            |
+| **Frontend**        | React 19, TypeScript (strict), Arco Design, UnoCSS                     |
+| **Database**        | SQLite (better-sqlite3) with WAL mode, 31 migrations                   |
+| **IPC**             | Custom bridge pattern (`@office-ai/platform`)                          |
+| **Security**        | AES-256-GCM encryption, SHA-256 token hashing, bcrypt passwords        |
+| **Auth**            | JWT tokens, CSRF protection, rate limiting                             |
+| **AI Providers**    | 20+ LLM providers (Claude, GPT, Gemini, Codex, OpenCode, Hermes, etc.) |
+| **Testing**         | Vitest 4, 310+ test files, 80% coverage target                         |
+| **Package Manager** | Bun                                                                    |
 
 ---
 
@@ -281,38 +282,38 @@ TitanX/
 
 TitanX adds **13 tables** on top of AionUI's base schema (migrations v23–v31):
 
-| Table | Purpose |
-|-------|---------|
-| `activity_log` | Immutable audit trail |
-| `secrets` / `secret_versions` | Encrypted secrets vault |
-| `cost_events` | Token usage and spend ledger |
-| `budget_policies` / `budget_incidents` | Budget enforcement |
-| `agent_runs` | Agent execution history |
-| `approvals` | Governance approval workflows |
-| `sprint_tasks` / `sprint_counters` | JIRA-like sprint board |
-| `agent_gallery` | Agent templates and whitelisting |
-| `workflow_rules` | Approval, escalation, SLA rules |
-| `iam_policies` / `agent_policy_bindings` | Role-based access control |
-| `credential_access_tokens` | Time-limited credential access |
-| `project_plans` | Calendar-based project scheduling |
+| Table                                    | Purpose                           |
+| ---------------------------------------- | --------------------------------- |
+| `activity_log`                           | Immutable audit trail             |
+| `secrets` / `secret_versions`            | Encrypted secrets vault           |
+| `cost_events`                            | Token usage and spend ledger      |
+| `budget_policies` / `budget_incidents`   | Budget enforcement                |
+| `agent_runs`                             | Agent execution history           |
+| `approvals`                              | Governance approval workflows     |
+| `sprint_tasks` / `sprint_counters`       | JIRA-like sprint board            |
+| `agent_gallery`                          | Agent templates and whitelisting  |
+| `workflow_rules`                         | Approval, escalation, SLA rules   |
+| `iam_policies` / `agent_policy_bindings` | Role-based access control         |
+| `credential_access_tokens`               | Time-limited credential access    |
+| `project_plans`                          | Calendar-based project scheduling |
 
 ---
 
 ## What TitanX Adds vs AionUI
 
-| Category | AionUI (Base) | TitanX (Enterprise) |
-|----------|---------------|---------------------|
-| **Agent Management** | Side-by-side chat windows | Command center with lead-only chat + workforce panel |
-| **Task Tracking** | Basic team_tasks table | Full JIRA-like sprint board with swimlane/list views |
-| **Security** | Base64 credential encoding | AES-256-GCM vault + IAM policies + time-limited tokens |
-| **Observability** | Console logging | Command center dashboard + cost tracking + audit trail |
-| **Governance** | None | Approval workflows + escalation rules + SLA policies |
-| **Planning** | Cron scheduler | Calendar-based project planner with sprint integration |
-| **Agent Templates** | Manual agent creation | Gallery with 8 pre-seeded templates + Hire Me button |
-| **Internationalization** | 6 languages | 10 languages with flag emoji selector |
-| **Desktop Pet** | 1 default character | 5 themed characters with comic speech bubbles |
-| **Office Visualization** | None | Pixel-art office with BFS pathfinding + chat bubbles |
-| **CLI Support** | Claude + Codex only | Claude + Codex + Gemini + OpenCode + Hermes |
+| Category                 | AionUI (Base)              | TitanX (Enterprise)                                    |
+| ------------------------ | -------------------------- | ------------------------------------------------------ |
+| **Agent Management**     | Side-by-side chat windows  | Command center with lead-only chat + workforce panel   |
+| **Task Tracking**        | Basic team_tasks table     | Full JIRA-like sprint board with swimlane/list views   |
+| **Security**             | Base64 credential encoding | AES-256-GCM vault + IAM policies + time-limited tokens |
+| **Observability**        | Console logging            | Command center dashboard + cost tracking + audit trail |
+| **Governance**           | None                       | Approval workflows + escalation rules + SLA policies   |
+| **Planning**             | Cron scheduler             | Calendar-based project planner with sprint integration |
+| **Agent Templates**      | Manual agent creation      | Gallery with 8 pre-seeded templates + Hire Me button   |
+| **Internationalization** | 6 languages                | 10 languages with flag emoji selector                  |
+| **Desktop Pet**          | 1 default character        | 5 themed characters with comic speech bubbles          |
+| **Office Visualization** | None                       | Pixel-art office with BFS pathfinding + chat bubbles   |
+| **CLI Support**          | Claude + Codex only        | Claude + Codex + Gemini + OpenCode + Hermes            |
 
 ---
 

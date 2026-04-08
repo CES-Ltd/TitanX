@@ -100,17 +100,30 @@ export function resolveWithToken(db: ISqliteDriver, token: string, secretId: str
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
   const now = Date.now();
 
-  const row = db
-    .prepare('SELECT * FROM credential_access_tokens WHERE token_hash = ? AND secret_id = ? AND revoked = 0')
-    .get(tokenHash, secretId) as Record<string, unknown> | undefined;
+  // Fetch ALL non-revoked tokens for this secret, then timing-safe compare
+  // (avoids leaking token existence via SQL query timing differences)
+  const candidates = db
+    .prepare('SELECT * FROM credential_access_tokens WHERE secret_id = ? AND revoked = 0')
+    .all(secretId) as Array<Record<string, unknown>>;
 
-  if (!row) {
+  const tokenHashBuf = Buffer.from(tokenHash, 'hex');
+  let matchedRow: Record<string, unknown> | undefined;
+
+  for (const candidate of candidates) {
+    const candidateHash = Buffer.from(candidate.token_hash as string, 'hex');
+    if (tokenHashBuf.length === candidateHash.length && crypto.timingSafeEqual(tokenHashBuf, candidateHash)) {
+      matchedRow = candidate;
+      break;
+    }
+  }
+
+  if (!matchedRow) {
     throw new Error('Invalid or revoked access token');
   }
 
-  if ((row.expires_at as number) < now) {
-    // Auto-revoke expired token
-    db.prepare('UPDATE credential_access_tokens SET revoked = 1 WHERE id = ?').run(row.id);
+  if ((matchedRow.expires_at as number) < now) {
+    // Atomic: revoke expired token and reject in one step
+    db.prepare('UPDATE credential_access_tokens SET revoked = 1 WHERE id = ?').run(matchedRow.id);
     throw new Error('Access token has expired');
   }
 
@@ -121,11 +134,11 @@ export function resolveWithToken(db: ISqliteDriver, token: string, secretId: str
   logActivity(db, {
     userId,
     actorType: 'agent',
-    actorId: row.agent_gallery_id as string,
+    actorId: matchedRow.agent_gallery_id as string,
     action: 'credential.accessed',
     entityType: 'secret',
     entityId: secretId,
-    details: { policyId: row.policy_id, tokenId: row.id },
+    details: { policyId: matchedRow.policy_id, tokenId: matchedRow.id },
   });
 
   return value;
