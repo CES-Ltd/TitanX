@@ -1622,7 +1622,15 @@ export const iamPolicies = {
   list: bridge.buildProvider<IIAMPolicy[], { userId: string }>('iam.list'),
   create: bridge.buildProvider<
     IIAMPolicy,
-    { userId: string; name: string; description?: string; permissions: Record<string, unknown>; ttlSeconds?: number }
+    {
+      userId: string;
+      name: string;
+      description?: string;
+      permissions: Record<string, unknown>;
+      ttlSeconds?: number;
+      agentIds?: string[];
+      credentialIds?: string[];
+    }
   >('iam.create'),
   remove: bridge.buildProvider<boolean, { policyId: string }>('iam.delete'),
   bind: bridge.buildProvider<IPolicyBinding, { agentGalleryId: string; policyId: string; ttlSeconds?: number }>(
