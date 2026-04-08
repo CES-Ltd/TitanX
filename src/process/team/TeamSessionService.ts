@@ -417,6 +417,36 @@ export class TeamSessionService {
     const team = await this.repo.findById(teamId);
     if (!team) throw new Error(`Team "${teamId}" not found`);
 
+    // Security: verify agent is whitelisted in gallery (skip for lead agents)
+    if (agent.role !== 'lead') {
+      try {
+        const { getDatabase } = await import('@process/services/database');
+        const db = await getDatabase();
+        const gallery = db
+          .getDriver()
+          .prepare('SELECT whitelisted FROM agent_gallery WHERE name = ? AND whitelisted = 1')
+          .get(agent.agentName) as { whitelisted: number } | undefined;
+        if (!gallery) {
+          console.warn(`[Security] Blocked non-whitelisted agent recruitment: ${agent.agentName}`);
+          const activityLog = await import('@process/services/activityLog');
+          activityLog.logActivity(db.getDriver(), {
+            userId: 'system_default_user',
+            actorType: 'system',
+            actorId: 'security',
+            action: 'agent.recruitment_blocked',
+            entityType: 'agent',
+            entityId: agent.agentName,
+            details: { reason: 'not_whitelisted', agentType: agent.agentType, teamId },
+          });
+          throw new Error(`Agent "${agent.agentName}" is not whitelisted in the gallery`);
+        }
+      } catch (err) {
+        if (err instanceof Error && err.message.includes('not whitelisted')) throw err;
+        // If gallery check fails (e.g., table not found), allow recruitment with warning
+        console.warn('[Security] Gallery whitelist check failed, allowing recruitment:', err);
+      }
+    }
+
     const workspace = this.resolveWorkspace(team.workspace);
     // Inherit sessionMode from lead agent so spawned agents share the same permission level
     const leadAgent = team.agents.find((a) => a.role === 'lead');

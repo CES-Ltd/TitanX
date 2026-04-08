@@ -224,9 +224,40 @@ export class TeamMcpServer {
     });
   }
 
+  // ── Rate limiting ──────────────────────────────────────────────────────────
+
+  private readonly rateLimitMap = new Map<string, { count: number; windowStart: number }>();
+  private static readonly RATE_LIMIT_MAX = 30; // max calls per window
+  private static readonly RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute window
+
+  private checkRateLimit(slotId: string): void {
+    const now = Date.now();
+    const entry = this.rateLimitMap.get(slotId);
+
+    if (!entry || now - entry.windowStart > TeamMcpServer.RATE_LIMIT_WINDOW_MS) {
+      // New window
+      this.rateLimitMap.set(slotId, { count: 1, windowStart: now });
+      return;
+    }
+
+    entry.count++;
+    if (entry.count > TeamMcpServer.RATE_LIMIT_MAX) {
+      console.warn(
+        `[Security] Rate limit exceeded for agent ${slotId}: ${entry.count} calls in ${TeamMcpServer.RATE_LIMIT_WINDOW_MS}ms`
+      );
+      throw new Error(
+        `Rate limit exceeded: max ${TeamMcpServer.RATE_LIMIT_MAX} tool calls per minute. Please slow down.`
+      );
+    }
+  }
+
   // ── Tool dispatch ───────────────────────────────────────────────────────────
 
   private async handleToolCall(toolName: string, args: Record<string, unknown>, fromSlotId?: string): Promise<string> {
+    // Rate limit check per agent
+    if (fromSlotId) {
+      this.checkRateLimit(fromSlotId);
+    }
     switch (toolName) {
       case 'team_send_message':
         return this.handleSendMessage(args, fromSlotId);

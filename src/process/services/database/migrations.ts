@@ -1541,6 +1541,44 @@ const migration_v31: IMigration = {
   },
 };
 
+/**
+ * Migration v31 -> v32: Security hardening — immutable audit logs, HMAC signatures
+ */
+const migration_v32: IMigration = {
+  version: 32,
+  name: 'Security hardening: immutable audit logs',
+  up: (db) => {
+    // Add HMAC signature column to activity_log
+    const cols = new Set((db.pragma('table_info(activity_log)') as Array<{ name: string }>).map((c) => c.name));
+    if (!cols.has('signature')) {
+      db.exec('ALTER TABLE activity_log ADD COLUMN signature TEXT');
+    }
+    if (!cols.has('severity')) {
+      db.exec("ALTER TABLE activity_log ADD COLUMN severity TEXT DEFAULT 'info'");
+    }
+
+    // Make activity_log append-only: prevent UPDATE and DELETE
+    db.exec(`CREATE TRIGGER IF NOT EXISTS prevent_activity_log_update
+      BEFORE UPDATE ON activity_log
+      BEGIN
+        SELECT RAISE(ABORT, 'activity_log is immutable: updates are not allowed');
+      END`);
+
+    db.exec(`CREATE TRIGGER IF NOT EXISTS prevent_activity_log_delete
+      BEFORE DELETE ON activity_log
+      BEGIN
+        SELECT RAISE(ABORT, 'activity_log is immutable: deletes are not allowed');
+      END`);
+
+    console.log('[Migration v32] Added audit log signatures and immutability triggers');
+  },
+  down: (db) => {
+    db.exec('DROP TRIGGER IF EXISTS prevent_activity_log_delete');
+    db.exec('DROP TRIGGER IF EXISTS prevent_activity_log_update');
+    console.log('[Migration v32] Rolled back: Removed audit log triggers');
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -1549,7 +1587,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v19, migration_v20, migration_v21, migration_v22,
   migration_v23, migration_v24, migration_v25,
   migration_v26, migration_v27, migration_v28, migration_v29,
-  migration_v30, migration_v31,
+  migration_v30, migration_v31, migration_v32,
 ];
 
 /**
