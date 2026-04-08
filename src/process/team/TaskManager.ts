@@ -1,6 +1,9 @@
 // src/process/team/TaskManager.ts
 import type { ITeamRepository } from './repository/ITeamRepository';
 import type { TeamTask } from './types';
+import { getDatabase } from '@process/services/database';
+import * as sprintService from '@process/services/sprintTasks';
+import * as activityLogService from '@process/services/activityLog';
 
 /** Parameters for creating a new task */
 type CreateTaskParams = {
@@ -61,6 +64,33 @@ export class TaskManager {
           }
         })
       );
+    }
+
+    // Bridge to sprint_tasks so it shows in Sprint Board
+    try {
+      const db = await getDatabase();
+      const driver = db.getDriver();
+      const sprintTask = sprintService.createTask(driver, {
+        teamId: params.teamId,
+        title: params.subject,
+        description: params.description,
+        assigneeSlotId: params.owner,
+        priority: 'medium',
+      });
+      sprintService.updateTask(driver, sprintTask.id, { status: 'todo' });
+      console.log(`[TaskManager] Sprint task created: ${sprintTask.id} "${params.subject}"`);
+      // Audit log
+      activityLogService.logActivity(driver, {
+        userId: 'system_default_user',
+        actorType: 'agent',
+        actorId: params.owner ?? 'system',
+        action: 'task.created',
+        entityType: 'sprint_task',
+        entityId: sprintTask.id,
+        details: { title: params.subject, assignee: params.owner, teamId: params.teamId },
+      });
+    } catch (err) {
+      console.error('[TaskManager] Sprint bridge failed:', err);
     }
 
     return created;

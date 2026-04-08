@@ -561,41 +561,13 @@ export class TeammateManager extends EventEmitter {
       }
 
       case 'task_create': {
+        // TaskManager.create() now handles sprint bridging + audit logging internally
         await this.taskManager.create({
           teamId: this.teamId,
           subject: action.subject,
           description: action.description,
           owner: action.owner,
         });
-
-        // Also create in sprint_tasks so it shows in Sprint Board
-        try {
-          const db = await getDatabase();
-          const assigneeSlotId = action.owner
-            ? this.agents.find((a) => a.agentName.toLowerCase() === action.owner?.toLowerCase())?.slotId
-            : undefined;
-          const sprintTask = sprintService.createTask(db.getDriver(), {
-            teamId: this.teamId,
-            title: action.subject,
-            description: action.description,
-            assigneeSlotId,
-            priority: 'medium',
-          });
-          // Move from backlog to todo immediately
-          sprintService.updateTask(db.getDriver(), sprintTask.id, { status: 'todo' });
-          // Audit log
-          activityLogService.logActivity(db.getDriver(), {
-            userId: 'system_default_user',
-            actorType: 'agent',
-            actorId: fromSlotId,
-            action: 'task.created',
-            entityType: 'sprint_task',
-            entityId: sprintTask.id,
-            details: { title: action.subject, assignee: action.owner, teamId: this.teamId },
-          });
-        } catch (err) {
-          console.error('[TeammateManager] Failed to create sprint task:', err);
-        }
         break;
       }
 
