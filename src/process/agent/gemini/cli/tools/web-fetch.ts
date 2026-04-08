@@ -14,6 +14,7 @@ import type {
   ToolCallConfirmationDetails,
   MessageBus,
 } from '@office-ai/aioncli-core';
+import { validateUrl } from '@process/services/ssrfProtection';
 import {
   BaseDeclarativeTool,
   BaseToolInvocation,
@@ -101,6 +102,10 @@ export class WebFetchTool extends BaseDeclarativeTool<WebFetchToolParams, ToolRe
     }
     if (!params.url.startsWith('http://') && !params.url.startsWith('https://')) {
       return "The 'url' must start with http:// or https://.";
+    }
+    const ssrfCheck = validateUrl(params.url);
+    if (!ssrfCheck.safe) {
+      return `URL blocked by SSRF protection: ${ssrfCheck.reason}`;
     }
     if (!params.prompt || params.prompt.trim() === '') {
       return "The 'prompt' parameter cannot be empty.";

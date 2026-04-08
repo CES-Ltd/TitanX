@@ -181,16 +181,16 @@ export const SECURITY_CONFIG = {
       "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' ws: wss: blob:; media-src 'self' blob:;",
     // 生产环境 CSP（Content-Security-Policy for production）
     CSP_PROD:
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' ws: wss: blob:; media-src 'self' blob:;",
+      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' ws: wss: blob:; media-src 'self' blob:;",
   },
   CSRF: {
     COOKIE_NAME: CSRF_COOKIE_NAME,
     HEADER_NAME: CSRF_HEADER_NAME,
     TOKEN_LENGTH: 32,
     COOKIE_OPTIONS: {
-      httpOnly: false,
+      httpOnly: true,
       sameSite: 'strict' as const,
-      secure: false,
+      secure: process.env.NODE_ENV === 'production',
       path: '/',
     },
   },

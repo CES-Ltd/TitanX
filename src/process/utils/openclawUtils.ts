@@ -26,5 +26,5 @@ export const computeOpenClawIdentityHash = async (workspace?: string): Promise<s
     }
   }
   if (chunks.length === 0) return null;
-  return crypto.createHash('sha1').update(chunks.join('\n---\n')).digest('hex');
+  return crypto.createHash('sha256').update(chunks.join('\n---\n')).digest('hex');
 };

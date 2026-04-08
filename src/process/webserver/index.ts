@@ -7,7 +7,6 @@
 import express from 'express';
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
-import { execSync } from 'child_process';
 import { networkInterfaces } from 'os';
 import { AuthService } from '@process/webserver/auth/service/AuthService';
 import { UserRepository } from '@process/webserver/auth/repository/UserRepository';
@@ -84,7 +83,7 @@ function getLanIP(): string | null {
  * 获取公网 IP 地址（仅 Linux 无桌面环境）
  * Get public IP address (Linux headless only)
  */
-function getPublicIP(): string | null {
+async function getPublicIP(): Promise<string | null> {
   // 只在 Linux 无桌面环境下尝试获取公网 IP
   // Only try to get public IP on Linux headless environment
   const isLinuxHeadless = process.platform === 'linux' && !process.env.DISPLAY;
@@ -93,12 +92,19 @@ function getPublicIP(): string | null {
   }
 
   try {
-    // 使用 curl 获取公网 IP（有 2 秒超时）
-    // Use curl to get public IP (with 2 second timeout)
-    const publicIP = execSync('curl -s --max-time 2 ifconfig.me || curl -s --max-time 2 api.ipify.org', {
-      encoding: 'utf8',
-      timeout: 3000,
-    }).trim();
+    // Use fetch to get public IP (with 2 second timeout via AbortController)
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2000);
+    let publicIP = '';
+    try {
+      const res = await fetch('https://api.ipify.org', { signal: controller.signal });
+      publicIP = (await res.text()).trim();
+    } catch {
+      const res2 = await fetch('https://ifconfig.me', { signal: controller.signal });
+      publicIP = (await res2.text()).trim();
+    } finally {
+      clearTimeout(timeout);
+    }
 
     // 验证是否为有效的 IPv4 地址
     // Validate IPv4 address format
@@ -116,10 +122,10 @@ function getPublicIP(): string | null {
  * 获取服务器 IP 地址（优先公网 IP，其次局域网 IP）
  * Get server IP address (prefer public IP, fallback to LAN IP)
  */
-function getServerIP(): string | null {
+async function getServerIP(): Promise<string | null> {
   // 1. Linux 无桌面环境：尝试获取公网 IP
   // Linux headless: try to get public IP
-  const publicIP = getPublicIP();
+  const publicIP = await getPublicIP();
   if (publicIP) {
     return publicIP;
   }
@@ -280,9 +286,9 @@ export async function startWebServerWithInstance(port: number, allowRemote = fal
   // Listen on 0.0.0.0 (all interfaces) or 127.0.0.1 (local only) based on allowRemote
   const host = allowRemote ? SERVER_CONFIG.REMOTE_HOST : SERVER_CONFIG.DEFAULT_HOST;
   return new Promise((resolve, reject) => {
-    server.listen(port, host, () => {
+    server.listen(port, host, async () => {
       const localUrl = `http://localhost:${port}`;
-      const serverIP = getServerIP();
+      const serverIP = await getServerIP();
       const displayUrl = serverIP ? `http://${serverIP}:${port}` : localUrl;
 
       // 显示初始凭证（如果是首次启动）/ Display initial credentials (if first startup)

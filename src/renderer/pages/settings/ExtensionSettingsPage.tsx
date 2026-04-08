@@ -81,7 +81,7 @@ const ExtensionSettingsPage: React.FC = () => {
           extensionName: tab._extensionName,
           translations,
         },
-        '*'
+        window.location.origin
       );
     } catch (err) {
       console.error('[ExtensionSettingsPage] Failed to post locale init:', err);
@@ -93,7 +93,7 @@ const ExtensionSettingsPage: React.FC = () => {
 
     const onMessage = async (event: MessageEvent) => {
       const frameWindow = iframeRef.current?.contentWindow;
-      if (!frameWindow || event.source !== frameWindow) return;
+      if (!frameWindow || event.source !== frameWindow || event.origin !== window.location.origin) return;
 
       const data = event.data as { type?: string; reqId?: string } | undefined;
       if (!data) return;
@@ -113,7 +113,7 @@ const ExtensionSettingsPage: React.FC = () => {
             reqId: data.reqId,
             snapshot,
           },
-          '*'
+          window.location.origin
         );
       } catch (err) {
         console.error('[ExtensionSettingsPage] Failed to get activity snapshot:', err);

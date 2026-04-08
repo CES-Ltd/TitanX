@@ -200,6 +200,20 @@ export class TaskManager {
       )
     );
 
+    // Sync updated blockedBy to sprint_tasks so the board reflects unblocked state
+    try {
+      const db = await getDatabase();
+      const driver = db.getDriver();
+      for (const t of updated) {
+        const sprintTask = sprintService.findByTeamTaskId(driver, t.id);
+        if (sprintTask) {
+          sprintService.updateTask(driver, sprintTask.id, { blockedBy: t.blockedBy });
+        }
+      }
+    } catch (err) {
+      console.error('[TaskManager] Sprint blockedBy sync failed:', err);
+    }
+
     return updated.filter((t) => t.blockedBy.length === 0);
   }
 }

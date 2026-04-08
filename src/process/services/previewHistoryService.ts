@@ -48,7 +48,7 @@ class PreviewHistoryService {
     ].filter(Boolean);
 
     const identity = keyParts.join('|') || `anonymous|${target.contentType}`;
-    const digest = crypto.createHash('sha1').update(identity).digest('hex');
+    const digest = crypto.createHash('sha256').update(identity).digest('hex');
     return { identity, digest };
   }
 
