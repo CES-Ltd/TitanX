@@ -257,6 +257,7 @@ const MessageList: React.FC<{ className?: string }> = () => {
   } = useAutoScroll({
     messages: list,
     itemCount: processedList.length,
+    conversationId: conversationContext?.conversationId,
   });
 
   useEffect(() => {
