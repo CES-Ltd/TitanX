@@ -11,7 +11,27 @@ import { activityLog, type IActivityEntry } from '@/common/adapter/ipcBridge';
 
 const { Option } = Select;
 
-const ENTITY_TYPES = ['conversation', 'agent', 'secret', 'budget_policy', 'approval', 'cost_event'];
+const ENTITY_TYPES = [
+  'conversation',
+  'agent',
+  'secret',
+  'budget_policy',
+  'approval',
+  'cost_event',
+  'security_feature',
+  'agent_blueprint',
+  'network_policy',
+  'policy_decision',
+  'mcp_tool',
+  'inference_routing_rule',
+  'credential_access_token',
+  'agent_session_token',
+  'agent_snapshot',
+  'iam_policy',
+  'agent_policy_binding',
+  'sprint_task',
+  'team',
+];
 const PAGE_SIZE = 20;
 
 const ActivityLog: React.FC = () => {
@@ -58,15 +78,28 @@ const ActivityLog: React.FC = () => {
       dataIndex: 'action',
       width: 180,
       render: (val: string) => {
-        const color = val.includes('active')
-          ? 'green'
-          : val.includes('idle')
-            ? 'blue'
-            : val.includes('fail')
-              ? 'red'
-              : val.includes('task')
-                ? 'orange'
-                : 'gray';
+        let color = 'gray';
+        if (
+          val.includes('enabled') ||
+          val.includes('created') ||
+          val.includes('active') ||
+          val.includes('recruited') ||
+          val.includes('added')
+        )
+          color = 'green';
+        else if (val.includes('disabled') || val.includes('idle') || val.includes('revoked') || val.includes('expired'))
+          color = 'blue';
+        else if (
+          val.includes('denied') ||
+          val.includes('blocked') ||
+          val.includes('fail') ||
+          val.includes('removed') ||
+          val.includes('deleted')
+        )
+          color = 'red';
+        else if (val.includes('task') || val.includes('toggle') || val.includes('renamed')) color = 'orange';
+        else if (val.includes('evaluated') || val.includes('completed') || val.includes('turn')) color = 'cyan';
+        else if (val.includes('token') || val.includes('credential')) color = 'purple';
         return <Tag color={color}>{val}</Tag>;
       },
     },
