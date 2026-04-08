@@ -412,7 +412,7 @@ const WorkflowEngine: React.FC = () => {
         onCancel={() => setEditorVisible(false)}
         onOk={handleSave}
         okText='Save Workflow'
-        style={{ maxWidth: 750 }}
+        style={{ width: 'calc(100vw - 80px)', maxWidth: 1100, top: 30 }}
         unmountOnExit
       >
         <div className='flex flex-col gap-12px'>
@@ -548,35 +548,79 @@ const WorkflowEngine: React.FC = () => {
                               </div>
                             )}
                             {node.type === 'condition' && (
-                              <div>
-                                <div className='text-11px text-t-tertiary mb-4px'>If True, Route To</div>
-                                <Select
-                                  value={(node.parameters.condition as string) ?? undefined}
-                                  onChange={(v) => updateNodeParam(node.id, 'condition', v)}
-                                  size='small'
-                                  placeholder='Select target node or workflow...'
-                                  style={{ width: '100%' }}
-                                  allowClear
-                                >
-                                  <Select.OptGroup label='Nodes in this workflow'>
-                                    {editNodes
-                                      .filter((n) => n.id !== node.id)
-                                      .map((n, i) => (
-                                        <Select.Option key={`node:${n.id}`} value={`node:${n.id}`}>
-                                          Step {editNodes.indexOf(n) + 1}: {n.name} ({n.type})
-                                        </Select.Option>
-                                      ))}
-                                  </Select.OptGroup>
-                                  {workflows.length > 0 && (
-                                    <Select.OptGroup label='Saved workflows'>
-                                      {workflows.map((w) => (
-                                        <Select.Option key={`wf:${w.id}`} value={`workflow:${w.id}`}>
-                                          Workflow: {w.name}
-                                        </Select.Option>
-                                      ))}
+                              <div className='flex gap-12px'>
+                                {/* True branch */}
+                                <div className='flex-1'>
+                                  <div className='text-11px mb-4px flex items-center gap-4px'>
+                                    <Tag size='small' color='green'>
+                                      True
+                                    </Tag>
+                                    <span className='text-t-tertiary'>Route to</span>
+                                  </div>
+                                  <Select
+                                    value={(node.parameters.onTrue as string) ?? undefined}
+                                    onChange={(v) => updateNodeParam(node.id, 'onTrue', v)}
+                                    size='small'
+                                    placeholder='If condition is TRUE...'
+                                    style={{ width: '100%' }}
+                                    allowClear
+                                  >
+                                    <Select.OptGroup label='Nodes in this workflow'>
+                                      {editNodes
+                                        .filter((n) => n.id !== node.id)
+                                        .map((n) => (
+                                          <Select.Option key={`true:node:${n.id}`} value={`node:${n.id}`}>
+                                            Step {editNodes.indexOf(n) + 1}: {n.name} ({n.type})
+                                          </Select.Option>
+                                        ))}
                                     </Select.OptGroup>
-                                  )}
-                                </Select>
+                                    {workflows.length > 0 && (
+                                      <Select.OptGroup label='Saved workflows'>
+                                        {workflows.map((w) => (
+                                          <Select.Option key={`true:wf:${w.id}`} value={`workflow:${w.id}`}>
+                                            Workflow: {w.name}
+                                          </Select.Option>
+                                        ))}
+                                      </Select.OptGroup>
+                                    )}
+                                  </Select>
+                                </div>
+                                {/* False branch */}
+                                <div className='flex-1'>
+                                  <div className='text-11px mb-4px flex items-center gap-4px'>
+                                    <Tag size='small' color='red'>
+                                      False
+                                    </Tag>
+                                    <span className='text-t-tertiary'>Route to</span>
+                                  </div>
+                                  <Select
+                                    value={(node.parameters.onFalse as string) ?? undefined}
+                                    onChange={(v) => updateNodeParam(node.id, 'onFalse', v)}
+                                    size='small'
+                                    placeholder='If condition is FALSE...'
+                                    style={{ width: '100%' }}
+                                    allowClear
+                                  >
+                                    <Select.OptGroup label='Nodes in this workflow'>
+                                      {editNodes
+                                        .filter((n) => n.id !== node.id)
+                                        .map((n) => (
+                                          <Select.Option key={`false:node:${n.id}`} value={`node:${n.id}`}>
+                                            Step {editNodes.indexOf(n) + 1}: {n.name} ({n.type})
+                                          </Select.Option>
+                                        ))}
+                                    </Select.OptGroup>
+                                    {workflows.length > 0 && (
+                                      <Select.OptGroup label='Saved workflows'>
+                                        {workflows.map((w) => (
+                                          <Select.Option key={`false:wf:${w.id}`} value={`workflow:${w.id}`}>
+                                            Workflow: {w.name}
+                                          </Select.Option>
+                                        ))}
+                                      </Select.OptGroup>
+                                    )}
+                                  </Select>
+                                </div>
                               </div>
                             )}
                             {node.type === 'transform' && (
@@ -624,9 +668,36 @@ const WorkflowEngine: React.FC = () => {
                       {/* Connection arrow between nodes */}
                       {idx < editNodes.length - 1 && (
                         <div className='flex items-center justify-center py-2px'>
-                          {editConnections.some(
-                            (c) => c.fromNodeId === node.id && c.toNodeId === editNodes[idx + 1].id
-                          ) ? (
+                          {node.type === 'condition' ? (
+                            /* Branching visual for condition nodes */
+                            <div className='flex items-center gap-16px'>
+                              <div className='flex items-center gap-4px'>
+                                <Tag size='small' color='green'>
+                                  True ↓
+                                </Tag>
+                                <span className='text-11px text-t-tertiary'>
+                                  {node.parameters.onTrue
+                                    ? (editNodes.find((n) => `node:${n.id}` === node.parameters.onTrue)?.name ??
+                                      'Workflow')
+                                    : 'Not set'}
+                                </span>
+                              </div>
+                              <div className='text-t-tertiary'>|</div>
+                              <div className='flex items-center gap-4px'>
+                                <Tag size='small' color='red'>
+                                  False ↓
+                                </Tag>
+                                <span className='text-11px text-t-tertiary'>
+                                  {node.parameters.onFalse
+                                    ? (editNodes.find((n) => `node:${n.id}` === node.parameters.onFalse)?.name ??
+                                      'Workflow')
+                                    : 'Not set'}
+                                </span>
+                              </div>
+                            </div>
+                          ) : editConnections.some(
+                              (c) => c.fromNodeId === node.id && c.toNodeId === editNodes[idx + 1].id
+                            ) ? (
                             <div className='flex items-center gap-4px'>
                               <div className='text-16px text-green-500'>↓</div>
                               <Tag size='small' color='green'>
