@@ -46,12 +46,33 @@ export function initWorkflowEngineBridge(): void {
         now,
         now
       );
+    activityLogService.logActivity(driver, {
+      userId: input.userId,
+      actorType: 'user',
+      actorId: input.userId,
+      action: 'workflow.created',
+      entityType: 'workflow_definition',
+      entityId: id,
+      details: { name: input.name, nodeCount: (input.nodes as unknown[]).length },
+    });
     return driver.prepare('SELECT * FROM workflow_definitions WHERE id = ?').get(id);
   });
 
   ipcBridge.workflowEngine.remove.provider(async ({ workflowId }) => {
     const db = await getDatabase();
-    return db.getDriver().prepare('DELETE FROM workflow_definitions WHERE id = ?').run(workflowId).changes > 0;
+    const driver = db.getDriver();
+    const deleted = driver.prepare('DELETE FROM workflow_definitions WHERE id = ?').run(workflowId).changes > 0;
+    if (deleted) {
+      activityLogService.logActivity(driver, {
+        userId: 'system_default_user',
+        actorType: 'user',
+        actorId: 'system_default_user',
+        action: 'workflow.deleted',
+        entityType: 'workflow_definition',
+        entityId: workflowId,
+      });
+    }
+    return deleted;
   });
 
   ipcBridge.workflowEngine.execute.provider(async ({ workflowId, triggerData }) => {
@@ -141,17 +162,34 @@ export function initWorkflowEngineBridge(): void {
     sets.push('updated_at = ?');
     args.push(Date.now());
     args.push(workflowId);
-    db.getDriver()
-      .prepare(`UPDATE workflow_definitions SET ${sets.join(', ')} WHERE id = ?`)
-      .run(...args);
+    const driver = db.getDriver();
+    driver.prepare(`UPDATE workflow_definitions SET ${sets.join(', ')} WHERE id = ?`).run(...args);
+    activityLogService.logActivity(driver, {
+      userId: 'system_default_user',
+      actorType: 'user',
+      actorId: 'system_default_user',
+      action: 'workflow.updated',
+      entityType: 'workflow_definition',
+      entityId: workflowId,
+      details: { updatedFields: Object.keys(updates) },
+    });
   });
 
   ipcBridge.workflowEngine.cancel.provider(async ({ executionId }) => {
     const db = await getDatabase();
-    db.getDriver()
+    const driver = db.getDriver();
+    driver
       .prepare(
         "UPDATE workflow_executions SET status = 'cancelled', finished_at = ? WHERE id = ? AND status = 'running'"
       )
       .run(Date.now(), executionId);
+    activityLogService.logActivity(driver, {
+      userId: 'system_default_user',
+      actorType: 'user',
+      actorId: 'system_default_user',
+      action: 'workflow.execution_cancelled',
+      entityType: 'workflow_execution',
+      entityId: executionId,
+    });
   });
 }
