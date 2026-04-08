@@ -4,7 +4,6 @@ import { extensions as extensionsIpc, type IExtensionSettingsTab } from '@/commo
 import { useExtI18n } from '@/renderer/hooks/system/useExtI18n';
 import {
   Cat,
-  ChartLine,
   Communication,
   Computer,
   Earth,
@@ -36,7 +35,6 @@ export const BUILTIN_TAB_IDS = [
   'display',
   'webui',
   'pet',
-  'observability',
   'system',
   'about',
 ] as const;
@@ -149,7 +147,6 @@ const SettingsSider: React.FC<{ collapsed?: boolean; tooltipEnabled?: boolean }>
         path: 'webui',
       },
       pet: { id: 'pet', label: t('pet.desktopPet'), icon: <Cat />, path: 'pet' },
-      observability: { id: 'observability', label: 'Observability', icon: <ChartLine />, path: 'observability' },
       system: { id: 'system', label: t('settings.system'), icon: <System />, path: 'system' },
       about: { id: 'about', label: t('settings.about'), icon: <Info />, path: 'about' },
     };
