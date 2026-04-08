@@ -1,6 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import classNames from 'classnames';
-import { ArrowCircleLeft, ExpandLeft, ExpandRight, MenuFold, MenuUnfold, Plus, PartyBalloon } from '@icon-park/react';
+import {
+  ArrowCircleLeft,
+  ExpandLeft,
+  ExpandRight,
+  MenuFold,
+  MenuUnfold,
+  Plus,
+  PaintedEggshell,
+} from '@icon-park/react';
 import { Tooltip } from '@arco-design/web-react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -307,7 +315,7 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
             aria-label='Toggle Bollywood Mode'
             style={bollywoodMode ? { color: 'rgb(var(--warning-6))', transform: 'scale(1.15)' } : {}}
           >
-            <PartyBalloon theme={bollywoodMode ? 'filled' : 'outline'} size={iconSize} fill='currentColor' />
+            <PaintedEggshell theme={bollywoodMode ? 'filled' : 'outline'} size={iconSize} fill='currentColor' />
           </button>
         </Tooltip>
         {showNewConversationButton && (

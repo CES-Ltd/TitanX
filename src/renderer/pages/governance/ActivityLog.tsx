@@ -3,11 +3,11 @@
  * Activity log page — paginated audit trail with filters.
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Table, Select, Button, Empty, Tag, Space, Spin } from '@arco-design/web-react';
 import { Refresh } from '@icon-park/react';
-import { activityLog, liveEvents, type IActivityEntry } from '@/common/adapter/ipcBridge';
+import { activityLog, type IActivityEntry } from '@/common/adapter/ipcBridge';
 
 const { Option } = Select;
 
@@ -66,12 +66,13 @@ const ActivityLog: React.FC = () => {
     loadData();
   }, [loadData]);
 
-  // Auto-refresh when new activity events are emitted
+  // Auto-refresh every 5 seconds to pick up new audit entries in real time
+  const lastTotal = useRef(total);
   useEffect(() => {
-    const unsub = liveEvents.activity.on(() => {
+    const interval = setInterval(() => {
       void loadData();
-    });
-    return unsub;
+    }, 5000);
+    return () => clearInterval(interval);
   }, [loadData]);
 
   const columns = [
