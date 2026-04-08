@@ -6,7 +6,9 @@
 import { ipcBridge } from '@/common';
 import { getDatabase } from '@process/services/database';
 import * as engine from '@process/services/workflows/engine';
-import type { WorkflowDefinition, CreateWorkflowInput } from '@process/services/workflows/types';
+import type { WorkflowDefinition } from '@process/services/workflows/types';
+import * as policyService from '@process/services/policyEnforcement';
+import * as activityLogService from '@process/services/activityLog';
 import crypto from 'crypto';
 
 export function initWorkflowEngineBridge(): void {
@@ -55,10 +57,23 @@ export function initWorkflowEngineBridge(): void {
   ipcBridge.workflowEngine.execute.provider(async ({ workflowId, triggerData }) => {
     const db = await getDatabase();
     const driver = db.getDriver();
+
+    // IAM policy check: evaluate if the caller has trigger_workflow permission
+    const callerAgentId = (triggerData as Record<string, unknown>)?.agentGalleryId as string | undefined;
+    if (callerAgentId) {
+      const decision = policyService.evaluateToolAccess(driver, 'system', callerAgentId, 'trigger_workflow', 'system');
+      policyService.logPolicyDecision(driver, decision);
+      if (!decision.allowed) {
+        throw new Error(`IAM policy denied workflow execution: ${decision.reason}`);
+      }
+    }
+
     const row = driver.prepare('SELECT * FROM workflow_definitions WHERE id = ?').get(workflowId) as
       | Record<string, unknown>
       | undefined;
     if (!row) throw new Error(`Workflow not found: ${workflowId}`);
+    if ((row.enabled as number) !== 1) throw new Error(`Workflow "${row.name}" is disabled`);
+
     const workflow: WorkflowDefinition = {
       id: row.id as string,
       userId: row.user_id as string,
@@ -67,11 +82,23 @@ export function initWorkflowEngineBridge(): void {
       nodes: JSON.parse((row.nodes as string) || '[]'),
       connections: JSON.parse((row.connections as string) || '[]'),
       settings: JSON.parse((row.settings as string) || '{}'),
-      enabled: (row.enabled as number) === 1,
+      enabled: true,
       version: (row.version as number) ?? 1,
       createdAt: row.created_at as number,
       updatedAt: row.updated_at as number,
     };
+
+    // Audit log the execution attempt
+    activityLogService.logActivity(driver, {
+      userId: 'system_default_user',
+      actorType: callerAgentId ? 'agent' : 'user',
+      actorId: callerAgentId ?? 'system_default_user',
+      action: 'workflow.execution_requested',
+      entityType: 'workflow_definition',
+      entityId: workflowId,
+      details: { workflowName: workflow.name, callerAgentId },
+    });
+
     return engine.executeWorkflow(driver, workflow, triggerData);
   });
 

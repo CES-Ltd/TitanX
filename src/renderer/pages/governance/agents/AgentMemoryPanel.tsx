@@ -115,8 +115,9 @@ const AgentMemoryPanel: React.FC = () => {
   ];
 
   return (
-    <div className='py-4' style={{ height: 'calc(100vh - 180px)', overflow: 'auto' }}>
+    <div className='py-4 w-full' style={{ height: 'calc(100vh - 180px)', overflow: 'auto' }}>
       <Card
+        className='w-full'
         title={
           <span className='flex items-center gap-2'>
             <Brain size={18} /> Agent Memory

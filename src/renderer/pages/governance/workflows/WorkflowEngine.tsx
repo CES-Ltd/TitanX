@@ -356,7 +356,7 @@ const WorkflowEngine: React.FC = () => {
   ];
 
   return (
-    <div className='py-4' style={{ height: 'calc(100vh - 180px)', overflow: 'auto' }}>
+    <div className='py-4 w-full' style={{ height: 'calc(100vh - 180px)', overflow: 'auto' }}>
       <div className='flex gap-8px mb-12px'>
         <Button
           type={viewMode === 'workflows' ? 'primary' : 'default'}
@@ -378,6 +378,7 @@ const WorkflowEngine: React.FC = () => {
         {viewMode === 'workflows' ? (
           <Card
             title='Workflow Definitions'
+            className='w-full'
             extra={
               <Button type='primary' icon={<Plus size={14} />} size='small' onClick={openNewWorkflow}>
                 New Workflow
@@ -386,20 +387,39 @@ const WorkflowEngine: React.FC = () => {
           >
             <div className='text-12px text-t-tertiary mb-8px'>
               n8n-inspired DAG workflows. Click "New Workflow" to build a flow with triggers, conditions, agents, and
-              approvals.
+              approvals. Workflows are governed by IAM policies — agents need the <code>trigger_workflow</code> tool
+              permission to invoke them.
             </div>
             {workflows.length === 0 ? (
               <Empty description='No workflows defined yet.' />
             ) : (
-              <Table columns={workflowColumns} data={workflows} rowKey='id' pagination={false} size='small' />
+              <Table
+                columns={workflowColumns}
+                data={workflows}
+                rowKey='id'
+                pagination={false}
+                size='small'
+                scroll={{ x: true }}
+              />
             )}
           </Card>
         ) : (
-          <Card title='Execution History'>
+          <Card title='Execution History' className='w-full'>
+            <div className='text-12px text-t-tertiary mb-8px'>
+              Full execution history with per-node input/output recording. Click the history icon to inspect node
+              executions.
+            </div>
             {executions.length === 0 ? (
               <Empty description='No executions yet.' />
             ) : (
-              <Table columns={executionColumns} data={executions} rowKey='id' pagination={false} size='small' />
+              <Table
+                columns={executionColumns}
+                data={executions}
+                rowKey='id'
+                pagination={false}
+                size='small'
+                scroll={{ x: true }}
+              />
             )}
           </Card>
         )}
