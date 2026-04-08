@@ -39,6 +39,17 @@
 
 ---
 
+## 🎬 Demo Videos
+
+| Video | Duration | What it shows |
+|-------|----------|---------------|
+| [App Navigation](./docs/screenshots/demo-navigation.mp4) | 8s | Home → Governance → Observability → Home |
+| [Security & Governance](./docs/screenshots/demo-security.mp4) | 8s | Security Features → Blueprints → Audit Log |
+
+> **Tip:** Clone the repo and open `docs/screenshots/demo-*.mp4` locally, or view on GitHub by clicking the links above.
+
+---
+
 **TitanX** is an enterprise-grade desktop application for AI agent orchestration. It transforms teams of AI agents into a fully governed digital workforce with comprehensive security, observability, and compliance built-in from day one.
 
 > Built on the open-source [AionUI](https://github.com/iOfficeAI/AionUi) platform, TitanX adds enterprise security (inspired by [NVIDIA NemoClaw](https://github.com/NVIDIA/NemoClaw)), workflow automation (inspired by [n8n](https://github.com/n8n-io/n8n)), agent intelligence (inspired by [LangChain](https://github.com/langchain-ai/langchain) and [DeepAgents](https://github.com/langchain-ai/deepagents)), and production observability (inspired by [LangSmith](https://github.com/langchain-ai/langsmith-sdk)) — turning a multi-agent chat interface into a complete AI company control plane.
