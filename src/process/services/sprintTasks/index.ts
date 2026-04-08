@@ -50,6 +50,7 @@ type CreateTaskInput = {
   labels?: string[];
   sprintNumber?: number;
   storyPoints?: number;
+  teamTaskId?: string; // links to team_tasks.id for status sync
 };
 
 /** Generate next auto-increment task ID for a team (TASK-001, TASK-002, etc.) */
@@ -80,8 +81,8 @@ export function createTask(db: ISqliteDriver, input: CreateTaskInput): SprintTas
   const now = Date.now();
 
   db.prepare(
-    `INSERT INTO sprint_tasks (id, team_id, title, description, status, assignee_slot_id, priority, labels, blocked_by, comments, sprint_number, story_points, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 'backlog', ?, ?, ?, '[]', '[]', ?, ?, ?, ?)`
+    `INSERT INTO sprint_tasks (id, team_id, title, description, status, assignee_slot_id, priority, labels, blocked_by, comments, sprint_number, story_points, team_task_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 'backlog', ?, ?, ?, '[]', '[]', ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.teamId,
@@ -92,6 +93,7 @@ export function createTask(db: ISqliteDriver, input: CreateTaskInput): SprintTas
     JSON.stringify(input.labels ?? []),
     input.sprintNumber ?? null,
     input.storyPoints ?? null,
+    input.teamTaskId ?? null,
     now,
     now
   );
@@ -116,6 +118,14 @@ export function createTask(db: ISqliteDriver, input: CreateTaskInput): SprintTas
     createdAt: now,
     updatedAt: now,
   };
+}
+
+/** Find sprint task by its linked team_task_id */
+export function findByTeamTaskId(db: ISqliteDriver, teamTaskId: string): SprintTask | null {
+  const row = db.prepare('SELECT * FROM sprint_tasks WHERE team_task_id = ?').get(teamTaskId) as
+    | Record<string, unknown>
+    | undefined;
+  return row ? rowToTask(row) : null;
 }
 
 export function updateTask(

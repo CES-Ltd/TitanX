@@ -477,41 +477,7 @@ export class TeamMcpServer {
       await taskManager.checkUnblocks(taskId);
     }
 
-    // Sync to sprint_tasks + audit
-    try {
-      const db = await getDatabase();
-      const driver = db.getDriver();
-      const teamId = this.params.teamId;
-      const sprintTasks = sprintService.listTasks(driver, teamId);
-      const statusMap: Record<string, string> = {
-        pending: 'todo',
-        in_progress: 'in_progress',
-        completed: 'done',
-        deleted: 'done',
-      };
-      const mappedStatus = status ? (statusMap[status] ?? status) : undefined;
-      if (mappedStatus) {
-        for (const st of sprintTasks) {
-          if (st.id === taskId || st.title === taskId) {
-            sprintService.updateTask(driver, st.id, {
-              status: mappedStatus as 'backlog' | 'todo' | 'in_progress' | 'review' | 'done',
-            });
-            break;
-          }
-        }
-      }
-      activityLogService.logActivity(driver, {
-        userId: 'system_default_user',
-        actorType: 'agent',
-        actorId: 'mcp',
-        action: 'task.updated',
-        entityType: 'sprint_task',
-        entityId: taskId,
-        details: { status, owner, teamId },
-      });
-    } catch {
-      // Non-critical
-    }
+    // Sprint sync + audit logging handled centrally by TaskManager.update()
 
     return `Task ${taskId.slice(0, 8)} updated.${status ? ` Status: ${status}.` : ''}${owner ? ` Owner: ${owner}.` : ''}`;
   }

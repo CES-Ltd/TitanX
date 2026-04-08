@@ -572,48 +572,13 @@ export class TeammateManager extends EventEmitter {
       }
 
       case 'task_update': {
+        // TaskManager.update() handles sprint sync + audit logging centrally
         await this.taskManager.update(action.taskId, {
           status: action.status as TeamTask['status'],
           owner: action.owner,
         });
         if (action.status === 'completed') {
           await this.taskManager.checkUnblocks(action.taskId);
-        }
-
-        // Sync status to sprint_tasks
-        try {
-          const db = await getDatabase();
-          const sprintTasks = sprintService.listTasks(db.getDriver(), this.teamId);
-          // Find matching sprint task by subject (best-effort match)
-          const statusMap: Record<string, string> = {
-            pending: 'todo',
-            in_progress: 'in_progress',
-            completed: 'done',
-            deleted: 'done',
-          };
-          const mappedStatus = action.status ? (statusMap[action.status] ?? action.status) : undefined;
-          if (mappedStatus) {
-            for (const st of sprintTasks) {
-              if (st.id === action.taskId || st.title === action.taskId) {
-                sprintService.updateTask(db.getDriver(), st.id, {
-                  status: mappedStatus as 'backlog' | 'todo' | 'in_progress' | 'review' | 'done',
-                });
-                break;
-              }
-            }
-          }
-          // Audit log
-          activityLogService.logActivity(db.getDriver(), {
-            userId: 'system_default_user',
-            actorType: 'agent',
-            actorId: fromSlotId,
-            action: 'task.updated',
-            entityType: 'sprint_task',
-            entityId: action.taskId,
-            details: { status: action.status, owner: action.owner, teamId: this.teamId },
-          });
-        } catch (err) {
-          console.error('[TeammateManager] Failed to update sprint task:', err);
         }
         break;
       }
