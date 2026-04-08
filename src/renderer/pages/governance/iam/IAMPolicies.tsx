@@ -24,7 +24,7 @@ import {
   Checkbox,
   Descriptions,
 } from '@arco-design/web-react';
-import { Plus, Delete, Shield, Link as LinkIcon } from '@icon-park/react';
+import { Plus, Delete, Shield } from '@icon-park/react';
 import { iamPolicies, team as teamBridge, type IIAMPolicy } from '@/common/adapter/ipcBridge';
 
 const userId = 'system_default_user';
