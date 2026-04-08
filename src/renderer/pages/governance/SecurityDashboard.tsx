@@ -88,17 +88,16 @@ const SecurityDashboard: React.FC = () => {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [tgl, nets, bps, routes, prsts] = await Promise.all([
-        securityFeatures.list.invoke(),
-        networkPolicies.list.invoke({ userId }),
-        blueprints.list.invoke({ userId }),
-        inferenceRouting.list.invoke({}),
-        networkPolicies.listPresets.invoke(),
-      ]);
+      // Load each independently so partial failures don't block everything
+      const tgl = await securityFeatures.list.invoke().catch(() => [] as ISecurityFeatureToggle[]);
       setToggles(tgl);
+      const nets = await networkPolicies.list.invoke({ userId }).catch((): unknown[] => []);
       setNetworkPolicyCount((nets as unknown[]).length);
+      const bps = await blueprints.list.invoke({ userId }).catch((): unknown[] => []);
       setBlueprintCount((bps as unknown[]).length);
+      const routes = await inferenceRouting.list.invoke({}).catch((): unknown[] => []);
       setRouteCount((routes as unknown[]).length);
+      const prsts = await networkPolicies.listPresets.invoke().catch(() => [] as string[]);
       setPresets(prsts);
     } catch (err) {
       console.error('[SecurityDashboard] Load failed:', err);
