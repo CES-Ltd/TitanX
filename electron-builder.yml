@@ -217,7 +217,7 @@ asarUnpack:
 # Compression level: normal for faster builds, maximum for smallest size
 # Note: electron-builder doesn't support YAML template syntax for env vars
 # The build script sets ELECTRON_BUILDER_COMPRESSION_LEVEL env var which takes precedence
-compression: normal
+compression: maximum
 removePackageScripts: true
 electronDownload:
   cache: ${env.ELECTRON_CACHE}

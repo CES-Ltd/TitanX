@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import mermaid from 'mermaid';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import { vs, vs2015 } from 'react-syntax-highlighter/dist/esm/styles/hljs';
 
@@ -13,6 +12,15 @@ import { Message } from '@arco-design/web-react';
 import { Copy, PreviewOpen } from '@icon-park/react';
 import { usePreviewContext } from '@/renderer/pages/conversation/Preview';
 import React, { useEffect, useRef, useState } from 'react';
+
+// Lazy-load mermaid — ~400KB gzipped, only needed when a mermaid diagram renders
+let mermaidModule: typeof import('mermaid').default | null = null;
+const getMermaid = async () => {
+  if (!mermaidModule) {
+    mermaidModule = (await import('mermaid')).default;
+  }
+  return mermaidModule;
+};
 import { useTranslation } from 'react-i18next';
 
 type MermaidBlockProps = {
@@ -79,6 +87,7 @@ function MermaidBlock({ code, style, showOpenInPanelButton = true }: MermaidBloc
 
     const renderDiagram = async () => {
       try {
+        const mermaid = await getMermaid();
         mermaid.initialize({
           startOnLoad: false,
           securityLevel: 'strict',

@@ -7,8 +7,6 @@
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import { vs, vs2015 } from 'react-syntax-highlighter/dist/esm/styles/hljs';
 
-import katex from 'katex';
-
 import { copyText } from '@/renderer/utils/ui/clipboard';
 import { Message } from '@arco-design/web-react';
 import { Copy, Down, Up } from '@icon-park/react';
@@ -16,6 +14,31 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import MermaidBlock from './MermaidBlock';
 import { formatCode, getDiffLineStyle } from './markdownUtils';
+
+// Lazy KaTeX renderer — loads katex (~253KB) only when a math block is encountered
+function LazyKaTeX({ source }: { source: string }) {
+  const [html, setHtml] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    void import('katex').then((mod) => {
+      if (cancelled) return;
+      try {
+        const rendered = mod.default.renderToString(source, {
+          displayMode: true,
+          throwOnError: false,
+        });
+        setHtml(rendered);
+      } catch {
+        // KaTeX failed — leave null so parent renders as code block
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [source]);
+  if (html === null) return <pre><code>{source}</code></pre>;
+  return <div className='katex-display' dangerouslySetInnerHTML={{ __html: html }} />;
+}
 
 const PREVIEW_LINES = 3;
 const EXPANDED_STATES_MAX_SIZE = 200;
@@ -84,21 +107,13 @@ function CodeBlock(props: CodeBlockProps) {
   const language = match?.[1] || 'text';
   const codeTheme = currentTheme === 'dark' ? vs2015 : vs;
 
-  // Render latex/math code blocks as KaTeX display math
+  // Render latex/math code blocks as KaTeX display math (lazy-loaded)
   // Skip full LaTeX documents (with \documentclass, \begin{document}, etc.) — KaTeX only handles math
   if (language === 'latex' || language === 'math' || language === 'tex') {
     const latexSource = String(children).replace(/\n$/, '');
     const isFullDocument = /\\(documentclass|begin\{document\}|usepackage)\b/.test(latexSource);
     if (!isFullDocument) {
-      try {
-        const html = katex.renderToString(latexSource, {
-          displayMode: true,
-          throwOnError: false,
-        });
-        return <div className='katex-display' dangerouslySetInnerHTML={{ __html: html }} />;
-      } catch {
-        // Fall through to render as code block if KaTeX fails
-      }
+      return <LazyKaTeX source={latexSource} />;
     }
   }
 

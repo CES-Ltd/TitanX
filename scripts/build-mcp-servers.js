@@ -20,6 +20,8 @@ async function main() {
   await esbuild.build({
     entryPoints: [path.join(ROOT, 'src/process/resources/builtinMcp/imageGenServer.ts')],
     bundle: true,
+    minify: true,
+    treeShaking: true,
     platform: 'node',
     format: 'cjs',
     outfile: path.join(ROOT, 'out/main/builtin-mcp-image-gen.js'),

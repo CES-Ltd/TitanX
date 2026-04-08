@@ -22,9 +22,10 @@ import { pathToFileURL } from 'url';
 import { initMainAdapterWithWindow } from './common/adapter/main';
 import { ipcBridge } from './common';
 import { AION_ASSET_PROTOCOL } from '@process/extensions';
-import { initializeProcess } from './process';
+import { initializeEssentials, initializeDeferred } from './process';
 import { ProcessConfig } from './process/utils/initStorage';
 import { loadShellEnvironmentAsync, logEnvironmentDiagnostics, mergePaths } from './process/utils/shellEnv';
+import fsPromises from 'fs/promises';
 import { initializeAcpDetector, registerWindowMaximizeListeners, disposeAllTeamSessions } from '@process/bridge';
 import { wasLaunchedAtLogin } from '@process/bridge/applicationBridge';
 import { onCloseToTrayChanged, onLanguageChanged } from './process/bridge/systemSettingsBridge';
@@ -107,23 +108,41 @@ if (!gotTheLock) {
 if (process.platform === 'darwin' || process.platform === 'linux') {
   fixPath();
 
-  // Supplement nvm paths that fix-path might miss (nvm is often only in .zshrc, not .zshenv)
-  const nvmDir = process.env.NVM_DIR || path.join(process.env.HOME || '', '.nvm');
-  const nvmVersionsDir = path.join(nvmDir, 'versions', 'node');
-  if (fs.existsSync(nvmVersionsDir)) {
-    try {
-      const versions = fs.readdirSync(nvmVersionsDir);
-      const nvmPaths = versions.map((v) => path.join(nvmVersionsDir, v, 'bin')).filter((p) => fs.existsSync(p));
-      if (nvmPaths.length > 0) {
-        const currentPath = process.env.PATH || '';
-        const missingPaths = nvmPaths.filter((p) => !currentPath.includes(p));
-        if (missingPaths.length > 0) {
-          process.env.PATH = [...missingPaths, currentPath].join(path.delimiter);
-        }
+  // NVM path supplementation is deferred to after window creation (supplementNvmPaths)
+  // to avoid blocking startup with sync readdirSync + existsSync calls.
+}
+
+// Remove sync fs import usage for NVM (was readdirSync) — now using fsPromises above.
+
+/**
+ * Asynchronously supplement PATH with nvm-managed Node versions.
+ * Deferred from top-level to avoid blocking startup with sync I/O.
+ */
+async function supplementNvmPaths(): Promise<void> {
+  if (process.platform !== 'darwin' && process.platform !== 'linux') return;
+  try {
+    const nvmDir = process.env.NVM_DIR || path.join(process.env.HOME || '', '.nvm');
+    const nvmVersionsDir = path.join(nvmDir, 'versions', 'node');
+    const stat = await fsPromises.stat(nvmVersionsDir).catch((): null => null);
+    if (!stat?.isDirectory()) return;
+    const versions = await fsPromises.readdir(nvmVersionsDir);
+    const checks = await Promise.all(
+      versions.map(async (v) => {
+        const binPath = path.join(nvmVersionsDir, v, 'bin');
+        const s = await fsPromises.stat(binPath).catch((): null => null);
+        return s?.isDirectory() ? binPath : null;
+      })
+    );
+    const nvmPaths = checks.filter((p): p is string => p !== null);
+    if (nvmPaths.length > 0) {
+      const currentPath = process.env.PATH || '';
+      const missingPaths = nvmPaths.filter((p) => !currentPath.includes(p));
+      if (missingPaths.length > 0) {
+        process.env.PATH = [...missingPaths, currentPath].join(path.delimiter);
       }
-    } catch {
-      // Ignore errors when reading nvm directory
     }
+  } catch {
+    // Ignore errors when reading nvm directory
   }
 }
 
@@ -425,9 +444,10 @@ const handleAppReady = async (): Promise<void> => {
     }
   }
 
+  // Phase 1: Essential init (storage, bridges, i18n) — must complete before window
   try {
-    await initializeProcess();
-    mark('initializeProcess');
+    await initializeEssentials();
+    mark('initializeEssentials');
   } catch (error) {
     console.error('Failed to initialize process:', error);
     app.exit(1);
@@ -511,6 +531,11 @@ const handleAppReady = async (): Promise<void> => {
     appReadyDone = true;
     mark('createWindow');
 
+    // Phase 2: Deferred init (extensions, channels) — runs while renderer loads
+    initializeDeferred()
+      .then(() => mark('initializeDeferred'))
+      .catch((error) => console.error('[Process] Deferred initialization failed:', error));
+
     // Initialize desktop pet (delayed to not block main window)
     setTimeout(() => {
       void (async () => {
@@ -532,6 +557,9 @@ const handleAppReady = async (): Promise<void> => {
         }
       })();
     }, 3000);
+
+    // Supplement NVM paths asynchronously (deferred from top-level sync scan)
+    void supplementNvmPaths();
 
     // Run ACP detection in parallel with renderer loading.
     // By the time React mounts and calls getAvailableAgents (~300ms+),

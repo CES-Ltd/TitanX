@@ -163,8 +163,17 @@ const Layout: React.FC<{
   }, [customCss]);
 
   // 加载并监听自定义 CSS 配置 / Load & watch custom CSS configuration
+  // Defer initial load to idle time — custom CSS is not needed for first meaningful paint.
   useEffect(() => {
+    if (typeof requestIdleCallback === 'function') {
+      const id = requestIdleCallback(() => void loadAndHealCustomCss());
+      return () => cancelIdleCallback(id);
+    }
     void loadAndHealCustomCss();
+    return undefined;
+  }, [loadAndHealCustomCss]);
+
+  useEffect(() => {
 
     const handleCssUpdate = (event: CustomEvent) => {
       if (event.detail?.customCss !== undefined) {
@@ -272,20 +281,37 @@ const Layout: React.FC<{
     cleanupSiderTooltips();
   }, [isMobile, collapsed, location.pathname, location.search, location.hash]);
 
-  // Bridge Main Process logs to F12 Console
+  // Bridge Main Process logs to F12 Console (throttled to avoid render stalls)
   useEffect(() => {
+    type LogEntry = { level: string; tag: string; message: string; data?: unknown };
+    const buffer: LogEntry[] = [];
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const flush = () => {
+      flushTimer = null;
+      const entries = buffer.splice(0);
+      for (const entry of entries) {
+        const prefix = `%c[Main:${entry.tag}]%c ${entry.message}`;
+        const style = 'color:#7c3aed;font-weight:bold';
+        const args: unknown[] = [prefix, style, 'color:inherit'];
+        if (entry.data !== undefined) args.push(entry.data);
+        if (entry.level === 'error') console.error(...args);
+        else if (entry.level === 'warn') console.warn(...args);
+        else console.log(...args);
+      }
+    };
+
     const unsubscribe = ipcBridge.application.logStream.on((entry) => {
-      const prefix = `%c[Main:${entry.tag}]%c ${entry.message}`;
-      const style = 'color:#7c3aed;font-weight:bold';
-      if (entry.level === 'error') {
-        console.error(prefix, style, 'color:inherit', ...(entry.data !== undefined ? [entry.data] : []));
-      } else if (entry.level === 'warn') {
-        console.warn(prefix, style, 'color:inherit', ...(entry.data !== undefined ? [entry.data] : []));
-      } else {
-        console.log(prefix, style, 'color:inherit', ...(entry.data !== undefined ? [entry.data] : []));
+      buffer.push(entry as LogEntry);
+      if (!flushTimer) {
+        flushTimer = setTimeout(flush, 200);
       }
     });
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      if (flushTimer) clearTimeout(flushTimer);
+      flush();
+    };
   }, []);
 
   // Handle tray events from main process / 处理来自主进程的托盘事件

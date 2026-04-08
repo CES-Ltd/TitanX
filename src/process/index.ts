@@ -22,14 +22,23 @@ import './services/i18n'; // Initialize i18n for main process
 import { getChannelManager } from '@process/channels';
 import { ExtensionRegistry } from '@process/extensions';
 
-export const initializeProcess = async () => {
+/**
+ * Phase 1: Essential initialization required before the window can be created.
+ * Initializes storage, bridges, and i18n — the minimum needed for IPC and config.
+ */
+export const initializeEssentials = async () => {
   const t0 = performance.now();
   const mark = (label: string) => console.log(`[AionUi:process] ${label} +${Math.round(performance.now() - t0)}ms`);
 
   await initStorage();
   mark('initStorage');
+};
 
-  // ExtensionRegistry and ChannelManager are independent — initialize in parallel
+/**
+ * Phase 2: Deferred initialization that can run after the window is shown.
+ * Extensions and channels are not needed before the renderer starts loading.
+ */
+export const initializeDeferred = async () => {
   await Promise.all([
     ExtensionRegistry.getInstance()
       .initialize()
@@ -42,5 +51,10 @@ export const initializeProcess = async () => {
         console.error('[Process] Failed to initialize ChannelManager:', error);
       }),
   ]);
-  mark('ExtensionRegistry + ChannelManager');
+};
+
+/** Full initialization (both phases). Used by standalone server mode. */
+export const initializeProcess = async () => {
+  await initializeEssentials();
+  await initializeDeferred();
 };

@@ -10,20 +10,23 @@ import { useLayoutContext } from '@/renderer/hooks/context/LayoutContext';
 import { PreviewToolbarExtrasProvider, type PreviewToolbarExtras } from '../../context/PreviewToolbarExtrasContext';
 import { usePreviewContext } from '../../context/PreviewContext';
 import { useResizableSplit } from '@/renderer/hooks/ui/useResizableSplit';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useMemo, useRef, useState } from 'react';
+import { Spin } from '@arco-design/web-react';
+// Lightweight viewers — loaded eagerly (small bundles, used frequently)
 import CodePreview from '../viewers/CodeViewer';
-import DiffPreview from '../viewers/DiffViewer';
-import ExcelPreview from '../viewers/ExcelViewer';
-import HTMLEditor from '../editors/HTMLEditor';
-import HTMLRenderer from '../renderers/HTMLRenderer';
 import ImagePreview from '../viewers/ImageViewer';
-import MarkdownEditor from '../editors/MarkdownEditor';
 import MarkdownPreview from '../viewers/MarkdownViewer';
-import PDFPreview from '../viewers/PDFViewer';
-import OfficeDocPreview from '../viewers/OfficeDocViewer';
-import PptViewer from '../viewers/PptViewer';
 import TextEditor from '../editors/TextEditor';
-import URLViewer from '../viewers/URLViewer';
+import MarkdownEditor from '../editors/MarkdownEditor';
+// Heavy viewers — lazy-loaded (PDF, Excel, PPT, Office bring large dependencies)
+const DiffPreview = React.lazy(() => import('../viewers/DiffViewer'));
+const ExcelPreview = React.lazy(() => import('../viewers/ExcelViewer'));
+const HTMLEditor = React.lazy(() => import('../editors/HTMLEditor'));
+const HTMLRenderer = React.lazy(() => import('../renderers/HTMLRenderer'));
+const PDFPreview = React.lazy(() => import('../viewers/PDFViewer'));
+const OfficeDocPreview = React.lazy(() => import('../viewers/OfficeDocViewer'));
+const PptViewer = React.lazy(() => import('../viewers/PptViewer'));
+const URLViewer = React.lazy(() => import('../viewers/URLViewer'));
 import {
   PreviewTabs,
   PreviewToolbar,
@@ -733,7 +736,9 @@ const PreviewPanel: React.FC = () => {
         )}
 
         {/* 预览内容 / Preview content */}
-        {renderContent()}
+        <Suspense fallback={<div className='flex-1 flex items-center justify-center'><Spin /></div>}>
+          {renderContent()}
+        </Suspense>
 
         {/* Tab 右键菜单 / Tab context menu */}
         {/* eslint-disable-next-line max-len */}
