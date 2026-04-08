@@ -22,4 +22,14 @@ export function initAgentPlansBridge(): void {
     const db = await getDatabase();
     return planningService.getActivePlan(db.getDriver(), agentSlotId);
   });
+
+  // Sync plans from existing team_tasks on startup (idempotent backfill)
+  void (async () => {
+    try {
+      const db = await getDatabase();
+      planningService.syncPlansFromTasks(db.getDriver());
+    } catch {
+      // Non-critical startup task
+    }
+  })();
 }

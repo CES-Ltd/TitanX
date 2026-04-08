@@ -175,6 +175,70 @@ export function listPlans(db: ISqliteDriver, teamId: string, agentSlotId?: strin
   return (db.prepare(query).all(...args) as Array<Record<string, unknown>>).map(rowToPlan);
 }
 
+/**
+ * Sync plans from existing team_tasks — creates plans for agents that have
+ * tasks but no plans yet. Safe to call multiple times (idempotent).
+ */
+export function syncPlansFromTasks(db: ISqliteDriver): number {
+  // Get team_tasks grouped by team_id + owner that don't have plans yet
+  const tasks = db
+    .prepare(
+      `SELECT t.team_id, t.owner, t.subject, t.status, t.created_at
+       FROM team_tasks t
+       WHERE t.owner IS NOT NULL
+       ORDER BY t.created_at ASC`
+    )
+    .all() as Array<Record<string, unknown>>;
+
+  // Group by team_id + owner
+  const groups = new Map<string, { teamId: string; owner: string; tasks: Array<Record<string, unknown>> }>();
+  for (const t of tasks) {
+    const key = `${t.team_id}|${t.owner}`;
+    if (!groups.has(key)) {
+      groups.set(key, { teamId: t.team_id as string, owner: t.owner as string, tasks: [] });
+    }
+    groups.get(key)!.tasks.push(t);
+  }
+
+  // Try to map owner names to slot IDs from teams.agents JSON
+  const teamRows = db.prepare('SELECT id, agents FROM teams').all() as Array<{ id: string; agents: string }>;
+  const ownerToSlot = new Map<string, string>();
+  for (const team of teamRows) {
+    try {
+      const agents = JSON.parse(team.agents) as Array<{ slotId: string; agentName: string }>;
+      for (const a of agents) {
+        ownerToSlot.set(`${team.id}|${a.agentName}`, a.slotId);
+      }
+    } catch {
+      /* skip */
+    }
+  }
+
+  let synced = 0;
+  for (const [_key, group] of groups) {
+    if (group.tasks.length === 0) continue;
+
+    const slotId =
+      ownerToSlot.get(`${group.teamId}|${group.owner}`) ?? `slot-${group.owner.toLowerCase().replace(/\s+/g, '-')}`;
+
+    // Check if this agent already has a plan for this team
+    const existing = db
+      .prepare('SELECT id FROM agent_plans WHERE agent_slot_id = ? AND team_id = ? LIMIT 1')
+      .get(slotId, group.teamId);
+    if (existing) continue;
+
+    // Create plan from tasks
+    const stepDescriptions = group.tasks.map((t) => t.subject as string);
+    createPlan(db, slotId, group.teamId, `${group.owner}'s Task Plan`, stepDescriptions);
+    synced++;
+  }
+
+  if (synced > 0) {
+    console.log(`[AgentPlanning] Synced ${synced} plan(s) from team_tasks`);
+  }
+  return synced;
+}
+
 function rowToPlan(row: Record<string, unknown>): AgentPlan {
   return {
     id: row.id as string,
