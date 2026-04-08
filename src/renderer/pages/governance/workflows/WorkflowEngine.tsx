@@ -451,182 +451,208 @@ const WorkflowEngine: React.FC = () => {
             {editNodes.length === 0 ? (
               <Empty description='Add nodes to build your workflow' className='py-8px' />
             ) : (
-              <div className='flex flex-col gap-8px'>
+              <div className='flex flex-col gap-4px'>
                 {editNodes.map((node, idx) => {
                   const typeDef = NODE_TYPES.find((t) => t.value === node.type);
+                  const hasParams = ['condition', 'transform', 'action', 'agent_call', 'loop'].includes(node.type);
                   return (
-                    <Card
-                      key={node.id}
-                      size='small'
-                      className='border-l-3'
-                      style={{ borderLeftColor: `var(--color-${typeDef?.color ?? 'gray'}-6, #86909c)` }}
-                    >
-                      <div className='flex items-center gap-8px'>
-                        <Tag color={typeDef?.color ?? 'gray'} size='small'>
-                          {idx + 1}
-                        </Tag>
-                        <Input
-                          value={node.name}
-                          onChange={(v) => updateNodeName(node.id, v)}
-                          size='small'
-                          style={{ width: 180 }}
-                        />
-                        <Tag size='small'>{node.type}</Tag>
-
-                        {/* Type-specific parameters — all dropdowns */}
-                        {node.type === 'condition' && (
-                          <Select
-                            value={(node.parameters.condition as string) ?? undefined}
-                            onChange={(v) => updateNodeParam(node.id, 'condition', v)}
-                            size='mini'
-                            placeholder='Route to...'
-                            style={{ width: 170 }}
-                            allowClear
-                          >
-                            <Select.OptGroup label='Nodes in this workflow'>
-                              {editNodes
-                                .filter((n) => n.id !== node.id)
-                                .map((n) => (
-                                  <Select.Option key={`node:${n.id}`} value={`node:${n.id}`}>
-                                    → {n.name} ({n.type})
-                                  </Select.Option>
-                                ))}
-                            </Select.OptGroup>
-                            {workflows.length > 0 && (
-                              <Select.OptGroup label='Saved workflows'>
-                                {workflows.map((w) => (
-                                  <Select.Option key={`wf:${w.id}`} value={`workflow:${w.id}`}>
-                                    ↗ {w.name}
-                                  </Select.Option>
-                                ))}
-                              </Select.OptGroup>
-                            )}
-                          </Select>
-                        )}
-                        {node.type === 'transform' && (
-                          <Select
-                            value={(node.parameters.mappingExpr as string) ?? undefined}
-                            onChange={(v) => updateNodeParam(node.id, 'mappingExpr', v)}
-                            size='mini'
-                            placeholder='Data source...'
-                            style={{ width: 180 }}
-                            allowClear
-                            showSearch
-                          >
-                            {TRANSFORM_SOURCES.map((s) => (
-                              <Select.Option key={s.value} value={s.value}>
-                                {s.label}
-                              </Select.Option>
-                            ))}
-                          </Select>
-                        )}
-                        {node.type === 'action' && (
-                          <Select
-                            value={(node.parameters.action as string) ?? undefined}
-                            onChange={(v) => updateNodeParam(node.id, 'action', v)}
-                            size='mini'
-                            placeholder='Select tool...'
-                            style={{ width: 180 }}
-                            showSearch
-                          >
-                            {AVAILABLE_TOOLS.map((t) => (
-                              <Select.Option key={t} value={t}>
-                                {t}
-                              </Select.Option>
-                            ))}
-                          </Select>
-                        )}
-                        {node.type === 'agent_call' && (
-                          <Select
-                            value={(node.parameters.agentSlotId as string) ?? undefined}
-                            onChange={(v) => updateNodeParam(node.id, 'agentSlotId', v)}
-                            size='mini'
-                            placeholder='Select agent...'
+                    <React.Fragment key={node.id}>
+                      <Card
+                        size='small'
+                        className='border-l-3'
+                        style={{ borderLeftColor: `var(--color-${typeDef?.color ?? 'gray'}-6, #86909c)` }}
+                        bodyStyle={{ padding: '8px 12px' }}
+                      >
+                        {/* Row 1: Number + Name + Type badge + Delete */}
+                        <div className='flex items-center gap-8px mb-0'>
+                          <Tag color={typeDef?.color ?? 'gray'} size='small'>
+                            {idx + 1}
+                          </Tag>
+                          <Input
+                            value={node.name}
+                            onChange={(v) => updateNodeName(node.id, v)}
+                            size='small'
                             style={{ width: 200 }}
-                            showSearch
-                          >
-                            {allAgents.map((a) => (
-                              <Select.Option key={a.slotId} value={a.slotId}>
-                                {a.agentName} ({a.agentType}) — {a.teamName}
-                              </Select.Option>
-                            ))}
-                            {allAgents.length === 0 && (
-                              <Select.Option key='none' value='' disabled>
-                                No agents available
-                              </Select.Option>
-                            )}
-                          </Select>
-                        )}
-                        {node.type === 'loop' && (
+                          />
+                          <Tag size='small' color='gray'>
+                            {node.type}
+                          </Tag>
+                          <div className='flex-1' />
                           <Select
-                            value={(node.parameters.arrayField as string) ?? undefined}
-                            onChange={(v) => updateNodeParam(node.id, 'arrayField', v)}
+                            value={node.onError}
+                            onChange={(v) =>
+                              setEditNodes((prev) => prev.map((n) => (n.id === node.id ? { ...n, onError: v } : n)))
+                            }
                             size='mini'
-                            placeholder='Array field...'
-                            style={{ width: 150 }}
-                            showSearch
-                          >
-                            <Select.Option value='items'>items</Select.Option>
-                            <Select.Option value='results'>results</Select.Option>
-                            <Select.Option value='data'>data</Select.Option>
-                            <Select.Option value='__loopItems'>__loopItems</Select.Option>
-                          </Select>
+                            style={{ width: 90 }}
+                            prefix='On error:'
+                            options={[
+                              { label: 'Stop', value: 'stop' },
+                              { label: 'Continue', value: 'continue' },
+                              { label: 'Retry', value: 'retry' },
+                            ]}
+                          />
+                          <Button
+                            icon={<Close size={12} />}
+                            type='text'
+                            status='danger'
+                            size='mini'
+                            onClick={() => removeNode(node.id)}
+                          />
+                        </div>
+
+                        {/* Row 2: Type-specific configuration (full width) */}
+                        {hasParams && (
+                          <div className='mt-8px'>
+                            {node.type === 'action' && (
+                              <div>
+                                <div className='text-11px text-t-tertiary mb-4px'>Tool</div>
+                                <Select
+                                  value={(node.parameters.action as string) ?? undefined}
+                                  onChange={(v) => updateNodeParam(node.id, 'action', v)}
+                                  size='small'
+                                  placeholder='Select a tool to execute...'
+                                  style={{ width: '100%' }}
+                                  showSearch
+                                >
+                                  {AVAILABLE_TOOLS.map((t) => (
+                                    <Select.Option key={t} value={t}>
+                                      {t.replace(/_/g, ' ')}
+                                    </Select.Option>
+                                  ))}
+                                </Select>
+                              </div>
+                            )}
+                            {node.type === 'agent_call' && (
+                              <div>
+                                <div className='text-11px text-t-tertiary mb-4px'>Delegate to Agent</div>
+                                <Select
+                                  value={(node.parameters.agentSlotId as string) ?? undefined}
+                                  onChange={(v) => updateNodeParam(node.id, 'agentSlotId', v)}
+                                  size='small'
+                                  placeholder='Select an agent to delegate to...'
+                                  style={{ width: '100%' }}
+                                  showSearch
+                                >
+                                  {allAgents.map((a) => (
+                                    <Select.Option key={a.slotId} value={a.slotId}>
+                                      {a.agentName} ({a.agentType}) — {a.teamName}
+                                    </Select.Option>
+                                  ))}
+                                  {allAgents.length === 0 && (
+                                    <Select.Option key='none' value='' disabled>
+                                      No agents — create a team first
+                                    </Select.Option>
+                                  )}
+                                </Select>
+                              </div>
+                            )}
+                            {node.type === 'condition' && (
+                              <div>
+                                <div className='text-11px text-t-tertiary mb-4px'>If True, Route To</div>
+                                <Select
+                                  value={(node.parameters.condition as string) ?? undefined}
+                                  onChange={(v) => updateNodeParam(node.id, 'condition', v)}
+                                  size='small'
+                                  placeholder='Select target node or workflow...'
+                                  style={{ width: '100%' }}
+                                  allowClear
+                                >
+                                  <Select.OptGroup label='Nodes in this workflow'>
+                                    {editNodes
+                                      .filter((n) => n.id !== node.id)
+                                      .map((n, i) => (
+                                        <Select.Option key={`node:${n.id}`} value={`node:${n.id}`}>
+                                          Step {editNodes.indexOf(n) + 1}: {n.name} ({n.type})
+                                        </Select.Option>
+                                      ))}
+                                  </Select.OptGroup>
+                                  {workflows.length > 0 && (
+                                    <Select.OptGroup label='Saved workflows'>
+                                      {workflows.map((w) => (
+                                        <Select.Option key={`wf:${w.id}`} value={`workflow:${w.id}`}>
+                                          Workflow: {w.name}
+                                        </Select.Option>
+                                      ))}
+                                    </Select.OptGroup>
+                                  )}
+                                </Select>
+                              </div>
+                            )}
+                            {node.type === 'transform' && (
+                              <div>
+                                <div className='text-11px text-t-tertiary mb-4px'>Data Source</div>
+                                <Select
+                                  value={(node.parameters.mappingExpr as string) ?? undefined}
+                                  onChange={(v) => updateNodeParam(node.id, 'mappingExpr', v)}
+                                  size='small'
+                                  placeholder='Select data source to map...'
+                                  style={{ width: '100%' }}
+                                  allowClear
+                                  showSearch
+                                >
+                                  {TRANSFORM_SOURCES.map((s) => (
+                                    <Select.Option key={s.value} value={s.value}>
+                                      {s.label}
+                                    </Select.Option>
+                                  ))}
+                                </Select>
+                              </div>
+                            )}
+                            {node.type === 'loop' && (
+                              <div>
+                                <div className='text-11px text-t-tertiary mb-4px'>Iterate Over</div>
+                                <Select
+                                  value={(node.parameters.arrayField as string) ?? undefined}
+                                  onChange={(v) => updateNodeParam(node.id, 'arrayField', v)}
+                                  size='small'
+                                  placeholder='Select array field to iterate...'
+                                  style={{ width: '100%' }}
+                                  showSearch
+                                >
+                                  <Select.Option value='items'>items — General purpose array</Select.Option>
+                                  <Select.Option value='results'>results — Query results</Select.Option>
+                                  <Select.Option value='data'>data — Response data</Select.Option>
+                                  <Select.Option value='steps'>steps — Plan steps</Select.Option>
+                                </Select>
+                              </div>
+                            )}
+                          </div>
                         )}
+                      </Card>
 
-                        {/* Error handling */}
-                        <Select
-                          value={node.onError}
-                          onChange={(v) =>
-                            setEditNodes((prev) => prev.map((n) => (n.id === node.id ? { ...n, onError: v } : n)))
-                          }
-                          size='mini'
-                          style={{ width: 80 }}
-                          options={[
-                            { label: 'Stop', value: 'stop' },
-                            { label: 'Continue', value: 'continue' },
-                            { label: 'Retry', value: 'retry' },
-                          ]}
-                        />
-
-                        <Button
-                          icon={<Close size={12} />}
-                          type='text'
-                          status='danger'
-                          size='mini'
-                          onClick={() => removeNode(node.id)}
-                        />
-                      </div>
-
-                      {/* Connection controls */}
+                      {/* Connection arrow between nodes */}
                       {idx < editNodes.length - 1 && (
-                        <div className='mt-4px flex items-center gap-4px text-11px text-t-tertiary'>
-                          <Right size={12} />
+                        <div className='flex items-center justify-center py-2px'>
                           {editConnections.some(
                             (c) => c.fromNodeId === node.id && c.toNodeId === editNodes[idx + 1].id
                           ) ? (
-                            <span>
-                              Connected to <Tag size='small'>{editNodes[idx + 1].name}</Tag>
+                            <div className='flex items-center gap-4px'>
+                              <div className='text-16px text-green-500'>↓</div>
+                              <Tag size='small' color='green'>
+                                Connected
+                              </Tag>
                               <Button
                                 size='mini'
                                 type='text'
-                                className='ml-4px'
+                                status='danger'
                                 onClick={() => removeConnection(node.id, editNodes[idx + 1].id)}
                               >
-                                Disconnect
+                                ×
                               </Button>
-                            </span>
+                            </div>
                           ) : (
                             <Button
                               size='mini'
-                              type='text'
+                              type='dashed'
                               onClick={() => connectNodes(node.id, editNodes[idx + 1].id)}
                             >
-                              Connect to next →
+                              ↓ Connect
                             </Button>
                           )}
                         </div>
                       )}
-                    </Card>
+                    </React.Fragment>
                   );
                 })}
               </div>
