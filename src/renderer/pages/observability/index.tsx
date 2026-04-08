@@ -34,7 +34,13 @@ const ObservabilityPage: React.FC = () => {
       <Title heading={4} className='mb-4'>
         {t('observability.title', 'Observability')}
       </Title>
-      <Tabs activeTab={activeTab} onChange={handleTabChange} type='rounded' className='flex-1 min-h-0'>
+      <Tabs
+        activeTab={activeTab}
+        onChange={handleTabChange}
+        type='rounded'
+        className='flex-1 min-h-0'
+        style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+      >
         <TabPane
           key='command-center'
           title={

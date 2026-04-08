@@ -1,5 +1,19 @@
 /* Arco Design custom overrides - non-theme related */
 
+/* TitanX: Make tab content panels scrollable when they overflow */
+.arco-tabs-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.arco-tabs-content-inner {
+  height: 100%;
+}
+.arco-tabs-content .arco-tabs-pane {
+  height: 100%;
+  overflow: auto;
+}
+
 /* Override Arco Design component backgrounds to white in light mode */
 /* 覆盖 Arco Design 组件背景色为白色（浅色模式） */
 /* .arco-input,
