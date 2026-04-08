@@ -21,6 +21,7 @@ export type AgentBlueprint = {
   name: string;
   description: string;
   isBuiltin: boolean;
+  enabled: boolean;
   config: BlueprintConfig;
   createdAt: number;
   updatedAt: number;
@@ -46,6 +47,7 @@ const BUILTIN_BLUEPRINTS: Array<Omit<AgentBlueprint, 'id' | 'userId' | 'createdA
     name: 'sandboxed-default',
     description: 'Deny-most security posture. Agents can only use team tools, no network egress, read-only filesystem.',
     isBuiltin: true,
+    enabled: true,
     config: {
       iamPermissions: {
         tools: {
@@ -70,6 +72,7 @@ const BUILTIN_BLUEPRINTS: Array<Omit<AgentBlueprint, 'id' | 'userId' | 'createdA
     name: 'developer-open',
     description: 'Full access for trusted developer agents. Workspace write, GitHub/npm network access, all tools.',
     isBuiltin: true,
+    enabled: true,
     config: {
       iamPermissions: { tools: { '*': true }, maxCostPerTurn: 200, maxSpawns: 3 },
       networkPolicyPresets: ['github', 'npm', 'docker'],
@@ -84,6 +87,7 @@ const BUILTIN_BLUEPRINTS: Array<Omit<AgentBlueprint, 'id' | 'userId' | 'createdA
     name: 'researcher-readonly',
     description: 'Read-only access for research agents. Can browse web and HuggingFace, no file writes.',
     isBuiltin: true,
+    enabled: true,
     config: {
       iamPermissions: {
         tools: {
@@ -106,6 +110,7 @@ const BUILTIN_BLUEPRINTS: Array<Omit<AgentBlueprint, 'id' | 'userId' | 'createdA
     name: 'ci-headless',
     description: 'Non-interactive agent for CI/CD and cron tasks. Workspace write, limited network, no spawning.',
     isBuiltin: true,
+    enabled: true,
     config: {
       iamPermissions: {
         tools: {
@@ -175,6 +180,7 @@ export function createBlueprint(
     name: input.name,
     description: input.description,
     isBuiltin: false,
+    enabled: true,
     config: input.config,
     createdAt: now,
     updatedAt: now,
@@ -195,6 +201,14 @@ export function getBlueprint(db: ISqliteDriver, blueprintId: string): AgentBluep
   return row ? rowToBlueprint(row) : null;
 }
 
+export function toggleBlueprint(db: ISqliteDriver, blueprintId: string, enabled: boolean): void {
+  db.prepare('UPDATE agent_blueprints SET enabled = ?, updated_at = ? WHERE id = ?').run(
+    enabled ? 1 : 0,
+    Date.now(),
+    blueprintId
+  );
+}
+
 export function deleteBlueprint(db: ISqliteDriver, blueprintId: string): boolean {
   // Cannot delete built-in blueprints
   const bp = db.prepare('SELECT is_builtin FROM agent_blueprints WHERE id = ?').get(blueprintId) as
@@ -211,6 +225,7 @@ function rowToBlueprint(row: Record<string, unknown>): AgentBlueprint {
     name: row.name as string,
     description: (row.description as string) ?? '',
     isBuiltin: (row.is_builtin as number) === 1,
+    enabled: (row.enabled as number) !== 0,
     config: JSON.parse((row.config as string) || '{}'),
     createdAt: row.created_at as number,
     updatedAt: row.updated_at as number,

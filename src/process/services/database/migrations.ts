@@ -1745,6 +1745,48 @@ const migration_v38: IMigration = {
   },
 };
 
+/**
+ * Migration v38 -> v39: Security feature toggles + blueprint enabled column.
+ * Master on/off switches for each NemoClaw-inspired security feature.
+ */
+const migration_v39: IMigration = {
+  version: 39,
+  name: 'Add security feature toggles and blueprint enabled column',
+  up: (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS security_feature_toggles (
+      feature TEXT PRIMARY KEY,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL
+    )`);
+    // Seed default feature toggles (all off by default — opt-in)
+    const now = Date.now();
+    const features = [
+      'network_policies',
+      'ssrf_protection',
+      'filesystem_tiers',
+      'blueprints',
+      'agent_snapshots',
+      'inference_routing',
+    ];
+    const stmt = db.prepare(
+      'INSERT OR IGNORE INTO security_feature_toggles (feature, enabled, updated_at) VALUES (?, 0, ?)'
+    );
+    for (const f of features) {
+      stmt.run(f, now);
+    }
+    // Add enabled column to agent_blueprints
+    const cols = new Set((db.pragma('table_info(agent_blueprints)') as Array<{ name: string }>).map((c) => c.name));
+    if (!cols.has('enabled')) {
+      db.exec('ALTER TABLE agent_blueprints ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1');
+    }
+    console.log('[Migration v39] Added security_feature_toggles + blueprint enabled column');
+  },
+  down: (db) => {
+    db.exec('DROP TABLE IF EXISTS security_feature_toggles');
+    console.log('[Migration v39] Rolled back: Dropped security_feature_toggles');
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -1754,7 +1796,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v23, migration_v24, migration_v25,
   migration_v26, migration_v27, migration_v28, migration_v29,
   migration_v30, migration_v31, migration_v32, migration_v33, migration_v34,
-  migration_v35, migration_v36, migration_v37, migration_v38,
+  migration_v35, migration_v36, migration_v37, migration_v38, migration_v39,
 ];
 
 /**

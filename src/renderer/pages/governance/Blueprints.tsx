@@ -5,7 +5,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { Card, Table, Button, Tag, Empty, Message, Spin, Space, Descriptions } from '@arco-design/web-react';
+import { Card, Table, Button, Tag, Empty, Message, Spin, Space, Descriptions, Switch } from '@arco-design/web-react';
 import { Plus, Delete, DocDetail } from '@icon-park/react';
 import { blueprints } from '@/common/adapter/ipcBridge';
 
@@ -16,6 +16,7 @@ type BlueprintRow = {
   name: string;
   description: string;
   isBuiltin: boolean;
+  enabled: boolean;
   config: {
     filesystemTier?: string;
     maxBudgetCents?: number;
@@ -75,6 +76,18 @@ const Blueprints: React.FC = () => {
         }
       } catch {
         Message.error('Failed to delete blueprint');
+      }
+    },
+    [loadData]
+  );
+
+  const handleToggle = useCallback(
+    async (id: string, enabled: boolean) => {
+      try {
+        await blueprints.toggle.invoke({ blueprintId: id, enabled });
+        void loadData();
+      } catch {
+        Message.error('Failed to toggle blueprint');
       }
     },
     [loadData]
@@ -153,6 +166,14 @@ const Blueprints: React.FC = () => {
         <Tag color={row.config.ssrfProtection ? 'green' : 'red'} size='small'>
           {row.config.ssrfProtection ? 'On' : 'Off'}
         </Tag>
+      ),
+    },
+    {
+      title: 'Enabled',
+      key: 'enabled',
+      width: 80,
+      render: (_: unknown, row: BlueprintRow) => (
+        <Switch checked={row.enabled} onChange={(val) => handleToggle(row.id, val)} size='small' />
       ),
     },
     {

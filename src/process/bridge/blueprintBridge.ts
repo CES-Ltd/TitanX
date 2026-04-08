@@ -37,4 +37,9 @@ export function initBlueprintBridge(): void {
     const db = await getDatabase();
     return blueprintService.seedBuiltinBlueprints(db.getDriver(), userId);
   });
+
+  ipcBridge.blueprints.toggle.provider(async ({ blueprintId, enabled }) => {
+    const db = await getDatabase();
+    blueprintService.toggleBlueprint(db.getDriver(), blueprintId, enabled);
+  });
 }

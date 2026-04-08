@@ -16,6 +16,7 @@ import {
   Peoples,
   NetworkTree,
   DocDetail,
+  ShieldAdd,
 } from '@icon-park/react';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import Organization from './organization/Organization';
@@ -26,6 +27,7 @@ import ApprovalsList from './ApprovalsList';
 import ActivityLog from './ActivityLog';
 import NetworkPolicies from './NetworkPolicies';
 import Blueprints from './Blueprints';
+import SecurityDashboard from './SecurityDashboard';
 
 const { TabPane } = Tabs;
 const { Title } = Typography;
@@ -109,6 +111,17 @@ const GovernancePage: React.FC = () => {
           }
         >
           <ApprovalsList />
+        </TabPane>
+        <TabPane
+          key='security'
+          title={
+            <span className='flex items-center gap-1'>
+              <ShieldAdd size={16} />
+              Security Features
+            </span>
+          }
+        >
+          <SecurityDashboard />
         </TabPane>
         <TabPane
           key='network'

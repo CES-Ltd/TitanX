@@ -1776,6 +1776,7 @@ export const blueprints = {
   ),
   remove: bridge.buildProvider<boolean, { blueprintId: string }>('blueprint.delete'),
   seed: bridge.buildProvider<number, { userId: string }>('blueprint.seed'),
+  toggle: bridge.buildProvider<void, { blueprintId: string; enabled: boolean }>('blueprint.toggle'),
 };
 
 // ── Agent Snapshots (NemoClaw state capture/restore) ─────────────────────────
@@ -1798,4 +1799,17 @@ export const inferenceRouting = {
     { agentGalleryId?: string; preferredProvider: string; fallbackProviders?: string[]; allowedModels?: string[] }
   >('inference-routing.create'),
   remove: bridge.buildProvider<boolean, { routeId: string }>('inference-routing.delete'),
+};
+
+// ── Security Feature Toggles (master on/off for NemoClaw features) ───────────
+
+export type ISecurityFeatureToggle = {
+  feature: string;
+  enabled: boolean;
+  updatedAt: number;
+};
+
+export const securityFeatures = {
+  list: bridge.buildProvider<ISecurityFeatureToggle[], void>('security-features.list'),
+  toggle: bridge.buildProvider<void, { feature: string; enabled: boolean }>('security-features.toggle'),
 };
