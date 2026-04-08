@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { mkdirSync as _mkdirSync, existsSync, readdirSync, readFileSync } from 'fs';
+import { mkdirSync as _mkdirSync, existsSync, readFileSync } from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
 import { getPlatformServices } from '@/common/platform';
@@ -69,16 +69,16 @@ const migrateLegacyData = async () => {
 
   try {
     // 检查新目录是否为空（不存在或者存在但无内容）
-    const isNewDirEmpty =
-      !existsSync(newDir) ||
-      (() => {
-        try {
-          return existsSync(newDir) && readdirSync(newDir).length === 0;
-        } catch (error) {
-          console.warn('[AionUi] Warning: Could not read new directory during migration check:', error);
-          return false; // 假设非空以避免迁移覆盖
-        }
-      })();
+    let isNewDirEmpty = !existsSync(newDir);
+    if (!isNewDirEmpty && existsSync(newDir)) {
+      try {
+        const entries = await fs.readdir(newDir);
+        isNewDirEmpty = entries.length === 0;
+      } catch (error) {
+        console.warn('[AionUi] Warning: Could not read new directory during migration check:', error);
+        isNewDirEmpty = false;
+      }
+    }
 
     // 检查迁移条件：老目录存在且新目录为空
     if (existsSync(oldDir) && isNewDirEmpty) {
@@ -434,17 +434,14 @@ const initBuiltinAssistantRules = async (): Promise<void> => {
         overwrite: true,
       });
       // Remove stale: entries in dest that no longer exist in source
-      const srcNames = new Set(
-        readdirSync(builtinSkillsDir, { withFileTypes: true })
-          .filter((e) => e.isDirectory())
-          .map((e) => e.name)
+      const srcEntries = await fs.readdir(builtinSkillsDir, { withFileTypes: true });
+      const srcNames = new Set(srcEntries.filter((e) => e.isDirectory()).map((e) => e.name));
+      const destEntries = await fs.readdir(builtinSkillsCopyDir, { withFileTypes: true });
+      await Promise.all(
+        destEntries
+          .filter((entry) => entry.isDirectory() && !srcNames.has(entry.name))
+          .map((entry) => fs.rm(path.join(builtinSkillsCopyDir, entry.name), { recursive: true, force: true }))
       );
-      for (const entry of readdirSync(builtinSkillsCopyDir, { withFileTypes: true })) {
-        if (!entry.isDirectory()) continue;
-        if (!srcNames.has(entry.name)) {
-          await fs.rm(path.join(builtinSkillsCopyDir, entry.name), { recursive: true, force: true });
-        }
-      }
     } catch (error) {
       console.warn(`[AionUi] Failed to sync builtin skills directory:`, error);
     }
@@ -508,14 +505,13 @@ const initBuiltinAssistantRules = async (): Promise<void> => {
       // If assistant has no ruleFiles config, delete old rules cache files
       const rulesFilePattern = new RegExp(`^${assistantId}\\..*\\.md$`);
       try {
-        const files = readdirSync(assistantsDir);
-        for (const file of files) {
-          if (rulesFilePattern.test(file)) {
-            const filePath = path.join(assistantsDir, file);
-            await fs.unlink(filePath);
-          }
-        }
-      } catch (error) {
+        const files = await fs.readdir(assistantsDir);
+        await Promise.all(
+          files
+            .filter((file) => rulesFilePattern.test(file))
+            .map((file) => fs.unlink(path.join(assistantsDir, file)))
+        );
+      } catch (_error) {
         // 忽略删除失败 / Ignore deletion failure
       }
     }
@@ -555,14 +551,13 @@ const initBuiltinAssistantRules = async (): Promise<void> => {
       // This ensures old presetSkills won't be read after migrating to SkillManager
       const skillsFilePattern = new RegExp(`^${assistantId}-skills\\..*\\.md$`);
       try {
-        const files = readdirSync(assistantsDir);
-        for (const file of files) {
-          if (skillsFilePattern.test(file)) {
-            const filePath = path.join(assistantsDir, file);
-            await fs.unlink(filePath);
-          }
-        }
-      } catch (error) {
+        const files = await fs.readdir(assistantsDir);
+        await Promise.all(
+          files
+            .filter((file) => skillsFilePattern.test(file))
+            .map((file) => fs.unlink(path.join(assistantsDir, file)))
+        );
+      } catch (_error) {
         // 忽略删除失败 / Ignore deletion failure
       }
     }
@@ -878,172 +873,151 @@ const initStorage = async () => {
     mark('3.1 configMigration');
   }
 
-  // 4. 初始化 MCP 配置（为所有用户提供默认配置）
-  try {
-    const existingMcpConfig = await configFile.get('mcp.config').catch((): undefined => undefined);
-
-    // 仅当配置不存在或为空时，写入默认值（适用于新用户和老用户）
-    if (!existingMcpConfig || !Array.isArray(existingMcpConfig) || existingMcpConfig.length === 0) {
-      const defaultServers = getDefaultMcpServers();
-      await configFile.set('mcp.config', defaultServers);
-    }
-  } catch (error) {
-    console.error('[AionUi] Failed to initialize default MCP servers:', error);
-  }
-  mark('4.1 MCP defaults');
-
-  // 4.2 Ensure built-in MCP servers exist and are up-to-date
-  await ensureBuiltinMcpServers();
-  mark('4.2 builtinMcpServers');
-
-  // 5. 初始化内置助手（Assistants）
-  try {
-    // 5.1 初始化内置助手的规则文件到用户目录
-    // Initialize builtin assistant rule files to user directory
-    await initBuiltinAssistantRules();
-    mark('5.1 initBuiltinAssistantRules');
-
-    // 5.2 初始化助手配置（只包含元数据，不包含 context）
-    // Initialize assistant config (metadata only, no context)
-    const existingAgents = (await configFile.get('acp.customAgents').catch((): undefined => undefined)) || [];
-    const builtinAssistants = getBuiltinAssistants();
-
-    // 5.2.1 检查是否需要迁移：修复老版本中所有助手都默认启用的问题
-    // Check if migration needed: fix old version where all assistants were enabled by default
-    const ASSISTANT_ENABLED_MIGRATION_KEY = 'migration.assistantEnabledFixed';
-    const migrationDone = await configFile.get(ASSISTANT_ENABLED_MIGRATION_KEY).catch(() => false);
-    const needsMigration = !migrationDone && existingAgents.length > 0;
-
-    // 5.2.2 检查是否需要迁移：为内置助手添加默认启用的技能
-    // Check if migration needed: add default enabled skills for builtin assistants
-    const BUILTIN_SKILLS_MIGRATION_KEY = 'migration.builtinDefaultSkillsAdded_v2';
-    const builtinSkillsMigrationDone = await configFile.get(BUILTIN_SKILLS_MIGRATION_KEY).catch(() => false);
-    const needsBuiltinSkillsMigration = !builtinSkillsMigrationDone;
-
-    // 5.2.3 检查是否需要迁移：为内置助手添加 promptsI18n
-    // Check if migration needed: add promptsI18n for builtin assistants
-    const PROMPTS_I18N_MIGRATION_KEY = 'migration.promptsI18nAdded';
-    const promptsI18nMigrationDone = await configFile.get(PROMPTS_I18N_MIGRATION_KEY).catch(() => false);
-    const needsPromptsI18nMigration = !promptsI18nMigrationDone;
-
-    // 更新或添加内置助手配置
-    // Update or add built-in assistant configurations
-    const updatedAgents = [...existingAgents];
-    let hasChanges = false;
-
-    for (const builtin of builtinAssistants) {
-      const index = updatedAgents.findIndex((a: AcpBackendConfig) => a.id === builtin.id);
-      if (index >= 0) {
-        // 更新现有内置助手配置
-        // Update existing built-in assistant config
-        const existing = updatedAgents[index];
-        // 只有当关键字段不同时才更新，避免不必要的写入
-        // Update only if key fields are different to avoid unnecessary writes
-        // 注意：enabled 和 presetAgentType 字段由用户控制，不参与 shouldUpdate 判断
-        // Note: enabled and presetAgentType are user-controlled, not included in shouldUpdate check
-        // 检查 promptsI18n 是否需要更新（如果不存在或已更改，或需要迁移）
-        // Check if promptsI18n needs update (if missing, changed, or migration needed)
-        const promptsI18nMissing = !existing.promptsI18n && builtin.promptsI18n;
-        const promptsI18nChanged =
-          existing.promptsI18n &&
-          builtin.promptsI18n &&
-          JSON.stringify(existing.promptsI18n) !== JSON.stringify(builtin.promptsI18n);
-        const needsPromptsI18nUpdate = needsPromptsI18nMigration || promptsI18nMissing || promptsI18nChanged;
-        const nameI18nMissing = !existing.nameI18n && !!builtin.nameI18n;
-        const nameI18nChanged =
-          existing.nameI18n &&
-          builtin.nameI18n &&
-          JSON.stringify(existing.nameI18n) !== JSON.stringify(builtin.nameI18n);
-        const descriptionI18nMissing = !existing.descriptionI18n && !!builtin.descriptionI18n;
-        const descriptionI18nChanged =
-          existing.descriptionI18n &&
-          builtin.descriptionI18n &&
-          JSON.stringify(existing.descriptionI18n) !== JSON.stringify(builtin.descriptionI18n);
-        const shouldUpdate =
-          existing.name !== builtin.name ||
-          existing.description !== builtin.description ||
-          existing.avatar !== builtin.avatar ||
-          existing.isPreset !== builtin.isPreset ||
-          existing.isBuiltin !== builtin.isBuiltin ||
-          nameI18nMissing ||
-          !!nameI18nChanged ||
-          descriptionI18nMissing ||
-          !!descriptionI18nChanged ||
-          needsPromptsI18nUpdate;
-        // 当 enabled 是 undefined 或需要迁移时，设置默认值（Cowork 启用，其他禁用）
-        // When enabled is undefined or migration needed, set default value (Cowork enabled, others disabled)
-        const needsEnabledFix = existing.enabled === undefined || needsMigration;
-        // 迁移时强制使用默认值，否则保留用户设置
-        // Force default value during migration, otherwise preserve user setting
-        const resolvedEnabled = needsEnabledFix ? builtin.enabled : existing.enabled;
-        // presetAgentType 由用户控制，未设置时使用内置默认值
-        // presetAgentType is user-controlled, use builtin default if not set
-        const resolvedPresetAgentType = existing.presetAgentType ?? builtin.presetAgentType;
-
-        // 为有 defaultEnabledSkills 配置的内置助手添加默认技能（仅在迁移时且用户未设置 enabledSkills 时）
-        // Add default enabled skills for builtin assistants with defaultEnabledSkills (only during migration and if user hasn't set enabledSkills)
-        let resolvedEnabledSkills = existing.enabledSkills;
-        const needsSkillsMigration =
-          needsBuiltinSkillsMigration &&
-          builtin.enabledSkills &&
-          (!existing.enabledSkills || existing.enabledSkills.length === 0);
-        if (needsSkillsMigration) {
-          resolvedEnabledSkills = builtin.enabledSkills;
+  // Steps 4 (MCP), 5 (Assistants), and 6 (Database) are independent — run in parallel.
+  await Promise.all([
+    // --- MCP init (4.1 + 4.2) ---
+    (async () => {
+      try {
+        const existingMcpConfig = await configFile.get('mcp.config').catch((): undefined => undefined);
+        if (!existingMcpConfig || !Array.isArray(existingMcpConfig) || existingMcpConfig.length === 0) {
+          const defaultServers = getDefaultMcpServers();
+          await configFile.set('mcp.config', defaultServers);
         }
-
-        if (
-          shouldUpdate ||
-          needsEnabledFix ||
-          (needsSkillsMigration && resolvedEnabledSkills !== existing.enabledSkills) ||
-          needsPromptsI18nUpdate
-        ) {
-          // 保留用户已设置的 enabled 和 presetAgentType / Preserve user-set enabled and presetAgentType
-          updatedAgents[index] = {
-            ...existing,
-            ...builtin,
-            enabled: resolvedEnabled,
-            presetAgentType: resolvedPresetAgentType,
-            enabledSkills: resolvedEnabledSkills,
-            // 确保 promptsI18n 被更新 / Ensure promptsI18n is updated
-            promptsI18n: builtin.promptsI18n,
-          };
-          hasChanges = true;
-        }
-      } else {
-        // 添加新的内置助手
-        // Add new built-in assistant
-        updatedAgents.unshift(builtin);
-        hasChanges = true;
+      } catch (error) {
+        console.error('[AionUi] Failed to initialize default MCP servers:', error);
       }
-    }
+      mark('4.1 MCP defaults');
 
-    if (hasChanges) {
-      await configFile.set('acp.customAgents', updatedAgents);
-    }
+      await ensureBuiltinMcpServers();
+      mark('4.2 builtinMcpServers');
+    })(),
 
-    // 标记迁移完成 / Mark migration as done
-    if (needsMigration) {
-      await configFile.set(ASSISTANT_ENABLED_MIGRATION_KEY, true);
-    }
-    if (needsBuiltinSkillsMigration) {
-      await configFile.set(BUILTIN_SKILLS_MIGRATION_KEY, true);
-    }
-    if (needsPromptsI18nMigration) {
-      await configFile.set(PROMPTS_I18N_MIGRATION_KEY, true);
-    }
-    mark('5.2 assistant config + migrations');
-  } catch (error) {
-    console.error('[AionUi] Failed to initialize builtin assistants:', error);
-  }
+    // --- Assistant init (5.1 rules + 5.2 config) ---
+    (async () => {
+      try {
+        await initBuiltinAssistantRules();
+        mark('5.1 initBuiltinAssistantRules');
 
-  // 6. 初始化数据库（better-sqlite3）
-  try {
-    await getDatabase();
-    await cleanupOrphanedHealthCheckConversations();
-  } catch (error) {
-    console.error('[InitStorage] Database initialization failed, falling back to file-based storage:', error);
-  }
-  mark('6. database');
+        const existingAgents = (await configFile.get('acp.customAgents').catch((): undefined => undefined)) || [];
+        const builtinAssistants = getBuiltinAssistants();
+
+        const ASSISTANT_ENABLED_MIGRATION_KEY = 'migration.assistantEnabledFixed';
+        const BUILTIN_SKILLS_MIGRATION_KEY = 'migration.builtinDefaultSkillsAdded_v2';
+        const PROMPTS_I18N_MIGRATION_KEY = 'migration.promptsI18nAdded';
+
+        // Check migration flags in parallel
+        const [migrationDone, builtinSkillsMigrationDone, promptsI18nMigrationDone] = await Promise.all([
+          configFile.get(ASSISTANT_ENABLED_MIGRATION_KEY).catch(() => false),
+          configFile.get(BUILTIN_SKILLS_MIGRATION_KEY).catch(() => false),
+          configFile.get(PROMPTS_I18N_MIGRATION_KEY).catch(() => false),
+        ]);
+        const needsMigration = !migrationDone && existingAgents.length > 0;
+        const needsBuiltinSkillsMigration = !builtinSkillsMigrationDone;
+        const needsPromptsI18nMigration = !promptsI18nMigrationDone;
+
+        const updatedAgents = [...existingAgents];
+        let hasChanges = false;
+
+        for (const builtin of builtinAssistants) {
+          const index = updatedAgents.findIndex((a: AcpBackendConfig) => a.id === builtin.id);
+          if (index >= 0) {
+            const existing = updatedAgents[index];
+            const promptsI18nMissing = !existing.promptsI18n && builtin.promptsI18n;
+            const promptsI18nChanged =
+              existing.promptsI18n &&
+              builtin.promptsI18n &&
+              JSON.stringify(existing.promptsI18n) !== JSON.stringify(builtin.promptsI18n);
+            const needsPromptsI18nUpdate = needsPromptsI18nMigration || promptsI18nMissing || promptsI18nChanged;
+            const nameI18nMissing = !existing.nameI18n && !!builtin.nameI18n;
+            const nameI18nChanged =
+              existing.nameI18n &&
+              builtin.nameI18n &&
+              JSON.stringify(existing.nameI18n) !== JSON.stringify(builtin.nameI18n);
+            const descriptionI18nMissing = !existing.descriptionI18n && !!builtin.descriptionI18n;
+            const descriptionI18nChanged =
+              existing.descriptionI18n &&
+              builtin.descriptionI18n &&
+              JSON.stringify(existing.descriptionI18n) !== JSON.stringify(builtin.descriptionI18n);
+            const shouldUpdate =
+              existing.name !== builtin.name ||
+              existing.description !== builtin.description ||
+              existing.avatar !== builtin.avatar ||
+              existing.isPreset !== builtin.isPreset ||
+              existing.isBuiltin !== builtin.isBuiltin ||
+              nameI18nMissing ||
+              !!nameI18nChanged ||
+              descriptionI18nMissing ||
+              !!descriptionI18nChanged ||
+              needsPromptsI18nUpdate;
+            const needsEnabledFix = existing.enabled === undefined || needsMigration;
+            const resolvedEnabled = needsEnabledFix ? builtin.enabled : existing.enabled;
+            const resolvedPresetAgentType = existing.presetAgentType ?? builtin.presetAgentType;
+
+            let resolvedEnabledSkills = existing.enabledSkills;
+            const needsSkillsMigration =
+              needsBuiltinSkillsMigration &&
+              builtin.enabledSkills &&
+              (!existing.enabledSkills || existing.enabledSkills.length === 0);
+            if (needsSkillsMigration) {
+              resolvedEnabledSkills = builtin.enabledSkills;
+            }
+
+            if (
+              shouldUpdate ||
+              needsEnabledFix ||
+              (needsSkillsMigration && resolvedEnabledSkills !== existing.enabledSkills) ||
+              needsPromptsI18nUpdate
+            ) {
+              updatedAgents[index] = {
+                ...existing,
+                ...builtin,
+                enabled: resolvedEnabled,
+                presetAgentType: resolvedPresetAgentType,
+                enabledSkills: resolvedEnabledSkills,
+                promptsI18n: builtin.promptsI18n,
+              };
+              hasChanges = true;
+            }
+          } else {
+            updatedAgents.unshift(builtin);
+            hasChanges = true;
+          }
+        }
+
+        // Batch config writes: write agents + migration flags together
+        const configWrites: Promise<unknown>[] = [];
+        if (hasChanges) {
+          configWrites.push(configFile.set('acp.customAgents', updatedAgents));
+        }
+        if (needsMigration) {
+          configWrites.push(configFile.set(ASSISTANT_ENABLED_MIGRATION_KEY, true));
+        }
+        if (needsBuiltinSkillsMigration) {
+          configWrites.push(configFile.set(BUILTIN_SKILLS_MIGRATION_KEY, true));
+        }
+        if (needsPromptsI18nMigration) {
+          configWrites.push(configFile.set(PROMPTS_I18N_MIGRATION_KEY, true));
+        }
+        if (configWrites.length > 0) {
+          await Promise.all(configWrites);
+        }
+        mark('5.2 assistant config + migrations');
+      } catch (error) {
+        console.error('[AionUi] Failed to initialize builtin assistants:', error);
+      }
+    })(),
+
+    // --- Database init (6) ---
+    (async () => {
+      try {
+        await getDatabase();
+        await cleanupOrphanedHealthCheckConversations();
+      } catch (error) {
+        console.error('[InitStorage] Database initialization failed, falling back to file-based storage:', error);
+      }
+      mark('6. database');
+    })(),
+  ]);
 
   if (hasElectronAppPath()) {
     application.systemInfo.provider(() => {

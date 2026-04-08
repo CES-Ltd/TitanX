@@ -29,21 +29,18 @@ export const initializeProcess = async () => {
   await initStorage();
   mark('initStorage');
 
-  // Initialize Extension Registry (scan and resolve all extensions)
-  try {
-    await ExtensionRegistry.getInstance().initialize();
-  } catch (error) {
-    console.error('[Process] Failed to initialize ExtensionRegistry:', error);
-    // Don't fail app startup if extensions fail to initialize
-  }
-  mark('ExtensionRegistry');
-
-  // Initialize Channel subsystem
-  try {
-    await getChannelManager().initialize();
-  } catch (error) {
-    console.error('[Process] Failed to initialize ChannelManager:', error);
-    // Don't fail app startup if channel fails to initialize
-  }
-  mark('ChannelManager');
+  // ExtensionRegistry and ChannelManager are independent — initialize in parallel
+  await Promise.all([
+    ExtensionRegistry.getInstance()
+      .initialize()
+      .catch((error) => {
+        console.error('[Process] Failed to initialize ExtensionRegistry:', error);
+      }),
+    getChannelManager()
+      .initialize()
+      .catch((error) => {
+        console.error('[Process] Failed to initialize ChannelManager:', error);
+      }),
+  ]);
+  mark('ExtensionRegistry + ChannelManager');
 };
