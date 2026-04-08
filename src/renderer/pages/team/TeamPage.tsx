@@ -258,12 +258,22 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({ team, onAddAgent, onR
         agents={agents}
         teamId={team.id}
         leadSlotId={leadAgent?.slotId ?? ''}
+        workspace={effectiveWorkspace}
         statusMap={statusMap}
         onAgentClick={handleAgentClick}
         onLeadClick={handleLeadClick}
       />
     ),
-    [dispatchConversation, agents, team.id, leadAgent?.slotId, statusMap, handleAgentClick, handleLeadClick]
+    [
+      dispatchConversation,
+      agents,
+      team.id,
+      leadAgent?.slotId,
+      effectiveWorkspace,
+      statusMap,
+      handleAgentClick,
+      handleLeadClick,
+    ]
   );
 
   const updateScrollArrows = useCallback(() => {
@@ -378,12 +388,22 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({ team, onAddAgent, onR
         agents={agents}
         teamId={team.id}
         leadSlotId={leadAgent?.slotId ?? ''}
+        workspace={effectiveWorkspace}
         statusMap={statusMap}
         onAgentClick={handleAgentClickMain}
         onLeadClick={handleLeadClickMain}
       />
     ),
-    [dispatchConversation, agents, team.id, leadAgent?.slotId, statusMap, handleAgentClickMain, handleLeadClickMain]
+    [
+      dispatchConversation,
+      agents,
+      team.id,
+      leadAgent?.slotId,
+      effectiveWorkspace,
+      statusMap,
+      handleAgentClickMain,
+      handleLeadClickMain,
+    ]
   );
 
   return (
