@@ -212,3 +212,19 @@
     line-height: 20px !important;
   }
 }
+
+/* CopilotKit-inspired message enter animation */
+.message-item {
+  animation: messageEnter 0.2s ease-out;
+}
+
+@keyframes messageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

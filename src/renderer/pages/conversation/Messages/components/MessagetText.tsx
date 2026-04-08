@@ -8,7 +8,7 @@ import type { IMessageText } from '@/common/chat/chatLib';
 import { AIONUI_FILES_MARKER } from '@/common/config/constants';
 import { iconColors } from '@/renderer/styles/colors';
 import { Alert, Message, Tooltip } from '@arco-design/web-react';
-import { Copy } from '@icon-park/react';
+import { Copy, ThumbsUp, ThumbsDown } from '@icon-park/react';
 import classNames from 'classnames';
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -98,8 +98,10 @@ const MessageText: React.FC<{ message: IMessageText }> = ({ message }) => {
   const { data, json } = useFormatContent(text);
   const { t } = useTranslation();
   const [showCopyAlert, setShowCopyAlert] = useState(false);
+  const [feedback, setFeedback] = useState<'up' | 'down' | null>(null);
   const isUserMessage = message.position === 'right';
   const isTeammateMessage = message.position === 'left' && message.content.teammateMessage === true;
+  const isAiMessage = !isUserMessage && !isTeammateMessage;
 
   // 过滤空内容，避免渲染空DOM
   if (!message.content.content || (typeof message.content.content === 'string' && !message.content.content.trim())) {
@@ -199,6 +201,39 @@ const MessageText: React.FC<{ message: IMessageText }> = ({ message }) => {
           })}
         >
           {copyButton}
+          {/* Feedback buttons for AI messages (CopilotKit-inspired) */}
+          {isAiMessage && (
+            <>
+              <Tooltip content='Good response'>
+                <div
+                  className={classNames(
+                    'p-4px rd-4px cursor-pointer transition-all',
+                    feedback === 'up'
+                      ? 'opacity-100 bg-green-100'
+                      : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto hover:bg-3'
+                  )}
+                  onClick={() => setFeedback((prev) => (prev === 'up' ? null : 'up'))}
+                  style={{ lineHeight: 0 }}
+                >
+                  <ThumbsUp theme='outline' size='14' fill={feedback === 'up' ? '#00b42a' : iconColors.secondary} />
+                </div>
+              </Tooltip>
+              <Tooltip content='Poor response'>
+                <div
+                  className={classNames(
+                    'p-4px rd-4px cursor-pointer transition-all',
+                    feedback === 'down'
+                      ? 'opacity-100 bg-red-100'
+                      : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto hover:bg-3'
+                  )}
+                  onClick={() => setFeedback((prev) => (prev === 'down' ? null : 'down'))}
+                  style={{ lineHeight: 0 }}
+                >
+                  <ThumbsDown theme='outline' size='14' fill={feedback === 'down' ? '#f53f3f' : iconColors.secondary} />
+                </div>
+              </Tooltip>
+            </>
+          )}
           {message.createdAt && (
             <span className='text-12px text-t-secondary opacity-0 group-hover:opacity-100 transition-opacity select-none'>
               {formatMessageTime(message.createdAt)}

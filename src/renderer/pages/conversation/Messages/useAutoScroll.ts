@@ -27,6 +27,8 @@ interface UseAutoScrollOptions {
   messages: TMessage[];
   /** Total item count for scroll target */
   itemCount: number;
+  /** Conversation ID — triggers scroll to bottom on change */
+  conversationId?: string;
 }
 
 interface UseAutoScrollReturn {
@@ -48,7 +50,7 @@ interface UseAutoScrollReturn {
   hideScrollButton: () => void;
 }
 
-export function useAutoScroll({ messages, itemCount }: UseAutoScrollOptions): UseAutoScrollReturn {
+export function useAutoScroll({ messages, itemCount, conversationId }: UseAutoScrollOptions): UseAutoScrollReturn {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const [scrollerEl, setScrollerEl] = useState<HTMLElement | null>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
@@ -133,6 +135,28 @@ export function useAutoScroll({ messages, itemCount }: UseAutoScrollOptions): Us
     },
     [itemCount]
   );
+
+  // Scroll to bottom when conversation changes (user opens a different chat)
+  useEffect(() => {
+    if (!conversationId) return;
+    // Reset user scroll state — new conversation should start at bottom
+    userScrolledRef.current = false;
+    setShowScrollButton(false);
+    // Wait for Virtuoso to settle with new data before scrolling
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (virtuosoRef.current && itemCount > 0) {
+          lastProgrammaticScrollTimeRef.current = Date.now();
+          virtuosoRef.current.scrollToIndex({
+            index: 'LAST',
+            behavior: 'auto',
+            align: 'end',
+          });
+        }
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId]);
 
   // Virtuoso native followOutput - handles streaming auto-scroll internally
   // without external scrollToIndex calls that cause jitter.
