@@ -1787,6 +1787,173 @@ const migration_v39: IMigration = {
   },
 };
 
+// ── Phase 1: Workflow Engine (n8n-inspired) ──────────────────────────────────
+
+const migration_v40: IMigration = {
+  version: 40,
+  name: 'Add workflow_definitions table',
+  up: (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS workflow_definitions (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, description TEXT,
+      nodes TEXT NOT NULL DEFAULT '[]', connections TEXT NOT NULL DEFAULT '[]',
+      settings TEXT NOT NULL DEFAULT '{}', enabled INTEGER NOT NULL DEFAULT 1,
+      version INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_wf_def_user ON workflow_definitions(user_id)');
+    console.log('[Migration v40] Added workflow_definitions table');
+  },
+  down: (db) => {
+    db.exec('DROP TABLE IF EXISTS workflow_definitions');
+  },
+};
+
+const migration_v41: IMigration = {
+  version: 41,
+  name: 'Add workflow_executions table',
+  up: (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS workflow_executions (
+      id TEXT PRIMARY KEY, workflow_id TEXT NOT NULL REFERENCES workflow_definitions(id),
+      status TEXT NOT NULL CHECK(status IN ('running','completed','failed','cancelled')),
+      trigger_data TEXT DEFAULT '{}', started_at INTEGER NOT NULL, finished_at INTEGER,
+      error TEXT, created_at INTEGER NOT NULL
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_wf_exec_workflow ON workflow_executions(workflow_id, started_at DESC)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_wf_exec_status ON workflow_executions(status)');
+    console.log('[Migration v41] Added workflow_executions table');
+  },
+  down: (db) => {
+    db.exec('DROP TABLE IF EXISTS workflow_executions');
+  },
+};
+
+const migration_v42: IMigration = {
+  version: 42,
+  name: 'Add workflow_node_executions table',
+  up: (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS workflow_node_executions (
+      id TEXT PRIMARY KEY, execution_id TEXT NOT NULL REFERENCES workflow_executions(id) ON DELETE CASCADE,
+      node_id TEXT NOT NULL, node_type TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('pending','running','completed','failed','skipped')),
+      input_data TEXT DEFAULT '{}', output_data TEXT DEFAULT '{}', error TEXT,
+      retry_count INTEGER DEFAULT 0, started_at INTEGER, finished_at INTEGER
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_wf_node_exec ON workflow_node_executions(execution_id, node_id)');
+    console.log('[Migration v42] Added workflow_node_executions table');
+  },
+  down: (db) => {
+    db.exec('DROP TABLE IF EXISTS workflow_node_executions');
+  },
+};
+
+// ── Phase 2: Agent Memory & Planning (LangChain/DeepAgents) ──────────────────
+
+const migration_v43: IMigration = {
+  version: 43,
+  name: 'Add agent_memory table',
+  up: (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS agent_memory (
+      id TEXT PRIMARY KEY, agent_slot_id TEXT NOT NULL, team_id TEXT NOT NULL,
+      memory_type TEXT NOT NULL CHECK(memory_type IN ('buffer','summary','entity','long_term')),
+      content TEXT NOT NULL DEFAULT '{}', token_count INTEGER DEFAULT 0,
+      relevance_score REAL DEFAULT 1.0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    )`);
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_agent_memory_slot ON agent_memory(agent_slot_id, memory_type, updated_at DESC)'
+    );
+    db.exec('CREATE INDEX IF NOT EXISTS idx_agent_memory_team ON agent_memory(team_id)');
+    console.log('[Migration v43] Added agent_memory table');
+  },
+  down: (db) => {
+    db.exec('DROP TABLE IF EXISTS agent_memory');
+  },
+};
+
+const migration_v44: IMigration = {
+  version: 44,
+  name: 'Add agent_plans table',
+  up: (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS agent_plans (
+      id TEXT PRIMARY KEY, agent_slot_id TEXT NOT NULL, team_id TEXT NOT NULL,
+      parent_plan_id TEXT, title TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('draft','active','completed','failed','abandoned')),
+      steps TEXT NOT NULL DEFAULT '[]', reflection TEXT, reflection_score REAL,
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_agent_plan_slot ON agent_plans(agent_slot_id, status)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_agent_plan_team ON agent_plans(team_id)');
+    console.log('[Migration v44] Added agent_plans table');
+  },
+  down: (db) => {
+    db.exec('DROP TABLE IF EXISTS agent_plans');
+  },
+};
+
+// ── Phase 4: Trace System (LangSmith-compatible) ─────────────────────────────
+
+const migration_v45: IMigration = {
+  version: 45,
+  name: 'Add trace_runs table',
+  up: (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS trace_runs (
+      id TEXT PRIMARY KEY, parent_run_id TEXT REFERENCES trace_runs(id), root_run_id TEXT NOT NULL,
+      run_type TEXT NOT NULL CHECK(run_type IN ('chain','agent','tool','llm','retriever','workflow')),
+      name TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('running','completed','error')),
+      inputs TEXT DEFAULT '{}', outputs TEXT DEFAULT '{}', error TEXT,
+      input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0, total_tokens INTEGER DEFAULT 0, cost_cents REAL DEFAULT 0,
+      start_time INTEGER NOT NULL, end_time INTEGER,
+      agent_slot_id TEXT, team_id TEXT, workflow_execution_id TEXT,
+      otel_trace_id TEXT, otel_span_id TEXT,
+      tags TEXT DEFAULT '[]', metadata TEXT DEFAULT '{}', created_at INTEGER NOT NULL
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_trace_runs_parent ON trace_runs(parent_run_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_trace_runs_root ON trace_runs(root_run_id, start_time DESC)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_trace_runs_agent ON trace_runs(agent_slot_id, start_time DESC)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_trace_runs_type ON trace_runs(run_type, start_time DESC)');
+    console.log('[Migration v45] Added trace_runs table');
+  },
+  down: (db) => {
+    db.exec('DROP TABLE IF EXISTS trace_runs');
+  },
+};
+
+const migration_v46: IMigration = {
+  version: 46,
+  name: 'Add trace_feedback table',
+  up: (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS trace_feedback (
+      id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES trace_runs(id),
+      user_id TEXT NOT NULL, score REAL, value TEXT, comment TEXT,
+      category TEXT DEFAULT 'general', created_at INTEGER NOT NULL
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_trace_feedback_run ON trace_feedback(run_id)');
+    console.log('[Migration v46] Added trace_feedback table');
+  },
+  down: (db) => {
+    db.exec('DROP TABLE IF EXISTS trace_feedback');
+  },
+};
+
+// ── Phase 5: Security Feature Toggle Seeds ───────────────────────────────────
+
+const migration_v47: IMigration = {
+  version: 47,
+  name: 'Seed workflow_gates and agent_memory security toggles',
+  up: (db) => {
+    const now = Date.now();
+    const stmt = db.prepare(
+      'INSERT OR IGNORE INTO security_feature_toggles (feature, enabled, updated_at) VALUES (?, 0, ?)'
+    );
+    stmt.run('workflow_gates', now);
+    stmt.run('agent_memory', now);
+    stmt.run('agent_planning', now);
+    stmt.run('trace_system', now);
+    console.log('[Migration v47] Seeded workflow_gates + agent_memory + agent_planning + trace_system toggles');
+  },
+  down: (_db) => {
+    console.warn('[Migration v47] Rollback: toggles remain');
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -1797,6 +1964,8 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v26, migration_v27, migration_v28, migration_v29,
   migration_v30, migration_v31, migration_v32, migration_v33, migration_v34,
   migration_v35, migration_v36, migration_v37, migration_v38, migration_v39,
+  migration_v40, migration_v41, migration_v42, migration_v43, migration_v44,
+  migration_v45, migration_v46, migration_v47,
 ];
 
 /**

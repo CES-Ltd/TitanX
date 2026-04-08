@@ -13,7 +13,11 @@ export type SecurityFeature =
   | 'filesystem_tiers'
   | 'blueprints'
   | 'agent_snapshots'
-  | 'inference_routing';
+  | 'inference_routing'
+  | 'workflow_gates'
+  | 'agent_memory'
+  | 'agent_planning'
+  | 'trace_system';
 
 export type FeatureToggle = {
   feature: SecurityFeature;
