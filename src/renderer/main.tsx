@@ -128,5 +128,18 @@ const App = HOC.Wrapper(Config)(Main);
 
 void registerPwa();
 
+// Easter Egg Provider — wraps the app to enable hidden features
+const EasterEggProvider = React.lazy(() => import('./components/easterEggs/EasterEggProvider'));
+
 const root = createRoot(document.getElementById('root')!);
-root.render(React.createElement(AppProviders, null, React.createElement(App)));
+root.render(
+  React.createElement(
+    AppProviders,
+    null,
+    React.createElement(
+      React.Suspense,
+      { fallback: null },
+      React.createElement(EasterEggProvider, null, React.createElement(App))
+    )
+  )
+);
