@@ -9,6 +9,7 @@
 import crypto from 'crypto';
 import type { ISqliteDriver } from '../database/drivers/ISqliteDriver';
 import { logActivity } from '../activityLog';
+import { startSpan, getCounter } from '../telemetry';
 import type { PolicyPermissions } from '../policyEnforcement';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -150,6 +151,16 @@ export function seedBuiltinBlueprints(db: ISqliteDriver, userId: string): number
       seeded++;
     }
   }
+  if (seeded > 0) {
+    logActivity(db, {
+      userId,
+      actorType: 'system',
+      actorId: 'blueprint_service',
+      action: 'blueprint.seeded',
+      entityType: 'agent_blueprint',
+      details: { seededCount: seeded },
+    });
+  }
   return seeded;
 }
 
@@ -202,11 +213,27 @@ export function getBlueprint(db: ISqliteDriver, blueprintId: string): AgentBluep
 }
 
 export function toggleBlueprint(db: ISqliteDriver, blueprintId: string, enabled: boolean): void {
+  const span = startSpan('titanx.blueprints', 'blueprint.toggle', {
+    blueprint_id: blueprintId,
+    enabled: enabled ? 1 : 0,
+  });
   db.prepare('UPDATE agent_blueprints SET enabled = ?, updated_at = ? WHERE id = ?').run(
     enabled ? 1 : 0,
     Date.now(),
     blueprintId
   );
+  logActivity(db, {
+    userId: 'system_default_user',
+    actorType: 'user',
+    actorId: 'system_default_user',
+    action: enabled ? 'blueprint.enabled' : 'blueprint.disabled',
+    entityType: 'agent_blueprint',
+    entityId: blueprintId,
+    details: { enabled },
+  });
+  getCounter('titanx.blueprints', 'titanx.blueprint.toggles', 'Blueprint toggle changes').add(1);
+  span.setStatus('ok');
+  span.end();
 }
 
 export function deleteBlueprint(db: ISqliteDriver, blueprintId: string): boolean {
@@ -215,7 +242,18 @@ export function deleteBlueprint(db: ISqliteDriver, blueprintId: string): boolean
     | { is_builtin: number }
     | undefined;
   if (bp?.is_builtin === 1) return false;
-  return db.prepare('DELETE FROM agent_blueprints WHERE id = ?').run(blueprintId).changes > 0;
+  const deleted = db.prepare('DELETE FROM agent_blueprints WHERE id = ?').run(blueprintId).changes > 0;
+  if (deleted) {
+    logActivity(db, {
+      userId: 'system_default_user',
+      actorType: 'user',
+      actorId: 'system_default_user',
+      action: 'blueprint.deleted',
+      entityType: 'agent_blueprint',
+      entityId: blueprintId,
+    });
+  }
+  return deleted;
 }
 
 function rowToBlueprint(row: Record<string, unknown>): AgentBlueprint {

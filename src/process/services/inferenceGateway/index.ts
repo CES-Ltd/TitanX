@@ -8,6 +8,7 @@
 import crypto from 'crypto';
 import type { ISqliteDriver } from '../database/drivers/ISqliteDriver';
 import { logActivity } from '../activityLog';
+import { startSpan, getCounter } from '../telemetry';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -62,6 +63,21 @@ export function createRoute(db: ISqliteDriver, input: CreateRouteInput): Inferen
     now
   );
 
+  logActivity(db, {
+    userId: 'system_default_user',
+    actorType: 'user',
+    actorId: 'system_default_user',
+    action: 'inference_route.created',
+    entityType: 'inference_routing_rule',
+    entityId: id,
+    details: {
+      preferredProvider: input.preferredProvider,
+      agentGalleryId: input.agentGalleryId,
+      allowedModels: input.allowedModels,
+    },
+  });
+  getCounter('titanx.inference', 'titanx.inference.routes_created', 'Inference routes created').add(1);
+
   return {
     id,
     agentGalleryId: input.agentGalleryId,
@@ -89,7 +105,18 @@ export function listRoutes(db: ISqliteDriver, agentGalleryId?: string): Inferenc
 }
 
 export function deleteRoute(db: ISqliteDriver, routeId: string): boolean {
-  return db.prepare('DELETE FROM inference_routing_rules WHERE id = ?').run(routeId).changes > 0;
+  const deleted = db.prepare('DELETE FROM inference_routing_rules WHERE id = ?').run(routeId).changes > 0;
+  if (deleted) {
+    logActivity(db, {
+      userId: 'system_default_user',
+      actorType: 'user',
+      actorId: 'system_default_user',
+      action: 'inference_route.deleted',
+      entityType: 'inference_routing_rule',
+      entityId: routeId,
+    });
+  }
+  return deleted;
 }
 
 // ── Routing evaluation ───────────────────────────────────────────────────────

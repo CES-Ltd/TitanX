@@ -106,6 +106,24 @@ export class TeammateManager extends EventEmitter {
     this.ownedConversationIds.add(agent.conversationId);
     // Notify renderer so it can refresh team data (tabs, status, etc.)
     ipcBridge.team.agentSpawned.emit({ teamId: this.teamId, agent });
+    // Audit log: agent added to team
+    void (async () => {
+      try {
+        const db = await getDatabase();
+        activityLogService.logActivity(db.getDriver(), {
+          userId: 'system_default_user',
+          actorType: 'system',
+          actorId: 'teammate_manager',
+          action: 'agent.added',
+          entityType: 'agent',
+          entityId: agent.slotId,
+          agentId: agent.slotId,
+          details: { agentName: agent.agentName, agentType: agent.agentType, teamId: this.teamId, role: agent.role },
+        });
+      } catch {
+        /* non-critical */
+      }
+    })();
   }
 
   /**
@@ -714,6 +732,24 @@ export class TeammateManager extends EventEmitter {
     this.agents = this.agents.filter((a) => a.slotId !== slotId);
     console.log(`[TeammateManager] Agent ${slotId} (${agent.agentName}) removed`);
     ipcBridge.team.agentRemoved.emit({ teamId: this.teamId, slotId });
+    // Audit log: agent removed
+    void (async () => {
+      try {
+        const db = await getDatabase();
+        activityLogService.logActivity(db.getDriver(), {
+          userId: 'system_default_user',
+          actorType: 'system',
+          actorId: 'teammate_manager',
+          action: 'agent.removed',
+          entityType: 'agent',
+          entityId: slotId,
+          agentId: slotId,
+          details: { agentName: agent.agentName, teamId: this.teamId },
+        });
+      } catch {
+        /* non-critical */
+      }
+    })();
   }
 
   /** Rename an agent. Updates in-memory state; caller is responsible for persistence. */
@@ -736,6 +772,24 @@ export class TeammateManager extends EventEmitter {
     this.agents = this.agents.map((a) => (a.slotId === slotId ? { ...a, agentName: trimmed } : a));
     console.log(`[TeammateManager] Agent ${slotId} renamed: "${oldName}" → "${trimmed}"`);
     ipcBridge.team.agentRenamed.emit({ teamId: this.teamId, slotId, oldName, newName: trimmed });
+    // Audit log: agent renamed
+    void (async () => {
+      try {
+        const db = await getDatabase();
+        activityLogService.logActivity(db.getDriver(), {
+          userId: 'system_default_user',
+          actorType: 'system',
+          actorId: 'teammate_manager',
+          action: 'agent.renamed',
+          entityType: 'agent',
+          entityId: slotId,
+          agentId: slotId,
+          details: { oldName, newName: trimmed, teamId: this.teamId },
+        });
+      } catch {
+        /* non-critical */
+      }
+    })();
   }
 
   /**

@@ -12,6 +12,7 @@ import { logActivity } from '../activityLog';
 import { validateUrl } from '../ssrfProtection';
 import type { PolicyDecision } from '../policyEnforcement';
 import { getPreset } from './presets';
+import { startSpan, getCounter } from '../telemetry';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -118,11 +119,35 @@ export function listPolicies(db: ISqliteDriver, userId: string): NetworkPolicy[]
 
 export function deletePolicy(db: ISqliteDriver, policyId: string): boolean {
   // Rules cascade-deleted via foreign key
-  return db.prepare('DELETE FROM network_policies WHERE id = ?').run(policyId).changes > 0;
+  const deleted = db.prepare('DELETE FROM network_policies WHERE id = ?').run(policyId).changes > 0;
+  if (deleted) {
+    logActivity(db, {
+      userId: 'system_default_user',
+      actorType: 'user',
+      actorId: 'system_default_user',
+      action: 'network_policy.deleted',
+      entityType: 'network_policy',
+      entityId: policyId,
+    });
+  }
+  return deleted;
 }
 
 export function togglePolicy(db: ISqliteDriver, policyId: string, enabled: boolean): void {
+  const span = startSpan('titanx.network', 'network_policy.toggle', { policy_id: policyId });
   db.prepare('UPDATE network_policies SET enabled = ? WHERE id = ?').run(enabled ? 1 : 0, policyId);
+  logActivity(db, {
+    userId: 'system_default_user',
+    actorType: 'user',
+    actorId: 'system_default_user',
+    action: enabled ? 'network_policy.enabled' : 'network_policy.disabled',
+    entityType: 'network_policy',
+    entityId: policyId,
+    details: { enabled },
+  });
+  getCounter('titanx.network', 'titanx.network_policy.toggles', 'Network policy toggle changes').add(1);
+  span.setStatus('ok');
+  span.end();
 }
 
 /**

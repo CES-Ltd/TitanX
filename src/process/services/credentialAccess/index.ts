@@ -87,6 +87,16 @@ export function issueAccessToken(
      VALUES (?, ?, ?, ?, ?, ?, ?)`
   ).run(id, agentGalleryId, policyId, secretId, tokenHash, expiresAt, now);
 
+  logActivity(db, {
+    userId: 'system_default_user',
+    actorType: 'agent',
+    actorId: agentGalleryId,
+    action: 'credential.token_issued',
+    entityType: 'credential_access_token',
+    entityId: id,
+    details: { policyId, secretId, ttlSeconds, expiresAt },
+  });
+
   return { token: rawToken, expiresAt };
 }
 
@@ -149,6 +159,16 @@ export function revokeExpiredTokens(db: ISqliteDriver): number {
   const result = db
     .prepare('UPDATE credential_access_tokens SET revoked = 1 WHERE expires_at < ? AND revoked = 0')
     .run(Date.now());
+  if (result.changes > 0) {
+    logActivity(db, {
+      userId: 'system_default_user',
+      actorType: 'system',
+      actorId: 'token_cleanup',
+      action: 'credential.tokens_expired',
+      entityType: 'credential_access_token',
+      details: { revokedCount: result.changes },
+    });
+  }
   return result.changes;
 }
 

@@ -24,6 +24,8 @@ import os from 'os';
 import fs from 'fs/promises';
 import path from 'path';
 import { resolveLocaleKey } from '@/common/utils';
+import { getDatabase } from '@process/services/database';
+import * as activityLogService from '@process/services/activityLog';
 
 export class TeamSessionService {
   private readonly sessions: Map<string, TeamSession> = new Map();
@@ -378,6 +380,23 @@ export class TeamSessionService {
       updatedAt: now,
     };
     await this.repo.create(team);
+
+    // Audit log: team created
+    try {
+      const db = await getDatabase();
+      activityLogService.logActivity(db.getDriver(), {
+        userId: params.userId,
+        actorType: 'user',
+        actorId: params.userId,
+        action: 'team.created',
+        entityType: 'team',
+        entityId: teamId,
+        details: { name: params.name, agentCount: agentsWithConversations.length, workspace },
+      });
+    } catch {
+      /* non-critical */
+    }
+
     return team;
   }
 
@@ -411,6 +430,22 @@ export class TeamSessionService {
     await this.repo.deleteMailboxByTeam(id);
     await this.repo.deleteTasksByTeam(id);
     await this.repo.delete(id);
+
+    // Audit log: team deleted
+    try {
+      const db = await getDatabase();
+      activityLogService.logActivity(db.getDriver(), {
+        userId: 'system_default_user',
+        actorType: 'user',
+        actorId: 'system_default_user',
+        action: 'team.deleted',
+        entityType: 'team',
+        entityId: id,
+        details: { teamName: team?.name, agentCount: team?.agents.length },
+      });
+    } catch {
+      /* non-critical */
+    }
   }
 
   async addAgent(teamId: string, agent: Omit<TeamAgent, 'slotId'>): Promise<TeamAgent> {
@@ -480,6 +515,24 @@ export class TeamSessionService {
     const updatedAgents = [...team.agents, newAgent];
     await this.repo.update(teamId, { agents: updatedAgents, updatedAt: Date.now() });
     this.sessions.get(teamId)?.addAgent(newAgent);
+
+    // Audit log: agent successfully added
+    try {
+      const logDb = await getDatabase();
+      activityLogService.logActivity(logDb.getDriver(), {
+        userId: 'system_default_user',
+        actorType: 'system',
+        actorId: 'team_session',
+        action: 'agent.recruited',
+        entityType: 'agent',
+        entityId: newAgent.slotId,
+        agentId: newAgent.slotId,
+        details: { agentName: newAgent.agentName, agentType: newAgent.agentType, teamId, role: newAgent.role },
+      });
+    } catch {
+      /* non-critical */
+    }
+
     return newAgent;
   }
 

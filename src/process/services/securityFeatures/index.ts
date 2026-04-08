@@ -4,6 +4,8 @@
  */
 
 import type { ISqliteDriver } from '../database/drivers/ISqliteDriver';
+import { logActivity } from '../activityLog';
+import { startSpan, getCounter } from '../telemetry';
 
 export type SecurityFeature =
   | 'network_policies'
@@ -41,11 +43,31 @@ export function getToggle(db: ISqliteDriver, feature: SecurityFeature): boolean 
 
 /** Set a feature toggle */
 export function setToggle(db: ISqliteDriver, feature: SecurityFeature, enabled: boolean): void {
+  const span = startSpan('titanx.security', 'security_feature.toggle', { feature, enabled: enabled ? 1 : 0 });
+
   db.prepare('UPDATE security_feature_toggles SET enabled = ?, updated_at = ? WHERE feature = ?').run(
     enabled ? 1 : 0,
     Date.now(),
     feature
   );
+
+  logActivity(db, {
+    userId: 'system_default_user',
+    actorType: 'user',
+    actorId: 'system_default_user',
+    action: enabled ? 'security_feature.enabled' : 'security_feature.disabled',
+    entityType: 'security_feature',
+    entityId: feature,
+    details: { feature, enabled },
+  });
+
+  getCounter('titanx.security', 'titanx.security.feature_toggles', 'Security feature toggle changes').add(1, {
+    feature,
+    action: enabled ? 'enabled' : 'disabled',
+  });
+
+  span.setStatus('ok');
+  span.end();
 }
 
 /** Check if a feature is enabled (convenience for runtime checks) */
