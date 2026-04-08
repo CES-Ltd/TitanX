@@ -27,10 +27,7 @@ const ObservabilityPage: React.FC = () => {
   }, []);
 
   return (
-    <div
-      className={`flex flex-col ${isMobile ? 'px-2 pt-2' : 'px-6 pt-4'}`}
-      style={{ height: 'calc(100vh - 48px)', overflow: 'auto' }}
-    >
+    <div className={`flex flex-col h-full overflow-auto ${isMobile ? 'px-2 pt-2' : 'px-6 pt-4'}`}>
       <Title heading={4} className='mb-4'>
         {t('observability.title', 'Observability')}
       </Title>
