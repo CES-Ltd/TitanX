@@ -41,12 +41,17 @@
 
 ## 🎬 Demo Videos
 
-| Video | Duration | What it shows |
-|-------|----------|---------------|
-| [App Navigation](./docs/screenshots/demo-navigation.mp4) | 8s | Home → Governance → Observability → Home |
-| [Security & Governance](./docs/screenshots/demo-security.mp4) | 8s | Security Features → Blueprints → Audit Log |
+### App Navigation (8s)
+> Home → Governance → Observability → Home
 
-> **Tip:** Clone the repo and open `docs/screenshots/demo-*.mp4` locally, or view on GitHub by clicking the links above.
+<video src="./docs/screenshots/demo-navigation.mp4" controls width="700"></video>
+
+### Security & Governance (8s)
+> Security Features → Blueprints → Audit Log
+
+<video src="./docs/screenshots/demo-security.mp4" controls width="700"></video>
+
+> **Note:** Videos render natively on GitHub. To view locally: `open docs/screenshots/demo-navigation.mp4`
 
 ---
 
@@ -86,6 +91,11 @@
 <p align="center">
   <img src="./docs/screenshots/07-audit-log.png" alt="TitanX Audit Log — HMAC-signed immutable audit trail" width="700">
   <br/><em>Audit Log — HMAC-signed immutable audit trail for every action in the system</em>
+</p>
+
+<p align="center">
+  <img src="./docs/screenshots/09-iam-policies.png" alt="TitanX IAM Policies — Granular tool permissions with templates" width="700">
+  <br/><em>IAM Policies — 4 templates (Developer, Researcher, Tester, Minimal) with granular tool permissions</em>
 </p>
 
 ---
