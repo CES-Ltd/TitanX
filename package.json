@@ -1,8 +1,18 @@
 {
   "name": "AionUi",
   "version": "1.9.8",
-  "description": "Transform your command-line AI agent into a modern, efficient AI Chat interface.",
-  "keywords": [],
+  "description": "Enterprise AI Agent Orchestration Platform — multi-agent teams with IAM policies, n8n workflows, LangChain memory, LangSmith traces, NemoClaw security, OpenTelemetry, and 20+ LLM providers.",
+  "keywords": [
+    "ai-agents", "multi-agent", "agent-orchestration", "enterprise-security",
+    "iam", "workflow-automation", "opentelemetry", "langchain", "langsmith",
+    "electron", "react", "typescript", "desktop-app", "llm", "n8n", "nemoclaw",
+    "audit-logging", "sqlite", "ai-governance", "copilotkit"
+  ],
+  "homepage": "https://github.com/CES-Ltd/TitanX",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CES-Ltd/TitanX.git"
+  },
   "license": "Apache-2.0",
   "author": {
     "name": "AionUi",
