@@ -12,7 +12,7 @@ If you discover a security vulnerability in TitanX, please report it responsibly
 ## Supported Versions
 
 | Version | Supported |
-|---------|-----------|
+| ------- | --------- |
 | 1.9.x   | Yes       |
 | < 1.9   | No        |
 

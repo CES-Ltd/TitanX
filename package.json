@@ -1,22 +1,38 @@
 {
-  "name": "AionUi",
+  "name": "TitanX",
   "version": "1.9.8",
   "description": "Enterprise AI Agent Orchestration Platform — multi-agent teams with IAM policies, n8n workflows, LangChain memory, LangSmith traces, NemoClaw security, OpenTelemetry, and 20+ LLM providers.",
   "keywords": [
-    "ai-agents", "multi-agent", "agent-orchestration", "enterprise-security",
-    "iam", "workflow-automation", "opentelemetry", "langchain", "langsmith",
-    "electron", "react", "typescript", "desktop-app", "llm", "n8n", "nemoclaw",
-    "audit-logging", "sqlite", "ai-governance", "copilotkit"
+    "agent-orchestration",
+    "ai-agents",
+    "ai-governance",
+    "audit-logging",
+    "copilotkit",
+    "desktop-app",
+    "electron",
+    "enterprise-security",
+    "iam",
+    "langchain",
+    "langsmith",
+    "llm",
+    "multi-agent",
+    "n8n",
+    "nemoclaw",
+    "opentelemetry",
+    "react",
+    "sqlite",
+    "typescript",
+    "workflow-automation"
   ],
   "homepage": "https://github.com/CES-Ltd/TitanX",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "CES Ltd",
+    "email": "service@aionui.com"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/CES-Ltd/TitanX.git"
-  },
-  "license": "Apache-2.0",
-  "author": {
-    "name": "AionUi",
-    "email": "service@aionui.com"
   },
   "main": "./out/main/index.js",
   "scripts": {
@@ -246,5 +262,5 @@
   "patchedDependencies": {
     "7zip-bin@5.2.0": "patches/7zip-bin@5.2.0.patch"
   },
-  "productName": "AionUi"
+  "productName": "TitanX"
 }

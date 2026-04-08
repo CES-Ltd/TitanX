@@ -128,12 +128,12 @@ export function detectCredentialLeaks(text: string): string[] {
   const detections: string[] = [];
 
   const patterns: Array<[string, RegExp]> = [
-    ['API Key', /(?:api[_-]?key|apikey)\s*[:=]\s*['"]?([a-zA-Z0-9_\-]{20,})['"]?/gi],
+    ['API Key', /(?:api[_-]?key|apikey)\s*[:=]\s*['"]?([a-zA-Z0-9_-]{20,})['"]?/gi],
     ['Bearer Token', /Bearer\s+[a-zA-Z0-9_\-.]{20,}/gi],
     ['AWS Key', /(?:AKIA|ASIA)[A-Z0-9]{16}/g],
     ['Private Key', /-----BEGIN (?:RSA |EC |DSA )?PRIVATE KEY-----/g],
     ['GitHub Token', /gh[ps]_[a-zA-Z0-9]{36}/g],
-    ['Slack Token', /xox[bpors]-[a-zA-Z0-9\-]{10,}/g],
+    ['Slack Token', /xox[bpors]-[a-zA-Z0-9-]{10,}/g],
     ['JWT', /eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}/g],
     ['Password Assignment', /(?:password|passwd|pwd)\s*[:=]\s*['"](?!.*\*)[^'"]{8,}['"]/gi],
   ];

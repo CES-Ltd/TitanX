@@ -42,11 +42,13 @@
 ## 🎬 Demo Videos
 
 ### App Navigation
+
 > Home → Governance → Observability → Home
 
 https://github.com/CES-Ltd/TitanX/raw/main/docs/screenshots/demo-navigation.mp4
 
 ### Security & Governance
+
 > Security Features → Blueprints → Audit Log
 
 https://github.com/CES-Ltd/TitanX/raw/main/docs/screenshots/demo-security.mp4
@@ -182,12 +184,12 @@ https://github.com/CES-Ltd/TitanX/raw/main/docs/screenshots/demo-security.mp4
 
 ### Agent Security Blueprints
 
-| Blueprint | FS Tier | Budget | Network | SSRF |
-|-----------|---------|--------|---------|------|
-| **sandboxed-default** | read-only | $5/mo | No egress | On |
-| **developer-open** | workspace | $50/mo | GitHub, npm, Docker | On |
-| **researcher-readonly** | read-only | $20/mo | HuggingFace, PyPI, GitHub | On |
-| **ci-headless** | workspace | $10/mo | GitHub, Docker | On |
+| Blueprint               | FS Tier   | Budget | Network                   | SSRF |
+| ----------------------- | --------- | ------ | ------------------------- | ---- |
+| **sandboxed-default**   | read-only | $5/mo  | No egress                 | On   |
+| **developer-open**      | workspace | $50/mo | GitHub, npm, Docker       | On   |
+| **researcher-readonly** | read-only | $20/mo | HuggingFace, PyPI, GitHub | On   |
+| **ci-headless**         | workspace | $10/mo | GitHub, Docker            | On   |
 
 ### Secrets Management (AES-256-GCM)
 
@@ -236,16 +238,16 @@ https://github.com/CES-Ltd/TitanX/raw/main/docs/screenshots/demo-security.mp4
 
 ## 🎮 Easter Eggs & Fun Features
 
-| Easter Egg | How to Trigger |
-|------------|---------------|
-| **Konami Code** | ↑↑↓↓←→←→BA on keyboard |
-| **Matrix Mode** | Triple-click the TitanX logo |
-| **Retro Terminal** | Type `/retro` in chat |
-| **AI Haiku** | Type `/haiku` in chat |
-| **Rap Battle** | Type `/rapbattle` in chat |
-| **Agent Mood Ring** | 5 rapid clicks on agent element |
-| **Secret Stats** | Shift+click About section 3x |
-| **Bollywood Mode** | Click the easter egg icon in titlebar |
+| Easter Egg          | How to Trigger                        |
+| ------------------- | ------------------------------------- |
+| **Konami Code**     | ↑↑↓↓←→←→BA on keyboard                |
+| **Matrix Mode**     | Triple-click the TitanX logo          |
+| **Retro Terminal**  | Type `/retro` in chat                 |
+| **AI Haiku**        | Type `/haiku` in chat                 |
+| **Rap Battle**      | Type `/rapbattle` in chat             |
+| **Agent Mood Ring** | 5 rapid clicks on agent element       |
+| **Secret Stats**    | Shift+click About section 3x          |
+| **Bollywood Mode**  | Click the easter egg icon in titlebar |
 
 ### Desktop Pet (5 Themes)
 
@@ -261,19 +263,19 @@ https://github.com/CES-Ltd/TitanX/raw/main/docs/screenshots/demo-security.mp4
 
 ## 🛠 Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| **Desktop** | Electron 37 |
-| **Frontend** | React 19, TypeScript (strict), Arco Design, UnoCSS |
-| **Database** | SQLite (better-sqlite3) with WAL mode, **47 migrations** |
-| **IPC** | Custom bridge pattern (`@office-ai/platform`) — 60+ IPC channels |
-| **Security** | AES-256-GCM, SHA-256 tokens, HMAC-SHA256 audit signatures, timing-safe comparison |
-| **Observability** | OpenTelemetry (OTLP/Console), LangSmith-compatible traces |
-| **AI Providers** | 20+ LLM providers (Claude, GPT, Gemini, Codex, OpenCode, Hermes, Ollama, etc.) |
-| **Workflow Engine** | n8n-inspired DAG execution with topological sort, retry, error routing |
-| **Agent Intelligence** | LangChain memory, DeepAgents planning, reflection, structured output |
-| **Testing** | Vitest 4, 310+ test files, 80% coverage target |
-| **Package Manager** | Bun |
+| Layer                  | Technology                                                                        |
+| ---------------------- | --------------------------------------------------------------------------------- |
+| **Desktop**            | Electron 37                                                                       |
+| **Frontend**           | React 19, TypeScript (strict), Arco Design, UnoCSS                                |
+| **Database**           | SQLite (better-sqlite3) with WAL mode, **47 migrations**                          |
+| **IPC**                | Custom bridge pattern (`@office-ai/platform`) — 60+ IPC channels                  |
+| **Security**           | AES-256-GCM, SHA-256 tokens, HMAC-SHA256 audit signatures, timing-safe comparison |
+| **Observability**      | OpenTelemetry (OTLP/Console), LangSmith-compatible traces                         |
+| **AI Providers**       | 20+ LLM providers (Claude, GPT, Gemini, Codex, OpenCode, Hermes, Ollama, etc.)    |
+| **Workflow Engine**    | n8n-inspired DAG execution with topological sort, retry, error routing            |
+| **Agent Intelligence** | LangChain memory, DeepAgents planning, reflection, structured output              |
+| **Testing**            | Vitest 4, 310+ test files, 80% coverage target                                    |
+| **Package Manager**    | Bun                                                                               |
 
 ---
 
@@ -339,14 +341,14 @@ TitanX/
 
 TitanX adds **30+ tables** via **47 migrations** on top of AionUI's base schema:
 
-| Category | Tables |
-|----------|--------|
-| **Security** | iam_policies, agent_policy_bindings, credential_access_tokens, agent_session_tokens, network_policies, network_policy_rules, security_feature_toggles, agent_blueprints |
-| **Workflows** | workflow_definitions, workflow_executions, workflow_node_executions |
-| **Intelligence** | agent_memory, agent_plans |
-| **Traces** | trace_runs, trace_feedback |
-| **Operations** | activity_log, secrets, secret_versions, cost_events, budget_policies, budget_incidents, agent_runs, approvals, workflow_rules |
-| **Teams** | teams, sprint_tasks, sprint_counters, agent_gallery, agent_snapshots, inference_routing_rules, project_plans |
+| Category         | Tables                                                                                                                                                                  |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Security**     | iam_policies, agent_policy_bindings, credential_access_tokens, agent_session_tokens, network_policies, network_policy_rules, security_feature_toggles, agent_blueprints |
+| **Workflows**    | workflow_definitions, workflow_executions, workflow_node_executions                                                                                                     |
+| **Intelligence** | agent_memory, agent_plans                                                                                                                                               |
+| **Traces**       | trace_runs, trace_feedback                                                                                                                                              |
+| **Operations**   | activity_log, secrets, secret_versions, cost_events, budget_policies, budget_incidents, agent_runs, approvals, workflow_rules                                           |
+| **Teams**        | teams, sprint_tasks, sprint_counters, agent_gallery, agent_snapshots, inference_routing_rules, project_plans                                                            |
 
 ---
 

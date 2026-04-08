@@ -456,7 +456,7 @@ export class OfficeRenderer {
     this.drawFurniture(ctx, s);
 
     // Draw agents sorted by Y for depth
-    const sortedAgents = [...this.agents.values()].sort((a, b) => a.y - b.y);
+    const sortedAgents = [...this.agents.values()].toSorted((a, b) => a.y - b.y);
     for (const agent of sortedAgents) {
       this.drawAgent(ctx, agent, s);
     }
