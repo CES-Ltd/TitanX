@@ -7,7 +7,16 @@
 import React, { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Tabs, Typography } from '@arco-design/web-react';
-import { DataDisplay, Shield, CheckCorrect, ListView, Performance, Peoples } from '@icon-park/react';
+import {
+  DataDisplay,
+  Shield,
+  CheckCorrect,
+  ListView,
+  Performance,
+  Peoples,
+  NetworkTree,
+  DocDetail,
+} from '@icon-park/react';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import Organization from './organization/Organization';
 import WorkflowManager from './workflows/WorkflowManager';
@@ -15,6 +24,8 @@ import SecretsManager from './SecretsManager';
 import IAMPolicies from './iam/IAMPolicies';
 import ApprovalsList from './ApprovalsList';
 import ActivityLog from './ActivityLog';
+import NetworkPolicies from './NetworkPolicies';
+import Blueprints from './Blueprints';
 
 const { TabPane } = Tabs;
 const { Title } = Typography;
@@ -98,6 +109,28 @@ const GovernancePage: React.FC = () => {
           }
         >
           <ApprovalsList />
+        </TabPane>
+        <TabPane
+          key='network'
+          title={
+            <span className='flex items-center gap-1'>
+              <NetworkTree size={16} />
+              Network Policies
+            </span>
+          }
+        >
+          <NetworkPolicies />
+        </TabPane>
+        <TabPane
+          key='blueprints'
+          title={
+            <span className='flex items-center gap-1'>
+              <DocDetail size={16} />
+              Blueprints
+            </span>
+          }
+        >
+          <Blueprints />
         </TabPane>
         <TabPane
           key='audit'
