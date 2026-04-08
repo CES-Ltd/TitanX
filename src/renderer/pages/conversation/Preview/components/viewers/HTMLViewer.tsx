@@ -231,6 +231,8 @@ const HTMLPreview: React.FC<HTMLPreviewProps> = ({ content, filePath, hideToolba
    */
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
+      // Only accept messages from our own iframe
+      if (event.source !== iframeRef.current?.contentWindow) return;
       if (event.data.type === 'element-selected') {
         const elementInfo: SelectedElement = event.data.data;
         setSelectedElement(elementInfo);

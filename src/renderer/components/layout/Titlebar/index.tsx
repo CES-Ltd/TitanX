@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import classNames from 'classnames';
 import {
   ArrowCircleLeft,
@@ -8,8 +8,10 @@ import {
   MenuUnfold,
   Plus,
   PaintedEggshell,
+  Help,
 } from '@icon-park/react';
 import { Tooltip } from '@arco-design/web-react';
+import HelpDrawer from '@renderer/components/help/HelpDrawer';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 
@@ -41,6 +43,9 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
   const { t } = useTranslation();
   const appTitle = useMemo(() => 'TitanX', []);
   const [workspaceCollapsed, setWorkspaceCollapsed] = useState(true);
+  const [helpVisible, setHelpVisible] = useState(false);
+  const handleHelpToggle = useCallback(() => setHelpVisible((v) => !v), []);
+
   const [bollywoodMode, setBollywoodMode] = useState(() => {
     try {
       return localStorage.getItem('titanx:bollywood-mode') === 'true';
@@ -306,8 +311,23 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
         )}
       </div>
       <div ref={toolbarRef} className='app-titlebar__toolbar'>
+        {/* Help Button */}
+        <Tooltip content='Help & Feature Guide' position='bottom' mini>
+          <button
+            type='button'
+            className={classNames('app-titlebar__button', layout?.isMobile && 'app-titlebar__button--mobile')}
+            onClick={handleHelpToggle}
+            aria-label='Help'
+          >
+            <Help theme='outline' size={iconSize} fill='currentColor' />
+          </button>
+        </Tooltip>
         {/* Easter Egg Toggle */}
-        <Tooltip content={bollywoodMode ? 'The force is strong with this one! ✨' : 'May the force be with you!'} position='bottom' mini>
+        <Tooltip
+          content={bollywoodMode ? 'The force is strong with this one! ✨' : 'May the force be with you!'}
+          position='bottom'
+          mini
+        >
           <button
             type='button'
             className={classNames('app-titlebar__button', layout?.isMobile && 'app-titlebar__button--mobile')}
@@ -344,6 +364,7 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
         )}
         {showWindowControls && <WindowControls />}
       </div>
+      <HelpDrawer visible={helpVisible} onClose={() => setHelpVisible(false)} />
     </div>
   );
 };

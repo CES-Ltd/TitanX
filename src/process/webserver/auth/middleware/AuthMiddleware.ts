@@ -32,7 +32,11 @@ export class AuthMiddleware {
    * CORS middleware for development
    */
   public static corsMiddleware(req: Request, res: Response, next: NextFunction): void {
-    res.header('Access-Control-Allow-Origin', '*');
+    const origin = req.headers.origin;
+    const allowedOrigins = ['http://localhost', 'https://localhost', 'http://127.0.0.1', 'https://127.0.0.1'];
+    if (origin && allowedOrigins.some((allowed) => origin.startsWith(allowed))) {
+      res.header('Access-Control-Allow-Origin', origin);
+    }
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
 

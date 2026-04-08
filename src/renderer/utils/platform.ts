@@ -116,6 +116,9 @@ export const resolveExtensionAssetUrl = (url: string | undefined): string | unde
 export const openExternalUrl = async (url: string): Promise<void> => {
   if (!url) return;
 
+  // Block javascript: and data: protocol URLs to prevent XSS
+  if (!/^https?:\/\//i.test(url)) return;
+
   if (isElectronDesktop()) {
     const { ipcBridge } = await import('@/common');
     await ipcBridge.shell.openExternal.invoke(url);
