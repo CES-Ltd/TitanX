@@ -394,6 +394,7 @@ export class TeamMcpServer {
 
     // Also create in sprint_tasks so it shows in Sprint Board
     try {
+      console.log(`[TeamMcpServer] Creating sprint task + audit: "${subject}" owner=${owner ?? 'none'}`);
       const db = await getDatabase();
       const driver = db.getDriver();
       const agents = this.params.getAgents();

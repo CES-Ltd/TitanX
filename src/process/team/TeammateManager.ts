@@ -225,9 +225,34 @@ export class TeammateManager extends EventEmitter {
 
   /** Set agent status, update the local agents array, and emit IPC event */
   setStatus(slotId: string, status: TeammateStatus, lastMessage?: string): void {
+    const agent = this.agents.find((a) => a.slotId === slotId);
     this.agents = this.agents.map((a) => (a.slotId === slotId ? { ...a, status } : a));
     ipcBridge.team.agentStatusChanged.emit({ teamId: this.teamId, slotId, status, lastMessage });
     this.emit('agentStatusChanged', { teamId: this.teamId, slotId, status, lastMessage });
+
+    // Audit log agent status changes
+    void (async () => {
+      try {
+        const db = await getDatabase();
+        activityLogService.logActivity(db.getDriver(), {
+          userId: 'system_default_user',
+          actorType: 'agent',
+          actorId: slotId,
+          action: `agent.status.${status}`,
+          entityType: 'agent',
+          entityId: slotId,
+          agentId: slotId,
+          details: {
+            agentName: agent?.agentName,
+            status,
+            lastMessage: lastMessage?.slice(0, 100),
+            teamId: this.teamId,
+          },
+        });
+      } catch {
+        // Non-critical
+      }
+    })();
   }
 
   /** Clean up all IPC listeners, timers, and EventEmitter handlers */
@@ -419,6 +444,9 @@ export class TeammateManager extends EventEmitter {
 
     // Record cost event and audit log for this turn
     try {
+      console.log(
+        `[TeammateManager] Recording cost + audit for agent ${agent.agentName} (${agent.slotId}), text length: ${accumulatedText.length}`
+      );
       const db = await getDatabase();
       const driver = db.getDriver();
       const textLen = accumulatedText.length;
@@ -453,8 +481,9 @@ export class TeammateManager extends EventEmitter {
           outputTokensEstimate: estimatedOutputTokens,
         },
       });
-    } catch {
-      // Non-critical — don't block agent flow
+      console.log(`[TeammateManager] ✓ Cost + audit recorded for ${agent.agentName}`);
+    } catch (err) {
+      console.error('[TeammateManager] ✗ Failed to record cost/audit:', err);
     }
 
     // Only set idle if executeAction did not already change status (e.g. idle_notification)
