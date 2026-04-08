@@ -306,8 +306,8 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
         )}
       </div>
       <div ref={toolbarRef} className='app-titlebar__toolbar'>
-        {/* Bollywood Mode Easter Egg Toggle */}
-        <Tooltip content={bollywoodMode ? 'Bollywood Mode 🎬 ON' : 'Bollywood Mode 🎬'} position='bottom' mini>
+        {/* Easter Egg Toggle */}
+        <Tooltip content={bollywoodMode ? 'May the force be with you! ✨' : 'May the force be with you!'} position='bottom' mini>
           <button
             type='button'
             className={classNames('app-titlebar__button', layout?.isMobile && 'app-titlebar__button--mobile')}
