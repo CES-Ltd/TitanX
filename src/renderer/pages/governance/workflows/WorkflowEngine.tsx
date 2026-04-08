@@ -20,9 +20,35 @@ import {
   Divider,
 } from '@arco-design/web-react';
 import { Plus, Delete, PlayOne, History, Right, Close } from '@icon-park/react';
-import { workflowEngine } from '@/common/adapter/ipcBridge';
+import { workflowEngine, team as teamBridge } from '@/common/adapter/ipcBridge';
 
 const userId = 'system_default_user';
+
+type TeamInfo = { id: string; name: string; agents: Array<{ slotId: string; agentName: string; agentType: string }> };
+
+/** Available MCP tools that agents can call */
+const AVAILABLE_TOOLS = [
+  'team_send_message',
+  'team_task_create',
+  'team_task_update',
+  'team_task_list',
+  'team_members',
+  'team_spawn_agent',
+  'team_rename_agent',
+  'team_shutdown_agent',
+];
+
+/** Data sources for Transform node */
+const TRANSFORM_SOURCES = [
+  { label: 'Input Data ($input)', value: '$input' },
+  { label: 'Input → Field ($input.field)', value: '$input.field' },
+  { label: 'Input → Status ($input.status)', value: '$input.status' },
+  { label: 'Input → Content ($input.content)', value: '$input.content' },
+  { label: 'Input → Result ($input.result)', value: '$input.result' },
+  { label: 'Input → Items ($input.items)', value: '$input.items' },
+  { label: 'Static: true', value: 'true' },
+  { label: 'Static: false', value: 'false' },
+];
 
 // ── Node type definitions ────────────────────────────────────────────────────
 
@@ -92,6 +118,19 @@ const WorkflowEngine: React.FC = () => {
   const [selectedExec, setSelectedExec] = useState<string | null>(null);
   const [nodeExecs, setNodeExecs] = useState<NodeExecRow[]>([]);
   const [viewMode, setViewMode] = useState<'workflows' | 'executions'>('workflows');
+
+  const [teams, setTeams] = useState<TeamInfo[]>([]);
+
+  // Load teams for agent selector
+  useEffect(() => {
+    void teamBridge.list
+      .invoke({ userId })
+      .then((list) => setTeams(list as TeamInfo[]))
+      .catch(() => {});
+  }, []);
+
+  // Flatten all agents across teams for dropdown
+  const allAgents = teams.flatMap((t) => t.agents.map((a) => ({ ...a, teamName: t.name })));
 
   // Create/edit workflow state
   const [editorVisible, setEditorVisible] = useState(false);
@@ -434,42 +473,104 @@ const WorkflowEngine: React.FC = () => {
                         />
                         <Tag size='small'>{node.type}</Tag>
 
-                        {/* Type-specific parameters */}
+                        {/* Type-specific parameters — all dropdowns */}
                         {node.type === 'condition' && (
-                          <Input
-                            value={(node.parameters.condition as string) ?? ''}
+                          <Select
+                            value={(node.parameters.condition as string) ?? undefined}
                             onChange={(v) => updateNodeParam(node.id, 'condition', v)}
-                            size='small'
-                            placeholder='Expression...'
-                            style={{ width: 150 }}
-                          />
+                            size='mini'
+                            placeholder='Route to...'
+                            style={{ width: 170 }}
+                            allowClear
+                          >
+                            <Select.OptGroup label='Nodes in this workflow'>
+                              {editNodes
+                                .filter((n) => n.id !== node.id)
+                                .map((n) => (
+                                  <Select.Option key={`node:${n.id}`} value={`node:${n.id}`}>
+                                    → {n.name} ({n.type})
+                                  </Select.Option>
+                                ))}
+                            </Select.OptGroup>
+                            {workflows.length > 0 && (
+                              <Select.OptGroup label='Saved workflows'>
+                                {workflows.map((w) => (
+                                  <Select.Option key={`wf:${w.id}`} value={`workflow:${w.id}`}>
+                                    ↗ {w.name}
+                                  </Select.Option>
+                                ))}
+                              </Select.OptGroup>
+                            )}
+                          </Select>
                         )}
                         {node.type === 'transform' && (
-                          <Input
-                            value={(node.parameters.mappingExpr as string) ?? ''}
+                          <Select
+                            value={(node.parameters.mappingExpr as string) ?? undefined}
                             onChange={(v) => updateNodeParam(node.id, 'mappingExpr', v)}
-                            size='small'
-                            placeholder='$input.field'
-                            style={{ width: 150 }}
-                          />
+                            size='mini'
+                            placeholder='Data source...'
+                            style={{ width: 180 }}
+                            allowClear
+                            showSearch
+                          >
+                            {TRANSFORM_SOURCES.map((s) => (
+                              <Select.Option key={s.value} value={s.value}>
+                                {s.label}
+                              </Select.Option>
+                            ))}
+                          </Select>
                         )}
                         {node.type === 'action' && (
-                          <Input
-                            value={(node.parameters.action as string) ?? ''}
+                          <Select
+                            value={(node.parameters.action as string) ?? undefined}
                             onChange={(v) => updateNodeParam(node.id, 'action', v)}
-                            size='small'
-                            placeholder='Tool name...'
-                            style={{ width: 150 }}
-                          />
+                            size='mini'
+                            placeholder='Select tool...'
+                            style={{ width: 180 }}
+                            showSearch
+                          >
+                            {AVAILABLE_TOOLS.map((t) => (
+                              <Select.Option key={t} value={t}>
+                                {t}
+                              </Select.Option>
+                            ))}
+                          </Select>
                         )}
                         {node.type === 'agent_call' && (
-                          <Input
-                            value={(node.parameters.agentSlotId as string) ?? ''}
+                          <Select
+                            value={(node.parameters.agentSlotId as string) ?? undefined}
                             onChange={(v) => updateNodeParam(node.id, 'agentSlotId', v)}
-                            size='small'
-                            placeholder='Agent slot ID'
+                            size='mini'
+                            placeholder='Select agent...'
+                            style={{ width: 200 }}
+                            showSearch
+                          >
+                            {allAgents.map((a) => (
+                              <Select.Option key={a.slotId} value={a.slotId}>
+                                {a.agentName} ({a.agentType}) — {a.teamName}
+                              </Select.Option>
+                            ))}
+                            {allAgents.length === 0 && (
+                              <Select.Option key='none' value='' disabled>
+                                No agents available
+                              </Select.Option>
+                            )}
+                          </Select>
+                        )}
+                        {node.type === 'loop' && (
+                          <Select
+                            value={(node.parameters.arrayField as string) ?? undefined}
+                            onChange={(v) => updateNodeParam(node.id, 'arrayField', v)}
+                            size='mini'
+                            placeholder='Array field...'
                             style={{ width: 150 }}
-                          />
+                            showSearch
+                          >
+                            <Select.Option value='items'>items</Select.Option>
+                            <Select.Option value='results'>results</Select.Option>
+                            <Select.Option value='data'>data</Select.Option>
+                            <Select.Option value='__loopItems'>__loopItems</Select.Option>
+                          </Select>
                         )}
 
                         {/* Error handling */}
