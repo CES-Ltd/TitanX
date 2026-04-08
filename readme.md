@@ -41,17 +41,15 @@
 
 ## 🎬 Demo Videos
 
-### App Navigation (8s)
+### App Navigation
 > Home → Governance → Observability → Home
 
-<video src="./docs/screenshots/demo-navigation.mp4" controls width="700"></video>
+https://github.com/CES-Ltd/TitanX/raw/main/docs/screenshots/demo-navigation.mp4
 
-### Security & Governance (8s)
+### Security & Governance
 > Security Features → Blueprints → Audit Log
 
-<video src="./docs/screenshots/demo-security.mp4" controls width="700"></video>
-
-> **Note:** Videos render natively on GitHub. To view locally: `open docs/screenshots/demo-navigation.mp4`
+https://github.com/CES-Ltd/TitanX/raw/main/docs/screenshots/demo-security.mp4
 
 ---
 
