@@ -76,6 +76,7 @@ export class TaskManager {
         description: params.description,
         assigneeSlotId: params.owner,
         priority: 'medium',
+        teamTaskId: created.id, // Link sprint task to team task for status sync
       });
       sprintService.updateTask(driver, sprintTask.id, { status: 'todo' });
       console.log(`[TaskManager] Sprint task created: ${sprintTask.id} "${params.subject}"`);
@@ -100,10 +101,63 @@ export class TaskManager {
    * Update a task. Auto-updates `updatedAt`. Returns the merged task.
    */
   async update(taskId: string, updates: UpdateTaskParams): Promise<TeamTask> {
-    return this.repo.updateTask(taskId, {
+    const result = await this.repo.updateTask(taskId, {
       ...updates,
       updatedAt: Date.now(),
     });
+
+    // Sync status change to sprint_tasks via team_task_id link
+    if (updates.status) {
+      try {
+        const db = await getDatabase();
+        const driver = db.getDriver();
+        const statusMap: Record<string, string> = {
+          pending: 'todo',
+          in_progress: 'in_progress',
+          completed: 'done',
+          deleted: 'done',
+        };
+        const sprintStatus = statusMap[updates.status] ?? updates.status;
+
+        // Find sprint task by team_task_id (reliable link)
+        const sprintTask = sprintService.findByTeamTaskId(driver, taskId);
+        if (sprintTask) {
+          sprintService.updateTask(driver, sprintTask.id, {
+            status: sprintStatus as 'backlog' | 'todo' | 'in_progress' | 'review' | 'done',
+            assigneeSlotId: updates.owner ?? sprintTask.assigneeSlotId,
+          });
+          console.log(`[TaskManager] Sprint task ${sprintTask.id} status → ${sprintStatus}`);
+        } else {
+          // Fallback: try matching by title (for tasks created before team_task_id was added)
+          const teamTask = await this.repo.findTaskById(taskId);
+          if (teamTask) {
+            const allSprint = sprintService.listTasks(driver, teamTask.teamId);
+            const match = allSprint.find((s) => s.title === teamTask.subject);
+            if (match) {
+              sprintService.updateTask(driver, match.id, {
+                status: sprintStatus as 'backlog' | 'todo' | 'in_progress' | 'review' | 'done',
+              });
+              console.log(`[TaskManager] Sprint task ${match.id} status → ${sprintStatus} (title match)`);
+            }
+          }
+        }
+
+        // Audit log
+        activityLogService.logActivity(driver, {
+          userId: 'system_default_user',
+          actorType: 'agent',
+          actorId: updates.owner ?? 'system',
+          action: 'task.status_changed',
+          entityType: 'sprint_task',
+          entityId: taskId,
+          details: { status: updates.status, sprintStatus, owner: updates.owner },
+        });
+      } catch (err) {
+        console.error('[TaskManager] Sprint status sync failed:', err);
+      }
+    }
+
+    return result;
   }
 
   /**

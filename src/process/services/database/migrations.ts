@@ -1579,6 +1579,25 @@ const migration_v32: IMigration = {
   },
 };
 
+/**
+ * Migration v32 -> v33: Add team_task_id to sprint_tasks for reliable status sync
+ */
+const migration_v33: IMigration = {
+  version: 33,
+  name: 'Add team_task_id to sprint_tasks',
+  up: (db) => {
+    const cols = new Set((db.pragma('table_info(sprint_tasks)') as Array<{ name: string }>).map((c) => c.name));
+    if (!cols.has('team_task_id')) {
+      db.exec('ALTER TABLE sprint_tasks ADD COLUMN team_task_id TEXT');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_sprint_team_task ON sprint_tasks(team_task_id)');
+    }
+    console.log('[Migration v33] Added team_task_id to sprint_tasks');
+  },
+  down: (_db) => {
+    console.warn('[Migration v33] Rollback skipped: cannot drop columns safely');
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -1587,7 +1606,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v19, migration_v20, migration_v21, migration_v22,
   migration_v23, migration_v24, migration_v25,
   migration_v26, migration_v27, migration_v28, migration_v29,
-  migration_v30, migration_v31, migration_v32,
+  migration_v30, migration_v31, migration_v32, migration_v33,
 ];
 
 /**
