@@ -90,7 +90,7 @@ const TeamSider: React.FC<TeamSiderProps> = ({
           </span>
         }
       >
-        <div className='h-full overflow-y-auto'>
+        <div style={{ height: 'calc(100vh - 140px)', overflow: 'auto' }}>
           <WorkforcePanel
             agents={agents}
             statusMap={statusMap}
@@ -109,7 +109,7 @@ const TeamSider: React.FC<TeamSiderProps> = ({
           </span>
         }
       >
-        <div className='h-full overflow-y-auto'>{filesContent}</div>
+        <div style={{ height: 'calc(100vh - 140px)', overflow: 'auto' }}>{filesContent}</div>
       </TabPane>
     </Tabs>
   );

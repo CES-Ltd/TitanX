@@ -82,6 +82,17 @@ export function useWorkspaceTree({ workspace, conversation_id, eventPrefix }: Us
             return res;
           }
 
+          console.log(
+            '[WorkspaceTree] setFiles:',
+            JSON.stringify(
+              res?.map((f: { name: string; relativePath: string; isFile: boolean; children?: unknown[] }) => ({
+                name: f.name,
+                relativePath: f.relativePath,
+                isFile: f.isFile,
+                childrenCount: f.children?.length ?? 0,
+              }))
+            )
+          );
           setFiles(res);
           // 只在搜索时才重置 Tree key，否则保持选中状态
           // Only reset Tree key when searching, otherwise keep selection state
