@@ -18,6 +18,8 @@ import * as sprintService from '@process/services/sprintTasks';
 import * as activityLogService from '@process/services/activityLog';
 import * as policyService from '@process/services/policyEnforcement';
 import { startSpan, getCounter, getHistogram } from '@process/services/telemetry';
+import * as tracingService from '@process/services/tracing';
+import { isFeatureEnabled } from '@process/services/securityFeatures';
 
 type SpawnAgentFn = (agentName: string, agentType?: string) => Promise<TeamAgent>;
 
@@ -263,10 +265,28 @@ export class TeamMcpServer {
     });
     const callStart = Date.now();
 
+    // Create trace run for this tool call (LangSmith-compatible)
+    let traceHandle: ReturnType<typeof tracingService.startRun> | null = null;
     try {
-      return await this._handleToolCallInner(toolName, args, fromSlotId);
+      const db = await getDatabase();
+      const driver = db.getDriver();
+      if (isFeatureEnabled(driver, 'trace_system')) {
+        traceHandle = tracingService.startRun(driver, `mcp:${toolName}`, 'tool', {
+          agentSlotId: fromSlotId,
+          teamId: this.params.teamId,
+        });
+      }
+    } catch {
+      /* non-critical */
+    }
+
+    try {
+      const result = await this._handleToolCallInner(toolName, args, fromSlotId);
+      traceHandle?.end({ result: result.slice(0, 500) });
+      return result;
     } catch (err) {
       span.setStatus('error', err instanceof Error ? err.message : String(err));
+      traceHandle?.end(undefined, err instanceof Error ? err.message : String(err));
       getCounter('titanx.mcp', 'titanx.mcp.tool_calls_error', 'Failed tool calls').add(1, {
         tool_name: toolName,
         agent_slot_id: fromSlotId ?? 'unknown',

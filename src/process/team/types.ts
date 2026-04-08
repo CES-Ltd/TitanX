@@ -62,4 +62,7 @@ export type ParsedAction =
   | { type: 'task_update'; taskId: string; status?: string; owner?: string }
   | { type: 'spawn_agent'; agentName: string; agentType?: string; role?: string }
   | { type: 'idle_notification'; reason: string; summary: string; completedTaskId?: string }
-  | { type: 'plain_response'; content: string };
+  | { type: 'plain_response'; content: string }
+  | { type: 'write_plan'; title: string; steps: string[] }
+  | { type: 'reflect'; planId: string; reflection: string; score: number }
+  | { type: 'trigger_workflow'; workflowId: string; inputs: Record<string, unknown> };
