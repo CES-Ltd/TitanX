@@ -17,6 +17,10 @@ import {
   NetworkTree,
   DocDetail,
   ShieldAdd,
+  SplitBranch,
+  Brain,
+  Plan,
+  Analysis,
 } from '@icon-park/react';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import Organization from './organization/Organization';
@@ -28,6 +32,10 @@ import ActivityLog from './ActivityLog';
 import NetworkPolicies from './NetworkPolicies';
 import Blueprints from './Blueprints';
 import SecurityDashboard from './SecurityDashboard';
+import WorkflowEngine from './workflows/WorkflowEngine';
+import AgentMemoryPanel from './agents/AgentMemoryPanel';
+import AgentPlanViewer from './agents/AgentPlanViewer';
+import TraceExplorer from './tracing/TraceExplorer';
 
 const { TabPane } = Tabs;
 const { Title } = Typography;
@@ -122,6 +130,50 @@ const GovernancePage: React.FC = () => {
           }
         >
           <SecurityDashboard />
+        </TabPane>
+        <TabPane
+          key='workflow-engine'
+          title={
+            <span className='flex items-center gap-1'>
+              <SplitBranch size={16} />
+              Workflow Engine
+            </span>
+          }
+        >
+          <WorkflowEngine />
+        </TabPane>
+        <TabPane
+          key='agent-memory'
+          title={
+            <span className='flex items-center gap-1'>
+              <Brain size={16} />
+              Agent Memory
+            </span>
+          }
+        >
+          <AgentMemoryPanel />
+        </TabPane>
+        <TabPane
+          key='agent-plans'
+          title={
+            <span className='flex items-center gap-1'>
+              <Plan size={16} />
+              Agent Plans
+            </span>
+          }
+        >
+          <AgentPlanViewer />
+        </TabPane>
+        <TabPane
+          key='traces'
+          title={
+            <span className='flex items-center gap-1'>
+              <Analysis size={16} />
+              Traces
+            </span>
+          }
+        >
+          <TraceExplorer />
         </TabPane>
         <TabPane
           key='network'
