@@ -58,6 +58,9 @@ import { initGitHubAuthBridge } from './githubAuthBridge';
 import { initProjectPlannerBridge } from './projectPlannerBridge';
 import { initCredentialAccessBridge } from './credentialAccessBridge';
 import { initTelemetryBridge } from './telemetryBridge';
+import { initNetworkPolicyBridge } from './networkPolicyBridge';
+import { initBlueprintBridge } from './blueprintBridge';
+import { initAgentSnapshotBridge } from './agentSnapshotBridge';
 import type { TeamSessionService } from '@process/team/TeamSessionService';
 
 export interface BridgeDependencies {
@@ -124,6 +127,9 @@ export function initAllBridges(deps: BridgeDependencies): void {
   initProjectPlannerBridge();
   initCredentialAccessBridge();
   initTelemetryBridge();
+  initNetworkPolicyBridge();
+  initBlueprintBridge();
+  initAgentSnapshotBridge();
 }
 
 /**

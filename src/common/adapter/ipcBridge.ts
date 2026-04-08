@@ -1750,3 +1750,52 @@ export const telemetry = {
   setConfig: bridge.buildProvider<void, ITelemetryConfig>('telemetry.set-config'),
   restart: bridge.buildProvider<void, void>('telemetry.restart'),
 };
+
+// ── Network Policies (NemoClaw deny-by-default egress control) ───────────────
+
+export const networkPolicies = {
+  list: bridge.buildProvider<unknown[], { userId: string }>('network-policy.list'),
+  create: bridge.buildProvider<unknown, { userId: string; name: string; agentGalleryId?: string; rules: unknown[] }>(
+    'network-policy.create'
+  ),
+  remove: bridge.buildProvider<boolean, { policyId: string }>('network-policy.delete'),
+  toggle: bridge.buildProvider<void, { policyId: string; enabled: boolean }>('network-policy.toggle'),
+  applyPreset: bridge.buildProvider<unknown, { userId: string; preset: string; agentGalleryId?: string }>(
+    'network-policy.apply-preset'
+  ),
+  listPresets: bridge.buildProvider<string[], void>('network-policy.list-presets'),
+};
+
+// ── Agent Blueprints (NemoClaw declarative profiles) ─────────────────────────
+
+export const blueprints = {
+  list: bridge.buildProvider<unknown[], { userId: string }>('blueprint.list'),
+  get: bridge.buildProvider<unknown | null, { blueprintId: string }>('blueprint.get'),
+  create: bridge.buildProvider<unknown, { userId: string; name: string; description: string; config: unknown }>(
+    'blueprint.create'
+  ),
+  remove: bridge.buildProvider<boolean, { blueprintId: string }>('blueprint.delete'),
+  seed: bridge.buildProvider<number, { userId: string }>('blueprint.seed'),
+};
+
+// ── Agent Snapshots (NemoClaw state capture/restore) ─────────────────────────
+
+export const agentSnapshots = {
+  create: bridge.buildProvider<unknown, { agentGalleryId: string; teamId?: string; note?: string }>(
+    'agent-snapshot.create'
+  ),
+  list: bridge.buildProvider<unknown[], { agentGalleryId: string }>('agent-snapshot.list'),
+  get: bridge.buildProvider<unknown | null, { snapshotId: string }>('agent-snapshot.get'),
+  exportSanitized: bridge.buildProvider<string, { snapshotId: string }>('agent-snapshot.export'),
+};
+
+// ── Inference Routing (NemoClaw managed inference) ───────────────────────────
+
+export const inferenceRouting = {
+  list: bridge.buildProvider<unknown[], { agentGalleryId?: string }>('inference-routing.list'),
+  create: bridge.buildProvider<
+    unknown,
+    { agentGalleryId?: string; preferredProvider: string; fallbackProviders?: string[]; allowedModels?: string[] }
+  >('inference-routing.create'),
+  remove: bridge.buildProvider<boolean, { routeId: string }>('inference-routing.delete'),
+};

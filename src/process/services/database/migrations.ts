@@ -1628,6 +1628,123 @@ const migration_v34: IMigration = {
   },
 };
 
+/**
+ * Migration v34 -> v35: Network egress policies (NemoClaw deny-by-default).
+ */
+const migration_v35: IMigration = {
+  version: 35,
+  name: 'Add network egress policies',
+  up: (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS network_policies (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      agent_gallery_id TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_net_policy_user ON network_policies(user_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_net_policy_agent ON network_policies(agent_gallery_id)');
+
+    db.exec(`CREATE TABLE IF NOT EXISTS network_policy_rules (
+      id TEXT PRIMARY KEY,
+      policy_id TEXT NOT NULL REFERENCES network_policies(id) ON DELETE CASCADE,
+      host TEXT NOT NULL,
+      port INTEGER,
+      path_prefix TEXT,
+      methods TEXT,
+      tls_required INTEGER NOT NULL DEFAULT 1,
+      tool_scope TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_net_rule_policy ON network_policy_rules(policy_id)');
+    console.log('[Migration v35] Added network_policies + network_policy_rules tables');
+  },
+  down: (db) => {
+    db.exec('DROP TABLE IF EXISTS network_policy_rules');
+    db.exec('DROP TABLE IF EXISTS network_policies');
+    console.log('[Migration v35] Rolled back: Dropped network policy tables');
+  },
+};
+
+/**
+ * Migration v35 -> v36: Agent blueprints (NemoClaw declarative profiles).
+ */
+const migration_v36: IMigration = {
+  version: 36,
+  name: 'Add agent blueprints table',
+  up: (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS agent_blueprints (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      is_builtin INTEGER NOT NULL DEFAULT 0,
+      config TEXT NOT NULL DEFAULT '{}',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_blueprint_user ON agent_blueprints(user_id)');
+    console.log('[Migration v36] Added agent_blueprints table');
+  },
+  down: (db) => {
+    db.exec('DROP TABLE IF EXISTS agent_blueprints');
+    console.log('[Migration v36] Rolled back: Dropped agent_blueprints');
+  },
+};
+
+/**
+ * Migration v36 -> v37: Agent snapshots (NemoClaw state capture/restore).
+ */
+const migration_v37: IMigration = {
+  version: 37,
+  name: 'Add agent snapshots table',
+  up: (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS agent_snapshots (
+      id TEXT PRIMARY KEY,
+      agent_gallery_id TEXT NOT NULL,
+      team_id TEXT,
+      version INTEGER NOT NULL,
+      state TEXT NOT NULL DEFAULT '{}',
+      note TEXT,
+      created_at INTEGER NOT NULL
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_snapshot_agent ON agent_snapshots(agent_gallery_id, version DESC)');
+    console.log('[Migration v37] Added agent_snapshots table');
+  },
+  down: (db) => {
+    db.exec('DROP TABLE IF EXISTS agent_snapshots');
+    console.log('[Migration v37] Rolled back: Dropped agent_snapshots');
+  },
+};
+
+/**
+ * Migration v37 -> v38: Inference routing rules (NemoClaw managed inference).
+ */
+const migration_v38: IMigration = {
+  version: 38,
+  name: 'Add inference routing rules table',
+  up: (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS inference_routing_rules (
+      id TEXT PRIMARY KEY,
+      agent_gallery_id TEXT,
+      preferred_provider TEXT NOT NULL,
+      fallback_providers TEXT NOT NULL DEFAULT '[]',
+      allowed_models TEXT NOT NULL DEFAULT '[]',
+      max_tokens_per_request INTEGER,
+      credential_injection INTEGER NOT NULL DEFAULT 1,
+      rate_limit_per_minute INTEGER,
+      created_at INTEGER NOT NULL
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_inf_route_agent ON inference_routing_rules(agent_gallery_id)');
+    console.log('[Migration v38] Added inference_routing_rules table');
+  },
+  down: (db) => {
+    db.exec('DROP TABLE IF EXISTS inference_routing_rules');
+    console.log('[Migration v38] Rolled back: Dropped inference_routing_rules');
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -1637,6 +1754,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v23, migration_v24, migration_v25,
   migration_v26, migration_v27, migration_v28, migration_v29,
   migration_v30, migration_v31, migration_v32, migration_v33, migration_v34,
+  migration_v35, migration_v36, migration_v37, migration_v38,
 ];
 
 /**

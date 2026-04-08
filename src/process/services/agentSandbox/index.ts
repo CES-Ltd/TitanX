@@ -151,3 +151,57 @@ function getMonthStart(): number {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), 1).getTime();
 }
+
+// ── Filesystem tier evaluation (NemoClaw-inspired) ───────────────────────────
+
+export type FilesystemTier = 'none' | 'read-only' | 'workspace' | 'full';
+
+/** Paths that are always immutable regardless of tier */
+const DEFAULT_IMMUTABLE_PATHS = ['/titanx-config/', '/settings.json', '/launch.json', '/.claude/'];
+
+/**
+ * Evaluate filesystem access based on the agent's tier and operation type.
+ * Returns a decision with reason for audit logging.
+ *
+ * Tiers:
+ * - none: no filesystem access at all
+ * - read-only: can read within workspace, no writes
+ * - workspace: read/write within workspace only
+ * - full: read/write anywhere (still respects blocked paths)
+ */
+export function evaluateFilesystemAccess(
+  filePath: string,
+  workspacePath: string,
+  tier: FilesystemTier,
+  operation: 'read' | 'write' | 'delete',
+  extraImmutablePaths?: string[]
+): { allowed: boolean; reason: string } {
+  // Tier: none — block everything
+  if (tier === 'none') {
+    return { allowed: false, reason: 'Filesystem access denied: agent has "none" tier' };
+  }
+
+  // Check immutable paths (no operation allowed)
+  const immutablePaths = [...DEFAULT_IMMUTABLE_PATHS, ...(extraImmutablePaths ?? [])];
+  const normalizedFile = filePath.toLowerCase();
+  for (const immutable of immutablePaths) {
+    if (normalizedFile.includes(immutable.toLowerCase())) {
+      return { allowed: false, reason: `Immutable path: ${immutable}` };
+    }
+  }
+
+  // Standard path validation (blocked paths, workspace boundary)
+  if (!isPathAllowed(filePath, workspacePath)) {
+    return { allowed: false, reason: `Path blocked or outside workspace: ${filePath}` };
+  }
+
+  // Tier: read-only — only reads allowed
+  if (tier === 'read-only' && operation !== 'read') {
+    return { allowed: false, reason: `Read-only tier: "${operation}" operation not permitted` };
+  }
+
+  // Tier: workspace — read/write within workspace (already validated by isPathAllowed)
+  // Tier: full — everything allowed (blocked paths already checked)
+
+  return { allowed: true, reason: `Filesystem ${operation} allowed (tier: ${tier})` };
+}

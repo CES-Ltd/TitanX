@@ -13,6 +13,9 @@ import { logActivity } from '../activityLog';
 
 // ── Permission schema ────────────────────────────────────────────────────────
 
+/** Filesystem access tier (NemoClaw-inspired) */
+export type FilesystemTier = 'none' | 'read-only' | 'workspace' | 'full';
+
 /** Typed permission structure for IAM policies */
 export type PolicyPermissions = {
   /** Tool-level access: tool_name -> allowed */
@@ -25,6 +28,18 @@ export type PolicyPermissions = {
   allowedCredentials?: string[];
   /** Additional workspace path restrictions */
   workspacePaths?: string[];
+  /** Filesystem access tier (none / read-only / workspace / full) */
+  filesystemTier?: FilesystemTier;
+  /** Paths that must remain read-only regardless of tier */
+  readOnlyPaths?: string[];
+  /** Paths that are completely immutable (no read or write) */
+  immutablePaths?: string[];
+  /** Allowed inference providers (empty = all allowed) */
+  allowedProviders?: string[];
+  /** Allowed model IDs/patterns (empty = all allowed) */
+  allowedModels?: string[];
+  /** Whether SSRF protection is enforced */
+  ssrfProtection?: boolean;
 };
 
 /** Result of a policy evaluation */
