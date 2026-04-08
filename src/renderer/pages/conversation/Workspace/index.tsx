@@ -138,8 +138,8 @@ const ChatWorkspace: React.FC<WorkspaceProps> = ({
   const hasOriginalFiles = treeHook.files.length > 0 && treeHook.files[0]?.children?.length > 0;
   const rootName = treeHook.files[0]?.name ?? '';
 
-  // Hide root directory when there's a single root with children, as Toolbar serves as the first-level directory
-  const treeData = flattenSingleRoot(treeHook.files);
+  // Show workspace root directly — ensures children are always visible in tree
+  const treeData = treeHook.files;
 
   // Check if this is a temporary workspace (check both path and root folder name)
   const isTemporaryWorkspace = checkIsTemporaryWorkspace(workspace) || checkIsTemporaryWorkspace(rootName);
