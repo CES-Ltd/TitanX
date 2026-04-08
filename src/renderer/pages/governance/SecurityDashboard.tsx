@@ -20,7 +20,18 @@ import {
   Table,
   Space,
 } from '@arco-design/web-react';
-import { Shield, NetworkTree, FolderOpen, DocDetail, Camera, Lightning } from '@icon-park/react';
+import {
+  Shield,
+  NetworkTree,
+  FolderOpen,
+  DocDetail,
+  Camera,
+  Lightning,
+  SplitBranch,
+  Brain,
+  Plan,
+  Analysis,
+} from '@icon-park/react';
 import {
   securityFeatures,
   networkPolicies,
@@ -72,6 +83,34 @@ const FEATURE_META: Record<string, { label: string; description: string; icon: R
     description: 'Centralized provider selection with model allowlists, fallback chains, and per-agent routing rules.',
     icon: <Lightning size={20} />,
     color: 'green',
+  },
+  workflow_gates: {
+    label: 'Workflow Approval Gates',
+    description:
+      'n8n-inspired workflow engine with DAG execution, approval nodes, and error handling. Route tool calls through approval workflows.',
+    icon: <SplitBranch size={20} />,
+    color: 'blue',
+  },
+  agent_memory: {
+    label: 'Agent Persistent Memory',
+    description:
+      'LangChain-inspired memory: buffer, summary, entity, and long-term. Token-counted with auto-pruning and relevance scoring.',
+    icon: <Brain size={20} />,
+    color: 'purple',
+  },
+  agent_planning: {
+    label: 'Agent Task Planning',
+    description:
+      'DeepAgents-inspired structured planning. Agents decompose tasks into steps, delegate to subagents, and self-reflect on quality.',
+    icon: <Plan size={20} />,
+    color: 'orange',
+  },
+  trace_system: {
+    label: 'LangSmith-Compatible Traces',
+    description:
+      'Hierarchical trace runs with parent-child relationships, token attribution, cost tracking, and user feedback collection.',
+    icon: <Analysis size={20} />,
+    color: 'cyan',
   },
 };
 

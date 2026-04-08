@@ -63,6 +63,10 @@ import { initBlueprintBridge } from './blueprintBridge';
 import { initAgentSnapshotBridge } from './agentSnapshotBridge';
 import { initSecurityFeaturesBridge } from './securityFeaturesBridge';
 import { initInferenceRoutingBridge } from './inferenceRoutingBridge';
+import { initWorkflowEngineBridge } from './workflowEngineBridge';
+import { initAgentMemoryBridge } from './agentMemoryBridge';
+import { initAgentPlansBridge } from './agentPlansBridge';
+import { initTracingBridge } from './tracingBridge';
 import type { TeamSessionService } from '@process/team/TeamSessionService';
 
 export interface BridgeDependencies {
@@ -134,6 +138,10 @@ export function initAllBridges(deps: BridgeDependencies): void {
   initAgentSnapshotBridge();
   initSecurityFeaturesBridge();
   initInferenceRoutingBridge();
+  initWorkflowEngineBridge();
+  initAgentMemoryBridge();
+  initAgentPlansBridge();
+  initTracingBridge();
 }
 
 /**

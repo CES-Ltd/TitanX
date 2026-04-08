@@ -1622,7 +1622,15 @@ export const iamPolicies = {
   list: bridge.buildProvider<IIAMPolicy[], { userId: string }>('iam.list'),
   create: bridge.buildProvider<
     IIAMPolicy,
-    { userId: string; name: string; description?: string; permissions: Record<string, unknown>; ttlSeconds?: number }
+    {
+      userId: string;
+      name: string;
+      description?: string;
+      permissions: Record<string, unknown>;
+      ttlSeconds?: number;
+      agentIds?: string[];
+      credentialIds?: string[];
+    }
   >('iam.create'),
   remove: bridge.buildProvider<boolean, { policyId: string }>('iam.delete'),
   bind: bridge.buildProvider<IPolicyBinding, { agentGalleryId: string; policyId: string; ttlSeconds?: number }>(
@@ -1812,4 +1820,62 @@ export type ISecurityFeatureToggle = {
 export const securityFeatures = {
   list: bridge.buildProvider<ISecurityFeatureToggle[], void>('security-features.list'),
   toggle: bridge.buildProvider<void, { feature: string; enabled: boolean }>('security-features.toggle'),
+};
+
+// ── Workflow Engine (n8n-inspired DAG execution) ─────────────────────────────
+
+export const workflowEngine = {
+  list: bridge.buildProvider<unknown[], { userId: string }>('workflow-engine.list'),
+  get: bridge.buildProvider<unknown | null, { workflowId: string }>('workflow-engine.get'),
+  create: bridge.buildProvider<
+    unknown,
+    { userId: string; name: string; description?: string; nodes: unknown[]; connections: unknown[] }
+  >('workflow-engine.create'),
+  update: bridge.buildProvider<void, { workflowId: string; updates: Record<string, unknown> }>(
+    'workflow-engine.update'
+  ),
+  remove: bridge.buildProvider<boolean, { workflowId: string }>('workflow-engine.delete'),
+  execute: bridge.buildProvider<unknown, { workflowId: string; triggerData?: Record<string, unknown> }>(
+    'workflow-engine.execute'
+  ),
+  cancel: bridge.buildProvider<void, { executionId: string }>('workflow-engine.cancel'),
+  listExecutions: bridge.buildProvider<unknown[], { workflowId?: string; limit?: number }>(
+    'workflow-engine.executions.list'
+  ),
+  getExecution: bridge.buildProvider<unknown | null, { executionId: string }>('workflow-engine.executions.get'),
+  getNodeExecutions: bridge.buildProvider<unknown[], { executionId: string }>('workflow-engine.executions.nodes'),
+};
+
+// ── Agent Memory (LangChain-inspired) ────────────────────────────────────────
+
+export const agentMemory = {
+  list: bridge.buildProvider<unknown[], { agentSlotId: string; memoryType?: string }>('agent-memory.list'),
+  retrieve: bridge.buildProvider<unknown[], { agentSlotId: string; limit?: number }>('agent-memory.retrieve'),
+  clear: bridge.buildProvider<number, { agentSlotId: string; memoryType?: string }>('agent-memory.clear'),
+  stats: bridge.buildProvider<{ totalEntries: number; totalTokens: number }, { agentSlotId: string }>(
+    'agent-memory.stats'
+  ),
+};
+
+// ── Agent Plans (DeepAgents-inspired) ────────────────────────────────────────
+
+export const agentPlans = {
+  list: bridge.buildProvider<unknown[], { teamId: string; agentSlotId?: string; status?: string }>('agent-plans.list'),
+  get: bridge.buildProvider<unknown | null, { planId: string }>('agent-plans.get'),
+  active: bridge.buildProvider<unknown | null, { agentSlotId: string }>('agent-plans.active'),
+};
+
+// ── Trace System (LangSmith-compatible) ──────────────────────────────────────
+
+export const traceSystem = {
+  listRuns: bridge.buildProvider<
+    unknown[],
+    { rootRunId?: string; agentSlotId?: string; runType?: string; limit?: number }
+  >('tracing.list-runs'),
+  getTraceTree: bridge.buildProvider<unknown[], { rootRunId: string }>('tracing.get-trace-tree'),
+  getRun: bridge.buildProvider<unknown | null, { runId: string }>('tracing.get-run'),
+  addFeedback: bridge.buildProvider<unknown, { runId: string; score: number; value?: string; comment?: string }>(
+    'tracing.add-feedback'
+  ),
+  listFeedback: bridge.buildProvider<unknown[], { runId: string }>('tracing.list-feedback'),
 };

@@ -17,6 +17,12 @@ import * as costTrackingService from '@process/services/costTracking';
 import * as activityLogService from '@process/services/activityLog';
 import * as policyService from '@process/services/policyEnforcement';
 import { startSpan, getCounter } from '@process/services/telemetry';
+import * as agentMemoryService from '@process/services/agentMemory';
+import * as agentPlanningService from '@process/services/agentPlanning';
+import * as tracingService from '@process/services/tracing';
+import * as securityFeaturesService from '@process/services/securityFeatures';
+import { executeWorkflow } from '@process/services/workflows/engine';
+import type { WorkflowDefinition } from '@process/services/workflows/types';
 
 type SpawnAgentFn = (agentName: string, agentType?: string) => Promise<TeamAgent>;
 
@@ -517,6 +523,58 @@ export class TeammateManager extends EventEmitter {
         },
       });
       console.log(`[TeammateManager] ✓ Cost + audit recorded for ${agent.agentName}`);
+
+      // ── Agent Memory: store turn content as buffer memory ──
+      if (securityFeaturesService.isFeatureEnabled(driver, 'agent_memory') && accumulatedText.length > 0) {
+        try {
+          agentMemoryService.addToBuffer(
+            driver,
+            agent.slotId,
+            this.teamId,
+            {
+              role: 'assistant',
+              content: accumulatedText.slice(0, 2000),
+              turnActions: actions.map((a) => a.type),
+            },
+            estimatedOutputTokens
+          );
+          agentMemoryService.pruneMemory(driver, agent.slotId, 8000);
+        } catch {
+          /* non-critical */
+        }
+      }
+
+      // ── Agent Planning: auto-create plan when multiple tasks created ──
+      if (securityFeaturesService.isFeatureEnabled(driver, 'agent_planning')) {
+        try {
+          const taskActions = actions.filter((a) => a.type === 'task_create');
+          if (taskActions.length >= 2) {
+            agentPlanningService.createPlan(
+              driver,
+              agent.slotId,
+              this.teamId,
+              `Auto-plan: ${agent.agentName} turn`,
+              taskActions.map((a) => (a as { subject: string }).subject)
+            );
+          }
+        } catch {
+          /* non-critical */
+        }
+      }
+
+      // ── Tracing: create trace run for this turn ──
+      if (securityFeaturesService.isFeatureEnabled(driver, 'trace_system')) {
+        try {
+          const handle = tracingService.startRun(driver, `turn:${agent.agentName}`, 'agent', {
+            agentSlotId: agent.slotId,
+            teamId: this.teamId,
+          });
+          handle.setTokens(0, estimatedOutputTokens, 0);
+          handle.end({ actionsExecuted: actions.length, textLength: textLen });
+        } catch {
+          /* non-critical */
+        }
+      }
     } catch (err) {
       console.error('[TeammateManager] ✗ Failed to record cost/audit:', err);
     }
@@ -687,6 +745,65 @@ export class TeammateManager extends EventEmitter {
       case 'plain_response':
         // Already forwarded via responseStream; nothing further needed
         break;
+
+      case 'write_plan': {
+        try {
+          const db = await getDatabase();
+          const driver = db.getDriver();
+          if (securityFeaturesService.isFeatureEnabled(driver, 'agent_planning')) {
+            agentPlanningService.createPlan(driver, fromSlotId, this.teamId, action.title, action.steps);
+            console.log(`[TeammateManager] Plan created: "${action.title}" (${action.steps.length} steps)`);
+          }
+        } catch {
+          /* non-critical */
+        }
+        break;
+      }
+
+      case 'reflect': {
+        try {
+          const db = await getDatabase();
+          const driver = db.getDriver();
+          if (securityFeaturesService.isFeatureEnabled(driver, 'agent_planning')) {
+            agentPlanningService.reflectOnPlan(driver, action.planId, action.reflection, action.score);
+            console.log(`[TeammateManager] Reflection on plan ${action.planId}: score=${action.score}`);
+          }
+        } catch {
+          /* non-critical */
+        }
+        break;
+      }
+
+      case 'trigger_workflow': {
+        try {
+          const db = await getDatabase();
+          const driver = db.getDriver();
+          if (securityFeaturesService.isFeatureEnabled(driver, 'workflow_gates')) {
+            const wfRow = driver.prepare('SELECT * FROM workflow_definitions WHERE id = ?').get(action.workflowId) as
+              | Record<string, unknown>
+              | undefined;
+            if (wfRow) {
+              const wf: WorkflowDefinition = {
+                id: wfRow.id as string,
+                userId: wfRow.user_id as string,
+                name: wfRow.name as string,
+                nodes: JSON.parse((wfRow.nodes as string) || '[]'),
+                connections: JSON.parse((wfRow.connections as string) || '[]'),
+                settings: JSON.parse((wfRow.settings as string) || '{}'),
+                enabled: (wfRow.enabled as number) === 1,
+                version: (wfRow.version as number) ?? 1,
+                createdAt: wfRow.created_at as number,
+                updatedAt: wfRow.updated_at as number,
+              };
+              await executeWorkflow(driver, wf, action.inputs);
+              console.log(`[TeammateManager] Workflow "${wf.name}" triggered by ${fromSlotId}`);
+            }
+          }
+        } catch (err) {
+          console.error('[TeammateManager] Workflow trigger failed:', err);
+        }
+        break;
+      }
     }
   }
 
