@@ -4,9 +4,13 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { Card, Table, Button, Tag, Empty, Message, Spin, Space, Select, Statistic } from '@arco-design/web-react';
-import { Delete, Brain } from '@icon-park/react';
-import { agentMemory } from '@/common/adapter/ipcBridge';
+import { Card, Table, Button, Tag, Empty, Message, Spin, Select, Statistic, Input } from '@arco-design/web-react';
+import { Brain } from '@icon-park/react';
+import { agentMemory, team as teamBridge } from '@/common/adapter/ipcBridge';
+
+const userId = 'system_default_user';
+
+type TeamInfo = { id: string; name: string; agents: Array<{ slotId: string; agentName: string; agentType: string }> };
 
 type MemoryEntry = {
   id: string;
@@ -22,42 +26,58 @@ type MemoryEntry = {
 
 const AgentMemoryPanel: React.FC = () => {
   const [loading, setLoading] = useState(false);
-  const [slotId, setSlotId] = useState('');
+  const [teams, setTeams] = useState<TeamInfo[]>([]);
+  const [selectedTeam, setSelectedTeam] = useState<string | undefined>(undefined);
+  const [selectedAgent, setSelectedAgent] = useState<string | undefined>(undefined);
   const [memoryType, setMemoryType] = useState<string | undefined>(undefined);
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [stats, setStats] = useState({ totalEntries: 0, totalTokens: 0 });
 
+  // Load teams on mount
+  useEffect(() => {
+    void teamBridge.list
+      .invoke({ userId })
+      .then((list) => {
+        setTeams(list as TeamInfo[]);
+      })
+      .catch(() => {});
+  }, []);
+
+  const agents = teams.find((t) => t.id === selectedTeam)?.agents ?? [];
+
   const loadData = useCallback(async () => {
-    if (!slotId) return;
+    if (!selectedAgent) return;
     setLoading(true);
     try {
-      const list = await agentMemory.list.invoke({ agentSlotId: slotId, memoryType }).catch((): MemoryEntry[] => []);
+      const list = await agentMemory.list
+        .invoke({ agentSlotId: selectedAgent, memoryType })
+        .catch((): MemoryEntry[] => []);
       setEntries(list as MemoryEntry[]);
       const st = await agentMemory.stats
-        .invoke({ agentSlotId: slotId })
+        .invoke({ agentSlotId: selectedAgent })
         .catch(() => ({ totalEntries: 0, totalTokens: 0 }));
       setStats(st);
-    } catch (err) {
-      console.error('[AgentMemory] Load failed:', err);
+    } catch {
+      // handled by catch
     } finally {
       setLoading(false);
     }
-  }, [slotId, memoryType]);
+  }, [selectedAgent, memoryType]);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
 
   const handleClear = useCallback(async () => {
-    if (!slotId) return;
+    if (!selectedAgent) return;
     try {
-      const cleared = await agentMemory.clear.invoke({ agentSlotId: slotId, memoryType });
+      const cleared = await agentMemory.clear.invoke({ agentSlotId: selectedAgent, memoryType });
       Message.success(`Cleared ${cleared} memory entries`);
       void loadData();
     } catch {
       Message.error('Failed to clear memory');
     }
-  }, [slotId, memoryType, loadData]);
+  }, [selectedAgent, memoryType, loadData]);
 
   const typeColors: Record<string, string> = {
     buffer: 'blue',
@@ -81,27 +101,17 @@ const AgentMemoryPanel: React.FC = () => {
       title: 'Content',
       dataIndex: 'content',
       render: (v: Record<string, unknown>) => (
-        <span className='text-12px font-mono'>{JSON.stringify(v).slice(0, 120)}...</span>
+        <span className='text-12px font-mono'>{JSON.stringify(v).slice(0, 120)}</span>
       ),
     },
-    {
-      title: 'Tokens',
-      dataIndex: 'tokenCount',
-      width: 80,
-      render: (v: number) => <Tag size='small'>{v}</Tag>,
-    },
+    { title: 'Tokens', dataIndex: 'tokenCount', width: 80, render: (v: number) => <Tag size='small'>{v}</Tag> },
     {
       title: 'Relevance',
       dataIndex: 'relevanceScore',
       width: 80,
       render: (v: number) => <span>{(v * 100).toFixed(0)}%</span>,
     },
-    {
-      title: 'Updated',
-      dataIndex: 'updatedAt',
-      width: 140,
-      render: (v: number) => new Date(v).toLocaleString(),
-    },
+    { title: 'Updated', dataIndex: 'updatedAt', width: 130, render: (v: number) => new Date(v).toLocaleString() },
   ];
 
   return (
@@ -109,27 +119,56 @@ const AgentMemoryPanel: React.FC = () => {
       <Card
         title={
           <span className='flex items-center gap-2'>
-            <Brain size={18} />
-            Agent Memory
+            <Brain size={18} /> Agent Memory
           </span>
         }
         extra={
-          <Space>
-            <Button size='small' status='danger' onClick={handleClear} disabled={!slotId}>
-              Clear Memory
-            </Button>
-          </Space>
+          <Button size='small' status='danger' onClick={handleClear} disabled={!selectedAgent}>
+            Clear Memory
+          </Button>
         }
       >
         <div className='text-12px text-t-tertiary mb-12px'>
-          LangChain-inspired persistent memory. Agents accumulate buffer, summary, entity, and long-term memories across
-          turns. Memories are token-counted and auto-pruned when budgets are exceeded.
+          LangChain-inspired persistent memory. Select a team and agent to view their accumulated buffer, summary,
+          entity, and long-term memories.
         </div>
 
-        <div className='flex gap-12px mb-16px'>
+        <div className='flex gap-12px mb-16px items-end'>
           <div>
-            <div className='text-12px text-t-secondary mb-4px'>Agent Slot ID</div>
-            <Input value={slotId} onChange={setSlotId} placeholder='slot-xxxxxxxx' style={{ width: 200 }} />
+            <div className='text-12px text-t-secondary mb-4px'>Team</div>
+            <Select
+              value={selectedTeam}
+              onChange={(v) => {
+                setSelectedTeam(v);
+                setSelectedAgent(undefined);
+              }}
+              placeholder='Select team...'
+              style={{ width: 200 }}
+              allowClear
+            >
+              {teams.map((t) => (
+                <Select.Option key={t.id} value={t.id}>
+                  {t.name} ({t.agents.length} agents)
+                </Select.Option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <div className='text-12px text-t-secondary mb-4px'>Agent</div>
+            <Select
+              value={selectedAgent}
+              onChange={setSelectedAgent}
+              placeholder='Select agent...'
+              style={{ width: 200 }}
+              disabled={!selectedTeam}
+              allowClear
+            >
+              {agents.map((a) => (
+                <Select.Option key={a.slotId} value={a.slotId}>
+                  {a.agentName} ({a.agentType})
+                </Select.Option>
+              ))}
+            </Select>
           </div>
           <div>
             <div className='text-12px text-t-secondary mb-4px'>Memory Type</div>
@@ -137,8 +176,8 @@ const AgentMemoryPanel: React.FC = () => {
               value={memoryType}
               onChange={setMemoryType}
               allowClear
-              placeholder='All types'
-              style={{ width: 150 }}
+              placeholder='All'
+              style={{ width: 130 }}
               options={[
                 { label: 'Buffer', value: 'buffer' },
                 { label: 'Summary', value: 'summary' },
@@ -156,7 +195,9 @@ const AgentMemoryPanel: React.FC = () => {
         <Spin loading={loading}>
           {entries.length === 0 ? (
             <Empty
-              description={slotId ? 'No memory entries for this agent' : 'Enter an agent slot ID to view memory'}
+              description={
+                selectedAgent ? 'No memory entries for this agent' : 'Select a team and agent to view memory'
+              }
             />
           ) : (
             <Table columns={columns} data={entries} rowKey='id' pagination={false} size='small' />
@@ -166,8 +207,5 @@ const AgentMemoryPanel: React.FC = () => {
     </div>
   );
 };
-
-// Need Input import
-import { Input } from '@arco-design/web-react';
 
 export default AgentMemoryPanel;

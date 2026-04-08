@@ -4,9 +4,13 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { Card, Table, Tag, Empty, Spin, Space, Input, Select, Progress } from '@arco-design/web-react';
+import { Card, Table, Tag, Empty, Spin, Select, Progress, Input } from '@arco-design/web-react';
 import { Plan, CheckOne, CloseOne, Loading } from '@icon-park/react';
-import { agentPlans } from '@/common/adapter/ipcBridge';
+import { agentPlans, team as teamBridge } from '@/common/adapter/ipcBridge';
+
+const userId = 'system_default_user';
+
+type TeamInfo = { id: string; name: string; agents: Array<{ slotId: string; agentName: string; agentType: string }> };
 
 type PlanStep = {
   id: string;
@@ -32,23 +36,43 @@ type PlanRow = {
 
 const AgentPlanViewer: React.FC = () => {
   const [loading, setLoading] = useState(false);
-  const [teamId, setTeamId] = useState('');
+  const [teams, setTeams] = useState<TeamInfo[]>([]);
+  const [selectedTeam, setSelectedTeam] = useState<string | undefined>(undefined);
+  const [selectedAgent, setSelectedAgent] = useState<string | undefined>(undefined);
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
   const [plans, setPlans] = useState<PlanRow[]>([]);
   const [expandedPlan, setExpandedPlan] = useState<string | null>(null);
 
+  // Load teams on mount
+  useEffect(() => {
+    void teamBridge.list
+      .invoke({ userId })
+      .then((list) => {
+        setTeams(list as TeamInfo[]);
+      })
+      .catch(() => {});
+  }, []);
+
+  const agents = teams.find((t) => t.id === selectedTeam)?.agents ?? [];
+
   const loadData = useCallback(async () => {
-    if (!teamId) return;
+    if (!selectedTeam) return;
     setLoading(true);
     try {
-      const list = await agentPlans.list.invoke({ teamId, status: statusFilter }).catch((): PlanRow[] => []);
+      const list = await agentPlans.list
+        .invoke({
+          teamId: selectedTeam,
+          agentSlotId: selectedAgent,
+          status: statusFilter,
+        })
+        .catch((): PlanRow[] => []);
       setPlans(list as PlanRow[]);
-    } catch (err) {
-      console.error('[AgentPlans] Load failed:', err);
+    } catch {
+      // handled
     } finally {
       setLoading(false);
     }
-  }, [teamId, statusFilter]);
+  }, [selectedTeam, selectedAgent, statusFilter]);
 
   useEffect(() => {
     void loadData();
@@ -72,6 +96,15 @@ const AgentPlanViewer: React.FC = () => {
     return <span className='w-14px h-14px inline-block rounded-full border border-gray-300' />;
   };
 
+  // Resolve agent name from slotId
+  const agentName = (slotId: string) => {
+    for (const t of teams) {
+      const a = t.agents.find((ag) => ag.slotId === slotId);
+      if (a) return a.agentName;
+    }
+    return slotId.slice(0, 12);
+  };
+
   const columns = [
     {
       title: 'Plan',
@@ -84,7 +117,7 @@ const AgentPlanViewer: React.FC = () => {
           >
             {v}
           </span>
-          <div className='text-11px text-t-tertiary'>Agent: {row.agentSlotId.slice(0, 12)}</div>
+          <div className='text-11px text-t-tertiary'>Agent: {agentName(row.agentSlotId)}</div>
         </div>
       ),
     },
@@ -100,22 +133,21 @@ const AgentPlanViewer: React.FC = () => {
       width: 120,
       render: (_: unknown, row: PlanRow) => {
         const done = row.steps.filter((s) => s.status === 'completed' || s.status === 'skipped').length;
-        const pct = row.steps.length > 0 ? Math.round((done / row.steps.length) * 100) : 0;
-        return <Progress percent={pct} size='small' />;
+        return (
+          <Progress percent={row.steps.length > 0 ? Math.round((done / row.steps.length) * 100) : 0} size='small' />
+        );
       },
     },
     {
       title: 'Steps',
       key: 'steps',
       width: 70,
-      render: (_: unknown, row: PlanRow) => {
-        const done = row.steps.filter((s) => s.status === 'completed').length;
-        return `${done}/${row.steps.length}`;
-      },
+      render: (_: unknown, row: PlanRow) =>
+        `${row.steps.filter((s) => s.status === 'completed').length}/${row.steps.length}`,
     },
     {
       title: 'Reflection',
-      key: 'reflection',
+      key: 'refl',
       width: 90,
       render: (_: unknown, row: PlanRow) => {
         if (row.reflectionScore === undefined)
@@ -132,12 +164,7 @@ const AgentPlanViewer: React.FC = () => {
         );
       },
     },
-    {
-      title: 'Updated',
-      dataIndex: 'updatedAt',
-      width: 130,
-      render: (v: number) => new Date(v).toLocaleDateString(),
-    },
+    { title: 'Updated', dataIndex: 'updatedAt', width: 120, render: (v: number) => new Date(v).toLocaleDateString() },
   ];
 
   return (
@@ -145,20 +172,51 @@ const AgentPlanViewer: React.FC = () => {
       <Card
         title={
           <span className='flex items-center gap-2'>
-            <Plan size={18} />
-            Agent Plans
+            <Plan size={18} /> Agent Plans
           </span>
         }
       >
         <div className='text-12px text-t-tertiary mb-12px'>
-          DeepAgents-inspired structured task decomposition. Agents create plans with ordered steps, delegate to
-          subagents, and self-reflect on quality. Plans are tracked across the team.
+          DeepAgents-inspired structured task decomposition. Select a team to view plans with steps, delegation, and
+          reflection scores.
         </div>
 
-        <div className='flex gap-12px mb-16px'>
+        <div className='flex gap-12px mb-16px items-end'>
           <div>
-            <div className='text-12px text-t-secondary mb-4px'>Team ID</div>
-            <Input value={teamId} onChange={setTeamId} placeholder='team-id...' style={{ width: 240 }} />
+            <div className='text-12px text-t-secondary mb-4px'>Team</div>
+            <Select
+              value={selectedTeam}
+              onChange={(v) => {
+                setSelectedTeam(v);
+                setSelectedAgent(undefined);
+              }}
+              placeholder='Select team...'
+              style={{ width: 200 }}
+              allowClear
+            >
+              {teams.map((t) => (
+                <Select.Option key={t.id} value={t.id}>
+                  {t.name}
+                </Select.Option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <div className='text-12px text-t-secondary mb-4px'>Agent (optional)</div>
+            <Select
+              value={selectedAgent}
+              onChange={setSelectedAgent}
+              placeholder='All agents'
+              style={{ width: 200 }}
+              disabled={!selectedTeam}
+              allowClear
+            >
+              {agents.map((a) => (
+                <Select.Option key={a.slotId} value={a.slotId}>
+                  {a.agentName} ({a.agentType})
+                </Select.Option>
+              ))}
+            </Select>
           </div>
           <div>
             <div className='text-12px text-t-secondary mb-4px'>Status</div>
@@ -167,7 +225,7 @@ const AgentPlanViewer: React.FC = () => {
               onChange={setStatusFilter}
               allowClear
               placeholder='All'
-              style={{ width: 130 }}
+              style={{ width: 120 }}
               options={[
                 { label: 'Active', value: 'active' },
                 { label: 'Completed', value: 'completed' },
@@ -180,7 +238,7 @@ const AgentPlanViewer: React.FC = () => {
 
         <Spin loading={loading}>
           {plans.length === 0 ? (
-            <Empty description={teamId ? 'No plans found for this team' : 'Enter a team ID to view agent plans'} />
+            <Empty description={selectedTeam ? 'No plans found' : 'Select a team to view agent plans'} />
           ) : (
             <Table
               columns={columns}
@@ -205,7 +263,7 @@ const AgentPlanViewer: React.FC = () => {
                           )}
                           {step.delegatedTo && (
                             <Tag size='small' color='cyan' className='mt-2px'>
-                              Delegated: {step.delegatedTo.slice(0, 12)}
+                              Delegated: {agentName(step.delegatedTo)}
                             </Tag>
                           )}
                         </div>

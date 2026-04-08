@@ -1,6 +1,6 @@
 /**
  * @license Apache-2.0
- * Workflow Engine UI — n8n-inspired workflow management with execution history.
+ * Workflow Engine UI — n8n-inspired workflow builder with node configuration.
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
@@ -16,11 +16,42 @@ import {
   Modal,
   Input,
   Descriptions,
+  Select,
+  Divider,
 } from '@arco-design/web-react';
-import { Plus, Delete, PlayOne, History } from '@icon-park/react';
+import { Plus, Delete, PlayOne, History, Right, Close } from '@icon-park/react';
 import { workflowEngine } from '@/common/adapter/ipcBridge';
 
 const userId = 'system_default_user';
+
+// ── Node type definitions ────────────────────────────────────────────────────
+
+const NODE_TYPES = [
+  { value: 'trigger', label: 'Manual Trigger', description: 'Start the workflow manually', color: 'green' },
+  { value: 'action', label: 'Action', description: 'Execute a tool call or operation', color: 'blue' },
+  { value: 'condition', label: 'Condition (If/Else)', description: 'Branch based on expression', color: 'orange' },
+  { value: 'transform', label: 'Transform', description: 'Map and transform data', color: 'purple' },
+  { value: 'loop', label: 'Loop', description: 'Iterate over array items', color: 'cyan' },
+  { value: 'agent_call', label: 'Agent Call', description: 'Delegate to an AI agent', color: 'magenta' },
+  { value: 'approval', label: 'Approval Gate', description: 'Pause for human approval', color: 'red' },
+  { value: 'error_handler', label: 'Error Handler', description: 'Catch and handle errors', color: 'gray' },
+];
+
+type WfNode = {
+  id: string;
+  type: string;
+  name: string;
+  parameters: Record<string, unknown>;
+  position: { x: number; y: number };
+  onError: string;
+};
+
+type WfConnection = {
+  fromNodeId: string;
+  fromOutput: string;
+  toNodeId: string;
+  toInput: string;
+};
 
 type WorkflowRow = {
   id: string;
@@ -60,10 +91,14 @@ const WorkflowEngine: React.FC = () => {
   const [executions, setExecutions] = useState<ExecutionRow[]>([]);
   const [selectedExec, setSelectedExec] = useState<string | null>(null);
   const [nodeExecs, setNodeExecs] = useState<NodeExecRow[]>([]);
-  const [createVisible, setCreateVisible] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newDesc, setNewDesc] = useState('');
   const [viewMode, setViewMode] = useState<'workflows' | 'executions'>('workflows');
+
+  // Create/edit workflow state
+  const [editorVisible, setEditorVisible] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editDesc, setEditDesc] = useState('');
+  const [editNodes, setEditNodes] = useState<WfNode[]>([]);
+  const [editConnections, setEditConnections] = useState<WfConnection[]>([]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -83,39 +118,98 @@ const WorkflowEngine: React.FC = () => {
     void loadData();
   }, [loadData]);
 
-  const handleCreate = useCallback(async () => {
-    if (!newName.trim()) return;
+  // ── Node builder helpers ─────────────────────────────────────────────────
+
+  const addNode = useCallback(
+    (type: string) => {
+      const typeDef = NODE_TYPES.find((t) => t.value === type);
+      const newNode: WfNode = {
+        id: `node-${Date.now()}`,
+        type,
+        name: typeDef?.label ?? type,
+        parameters: {},
+        position: { x: 100 + editNodes.length * 50, y: 200 },
+        onError: 'stop',
+      };
+      setEditNodes((prev) => [...prev, newNode]);
+    },
+    [editNodes.length]
+  );
+
+  const removeNode = useCallback((nodeId: string) => {
+    setEditNodes((prev) => prev.filter((n) => n.id !== nodeId));
+    setEditConnections((prev) => prev.filter((c) => c.fromNodeId !== nodeId && c.toNodeId !== nodeId));
+  }, []);
+
+  const updateNodeParam = useCallback((nodeId: string, key: string, value: unknown) => {
+    setEditNodes((prev) =>
+      prev.map((n) => (n.id === nodeId ? { ...n, parameters: { ...n.parameters, [key]: value } } : n))
+    );
+  }, []);
+
+  const updateNodeName = useCallback((nodeId: string, name: string) => {
+    setEditNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, name } : n)));
+  }, []);
+
+  const connectNodes = useCallback((fromId: string, toId: string) => {
+    setEditConnections((prev) => [
+      ...prev.filter((c) => !(c.fromNodeId === fromId && c.toNodeId === toId)),
+      { fromNodeId: fromId, fromOutput: 'main', toNodeId: toId, toInput: 'main' },
+    ]);
+  }, []);
+
+  const removeConnection = useCallback((fromId: string, toId: string) => {
+    setEditConnections((prev) => prev.filter((c) => !(c.fromNodeId === fromId && c.toNodeId === toId)));
+  }, []);
+
+  // ── CRUD actions ─────────────────────────────────────────────────────────
+
+  const openNewWorkflow = useCallback(() => {
+    setEditName('');
+    setEditDesc('');
+    setEditNodes([
+      {
+        id: 'trigger-1',
+        type: 'trigger',
+        name: 'Manual Trigger',
+        parameters: {},
+        position: { x: 100, y: 200 },
+        onError: 'stop',
+      },
+    ]);
+    setEditConnections([]);
+    setEditorVisible(true);
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    if (!editName.trim()) {
+      Message.warning('Workflow name is required');
+      return;
+    }
+    if (editNodes.length === 0) {
+      Message.warning('Add at least one node');
+      return;
+    }
     try {
       await workflowEngine.create.invoke({
         userId,
-        name: newName.trim(),
-        description: newDesc.trim() || undefined,
-        nodes: [
-          {
-            id: 'trigger-1',
-            type: 'trigger',
-            name: 'Manual Trigger',
-            parameters: {},
-            position: { x: 100, y: 200 },
-            onError: 'stop',
-          },
-        ],
-        connections: [],
+        name: editName.trim(),
+        description: editDesc.trim() || undefined,
+        nodes: editNodes as unknown[],
+        connections: editConnections as unknown[],
       });
       Message.success('Workflow created');
-      setCreateVisible(false);
-      setNewName('');
-      setNewDesc('');
+      setEditorVisible(false);
       void loadData();
     } catch {
       Message.error('Failed to create workflow');
     }
-  }, [newName, newDesc, loadData]);
+  }, [editName, editDesc, editNodes, editConnections, loadData]);
 
   const handleExecute = useCallback(
     async (workflowId: string) => {
       try {
-        const result = await workflowEngine.execute.invoke({ workflowId });
+        await workflowEngine.execute.invoke({ workflowId });
         Message.success('Workflow executed');
         void loadData();
       } catch (err) {
@@ -160,11 +254,6 @@ const WorkflowEngine: React.FC = () => {
   const workflowColumns = [
     { title: 'Name', dataIndex: 'name', render: (v: string) => <span className='font-medium'>{v}</span> },
     {
-      title: 'Description',
-      dataIndex: 'description',
-      render: (v: string) => <span className='text-t-secondary text-12px'>{v || '-'}</span>,
-    },
-    {
       title: 'Nodes',
       dataIndex: 'nodes',
       width: 70,
@@ -177,12 +266,7 @@ const WorkflowEngine: React.FC = () => {
       },
     },
     { title: 'Version', dataIndex: 'version', width: 70 },
-    {
-      title: 'Updated',
-      dataIndex: 'updated_at',
-      width: 140,
-      render: (v: number) => new Date(v).toLocaleDateString(),
-    },
+    { title: 'Updated', dataIndex: 'updated_at', width: 130, render: (v: number) => new Date(v).toLocaleDateString() },
     {
       title: '',
       key: 'actions',
@@ -204,47 +288,30 @@ const WorkflowEngine: React.FC = () => {
 
   const executionColumns = [
     {
-      title: 'Execution ID',
+      title: 'ID',
       dataIndex: 'id',
-      render: (v: string) => <span className='font-mono text-12px'>{v.slice(0, 8)}...</span>,
+      render: (v: string) => <span className='font-mono text-12px'>{v.slice(0, 8)}</span>,
     },
     {
       title: 'Status',
       dataIndex: 'status',
-      width: 100,
+      width: 90,
       render: (v: string) => <Tag color={statusColors[v] ?? 'gray'}>{v}</Tag>,
     },
-    {
-      title: 'Started',
-      dataIndex: 'startedAt',
-      width: 160,
-      render: (v: number) => new Date(v).toLocaleString(),
-    },
+    { title: 'Started', dataIndex: 'startedAt', width: 150, render: (v: number) => new Date(v).toLocaleString() },
     {
       title: 'Duration',
-      key: 'duration',
-      width: 100,
-      render: (_: unknown, row: ExecutionRow) =>
-        row.finishedAt ? `${((row.finishedAt - row.startedAt) / 1000).toFixed(1)}s` : 'Running',
-    },
-    {
-      title: 'Error',
-      dataIndex: 'error',
-      render: (v: string) =>
-        v ? (
-          <Tag color='red' size='small'>
-            {v.slice(0, 40)}
-          </Tag>
-        ) : (
-          '-'
-        ),
+      key: 'dur',
+      width: 80,
+      render: (_: unknown, r: ExecutionRow) =>
+        r.finishedAt ? `${((r.finishedAt - r.startedAt) / 1000).toFixed(1)}s` : '-',
     },
     {
       title: '',
-      key: 'actions',
-      width: 60,
-      render: (_: unknown, row: ExecutionRow) => (
-        <Button icon={<History size={14} />} type='text' size='small' onClick={() => handleViewNodeExecs(row.id)} />
+      key: 'a',
+      width: 50,
+      render: (_: unknown, r: ExecutionRow) => (
+        <Button icon={<History size={14} />} type='text' size='small' onClick={() => handleViewNodeExecs(r.id)} />
       ),
     },
   ];
@@ -273,29 +340,25 @@ const WorkflowEngine: React.FC = () => {
           <Card
             title='Workflow Definitions'
             extra={
-              <Button type='primary' icon={<Plus size={14} />} size='small' onClick={() => setCreateVisible(true)}>
+              <Button type='primary' icon={<Plus size={14} />} size='small' onClick={openNewWorkflow}>
                 New Workflow
               </Button>
             }
           >
             <div className='text-12px text-t-tertiary mb-8px'>
-              n8n-inspired DAG workflows with triggers, conditions, loops, and approval gates. Each node records full
-              input/output for debugging.
+              n8n-inspired DAG workflows. Click "New Workflow" to build a flow with triggers, conditions, agents, and
+              approvals.
             </div>
             {workflows.length === 0 ? (
-              <Empty description='No workflows defined. Click "New Workflow" to create one.' />
+              <Empty description='No workflows defined yet.' />
             ) : (
               <Table columns={workflowColumns} data={workflows} rowKey='id' pagination={false} size='small' />
             )}
           </Card>
         ) : (
           <Card title='Execution History'>
-            <div className='text-12px text-t-tertiary mb-8px'>
-              Full execution history with per-node input/output recording. Click the history icon to inspect node
-              executions.
-            </div>
             {executions.length === 0 ? (
-              <Empty description='No executions yet. Execute a workflow to see history.' />
+              <Empty description='No executions yet.' />
             ) : (
               <Table columns={executionColumns} data={executions} rowKey='id' pagination={false} size='small' />
             )}
@@ -303,23 +366,177 @@ const WorkflowEngine: React.FC = () => {
         )}
       </Spin>
 
-      {/* Create Workflow Modal */}
+      {/* ── Workflow Builder Modal ──────────────────────────────────────────── */}
       <Modal
-        title='Create Workflow'
-        visible={createVisible}
-        onCancel={() => setCreateVisible(false)}
-        onOk={handleCreate}
-        okText='Create'
+        title='Build Workflow'
+        visible={editorVisible}
+        onCancel={() => setEditorVisible(false)}
+        onOk={handleSave}
+        okText='Save Workflow'
+        style={{ maxWidth: 750 }}
+        unmountOnExit
       >
         <div className='flex flex-col gap-12px'>
-          <div>
-            <div className='text-13px mb-4px'>Name</div>
-            <Input value={newName} onChange={setNewName} placeholder='My Workflow' />
+          <div className='flex gap-12px'>
+            <div className='flex-1'>
+              <div className='text-13px mb-4px font-medium'>Name</div>
+              <Input value={editName} onChange={setEditName} placeholder='My Approval Workflow' />
+            </div>
+            <div className='flex-1'>
+              <div className='text-13px mb-4px font-medium'>Description</div>
+              <Input value={editDesc} onChange={setEditDesc} placeholder='Optional description...' />
+            </div>
           </div>
+
+          <Divider style={{ margin: '8px 0' }} />
+
+          {/* Add node */}
           <div>
-            <div className='text-13px mb-4px'>Description (optional)</div>
-            <Input.TextArea value={newDesc} onChange={setNewDesc} placeholder='What this workflow does...' rows={2} />
+            <div className='text-13px mb-4px font-medium'>Add Node</div>
+            <div className='flex flex-wrap gap-6px'>
+              {NODE_TYPES.map((nt) => (
+                <Button key={nt.value} size='mini' type='outline' onClick={() => addNode(nt.value)}>
+                  <Tag color={nt.color} size='small' className='mr-4px'>
+                    {nt.label}
+                  </Tag>
+                </Button>
+              ))}
+            </div>
           </div>
+
+          <Divider style={{ margin: '8px 0' }} />
+
+          {/* Node list */}
+          <div>
+            <div className='text-13px mb-8px font-medium'>Nodes ({editNodes.length})</div>
+            {editNodes.length === 0 ? (
+              <Empty description='Add nodes to build your workflow' className='py-8px' />
+            ) : (
+              <div className='flex flex-col gap-8px'>
+                {editNodes.map((node, idx) => {
+                  const typeDef = NODE_TYPES.find((t) => t.value === node.type);
+                  return (
+                    <Card
+                      key={node.id}
+                      size='small'
+                      className='border-l-3'
+                      style={{ borderLeftColor: `var(--color-${typeDef?.color ?? 'gray'}-6, #86909c)` }}
+                    >
+                      <div className='flex items-center gap-8px'>
+                        <Tag color={typeDef?.color ?? 'gray'} size='small'>
+                          {idx + 1}
+                        </Tag>
+                        <Input
+                          value={node.name}
+                          onChange={(v) => updateNodeName(node.id, v)}
+                          size='small'
+                          style={{ width: 180 }}
+                        />
+                        <Tag size='small'>{node.type}</Tag>
+
+                        {/* Type-specific parameters */}
+                        {node.type === 'condition' && (
+                          <Input
+                            value={(node.parameters.condition as string) ?? ''}
+                            onChange={(v) => updateNodeParam(node.id, 'condition', v)}
+                            size='small'
+                            placeholder='Expression...'
+                            style={{ width: 150 }}
+                          />
+                        )}
+                        {node.type === 'transform' && (
+                          <Input
+                            value={(node.parameters.mappingExpr as string) ?? ''}
+                            onChange={(v) => updateNodeParam(node.id, 'mappingExpr', v)}
+                            size='small'
+                            placeholder='$input.field'
+                            style={{ width: 150 }}
+                          />
+                        )}
+                        {node.type === 'action' && (
+                          <Input
+                            value={(node.parameters.action as string) ?? ''}
+                            onChange={(v) => updateNodeParam(node.id, 'action', v)}
+                            size='small'
+                            placeholder='Tool name...'
+                            style={{ width: 150 }}
+                          />
+                        )}
+                        {node.type === 'agent_call' && (
+                          <Input
+                            value={(node.parameters.agentSlotId as string) ?? ''}
+                            onChange={(v) => updateNodeParam(node.id, 'agentSlotId', v)}
+                            size='small'
+                            placeholder='Agent slot ID'
+                            style={{ width: 150 }}
+                          />
+                        )}
+
+                        {/* Error handling */}
+                        <Select
+                          value={node.onError}
+                          onChange={(v) =>
+                            setEditNodes((prev) => prev.map((n) => (n.id === node.id ? { ...n, onError: v } : n)))
+                          }
+                          size='mini'
+                          style={{ width: 80 }}
+                          options={[
+                            { label: 'Stop', value: 'stop' },
+                            { label: 'Continue', value: 'continue' },
+                            { label: 'Retry', value: 'retry' },
+                          ]}
+                        />
+
+                        <Button
+                          icon={<Close size={12} />}
+                          type='text'
+                          status='danger'
+                          size='mini'
+                          onClick={() => removeNode(node.id)}
+                        />
+                      </div>
+
+                      {/* Connection controls */}
+                      {idx < editNodes.length - 1 && (
+                        <div className='mt-4px flex items-center gap-4px text-11px text-t-tertiary'>
+                          <Right size={12} />
+                          {editConnections.some(
+                            (c) => c.fromNodeId === node.id && c.toNodeId === editNodes[idx + 1].id
+                          ) ? (
+                            <span>
+                              Connected to <Tag size='small'>{editNodes[idx + 1].name}</Tag>
+                              <Button
+                                size='mini'
+                                type='text'
+                                className='ml-4px'
+                                onClick={() => removeConnection(node.id, editNodes[idx + 1].id)}
+                              >
+                                Disconnect
+                              </Button>
+                            </span>
+                          ) : (
+                            <Button
+                              size='mini'
+                              type='text'
+                              onClick={() => connectNodes(node.id, editNodes[idx + 1].id)}
+                            >
+                              Connect to next →
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {editNodes.length >= 2 && (
+            <div className='text-11px text-t-tertiary'>
+              Connections: {editConnections.length} | Nodes execute in topological order.
+            </div>
+          )}
         </div>
       </Modal>
 
@@ -346,11 +563,6 @@ const WorkflowEngine: React.FC = () => {
                     <Tag size='small' color={statusColors[ne.status] ?? 'gray'}>
                       {ne.status}
                     </Tag>
-                    {ne.retryCount > 0 && (
-                      <Tag size='small' color='orange'>
-                        Retries: {ne.retryCount}
-                      </Tag>
-                    )}
                   </Space>
                 </div>
                 {ne.error && <div className='text-12px text-red-500 mb-4px'>{ne.error}</div>}
