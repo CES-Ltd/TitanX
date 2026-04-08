@@ -31,11 +31,11 @@ const AgentMemoryPanel: React.FC = () => {
     if (!slotId) return;
     setLoading(true);
     try {
-      const [list, st] = await Promise.all([
-        agentMemory.list.invoke({ agentSlotId: slotId, memoryType }),
-        agentMemory.stats.invoke({ agentSlotId: slotId }),
-      ]);
+      const list = await agentMemory.list.invoke({ agentSlotId: slotId, memoryType }).catch((): MemoryEntry[] => []);
       setEntries(list as MemoryEntry[]);
+      const st = await agentMemory.stats
+        .invoke({ agentSlotId: slotId })
+        .catch(() => ({ totalEntries: 0, totalTokens: 0 }));
       setStats(st);
     } catch (err) {
       console.error('[AgentMemory] Load failed:', err);

@@ -65,9 +65,9 @@ const TraceExplorer: React.FC = () => {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const list = (await traceSystem.listRuns.invoke({ limit: 30 })) as TraceRun[];
+      const list = await traceSystem.listRuns.invoke({ limit: 30 }).catch((): TraceRun[] => []);
       // Show only root runs
-      setRuns(list.filter((r) => r.id === r.rootRunId));
+      setRuns((list as TraceRun[]).filter((r) => r.id === r.rootRunId));
     } catch (err) {
       console.error('[TraceExplorer] Load failed:', err);
     } finally {

@@ -41,8 +41,8 @@ const AgentPlanViewer: React.FC = () => {
     if (!teamId) return;
     setLoading(true);
     try {
-      const list = (await agentPlans.list.invoke({ teamId, status: statusFilter })) as PlanRow[];
-      setPlans(list);
+      const list = await agentPlans.list.invoke({ teamId, status: statusFilter }).catch((): PlanRow[] => []);
+      setPlans(list as PlanRow[]);
     } catch (err) {
       console.error('[AgentPlans] Load failed:', err);
     } finally {

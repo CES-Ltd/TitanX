@@ -68,10 +68,10 @@ const WorkflowEngine: React.FC = () => {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const wfs = (await workflowEngine.list.invoke({ userId })) as WorkflowRow[];
-      setWorkflows(wfs);
-      const execs = (await workflowEngine.listExecutions.invoke({ limit: 20 })) as ExecutionRow[];
-      setExecutions(execs);
+      const wfs = await workflowEngine.list.invoke({ userId }).catch((): WorkflowRow[] => []);
+      setWorkflows(wfs as WorkflowRow[]);
+      const execs = await workflowEngine.listExecutions.invoke({ limit: 20 }).catch((): ExecutionRow[] => []);
+      setExecutions(execs as ExecutionRow[]);
     } catch (err) {
       console.error('[WorkflowEngine] Load failed:', err);
     } finally {
