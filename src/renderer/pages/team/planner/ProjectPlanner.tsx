@@ -132,7 +132,7 @@ const ProjectPlanner: React.FC = () => {
   if (loading) return <Spin className='flex justify-center mt-16' />;
 
   return (
-    <div className='flex flex-col px-16px pt-8px h-full overflow-auto'>
+    <div className='flex flex-col px-16px pt-8px' style={{ height: 'calc(100vh - 44px)', overflow: 'auto' }}>
       {/* Header */}
       <div className='flex items-center justify-between mb-8px shrink-0'>
         <div className='flex items-center gap-8px'>

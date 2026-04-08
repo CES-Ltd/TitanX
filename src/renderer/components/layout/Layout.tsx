@@ -500,15 +500,13 @@ const Layout: React.FC<{
           </ArcoLayout.Sider>
 
           <ArcoLayout.Content
-            className={'bg-1 layout-content flex flex-col min-h-0 overflow-hidden flex-1'}
+            className={'bg-1 layout-content flex flex-col min-h-0'}
             onClick={() => {
               if (isMobile && !collapsed) setCollapsed(true);
             }}
             style={isMobile ? { width: '100%' } : undefined}
           >
-            <div className='flex-1 min-h-0 overflow-auto'>
-              <Outlet />
-            </div>
+            <Outlet />
             {multiAgentContextHolder}
             {directorySelectionContextHolder}
             <PwaPullToRefresh />

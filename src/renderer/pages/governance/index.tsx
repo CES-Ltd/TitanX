@@ -30,7 +30,10 @@ const GovernancePage: React.FC = () => {
   }, []);
 
   return (
-    <div className={`flex flex-col h-full overflow-auto ${isMobile ? 'px-2 pt-2' : 'px-6 pt-4'}`}>
+    <div
+      className={`flex flex-col ${isMobile ? 'px-2 pt-2' : 'px-6 pt-4'}`}
+      style={{ height: 'calc(100vh - 44px)', overflow: 'auto' }}
+    >
       <Title heading={4} className='mb-4'>
         {t('governance.title', 'Governance')}
       </Title>
