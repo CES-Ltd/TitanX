@@ -5,6 +5,7 @@
 
 import crypto from 'crypto';
 import type { ISqliteDriver } from '../database/drivers/ISqliteDriver';
+import { logActivity } from '../activityLog';
 
 export type IAMPolicy = {
   id: string;
@@ -55,7 +56,7 @@ export function createPolicy(
     now
   );
 
-  return {
+  const policy: IAMPolicy = {
     id,
     userId: input.userId,
     name: input.name,
@@ -66,6 +67,19 @@ export function createPolicy(
     credentialIds: input.credentialIds ?? [],
     createdAt: now,
   };
+
+  // Audit log: policy created
+  logActivity(db, {
+    userId: input.userId,
+    actorType: 'user',
+    actorId: input.userId,
+    action: 'iam.policy_created',
+    entityType: 'iam_policy',
+    entityId: id,
+    details: { name: input.name, ttlSeconds: input.ttlSeconds, agentCount: policy.agentIds.length },
+  });
+
+  return policy;
 }
 
 /** Check if a policy has expired based on its TTL */
@@ -98,8 +112,19 @@ export function listPolicies(db: ISqliteDriver, userId: string): IAMPolicy[] {
     }));
 }
 
-export function deletePolicy(db: ISqliteDriver, policyId: string): boolean {
-  return db.prepare('DELETE FROM iam_policies WHERE id = ?').run(policyId).changes > 0;
+export function deletePolicy(db: ISqliteDriver, policyId: string, userId?: string): boolean {
+  const deleted = db.prepare('DELETE FROM iam_policies WHERE id = ?').run(policyId).changes > 0;
+  if (deleted) {
+    logActivity(db, {
+      userId: userId ?? 'system_default_user',
+      actorType: 'user',
+      actorId: userId ?? 'system',
+      action: 'iam.policy_deleted',
+      entityType: 'iam_policy',
+      entityId: policyId,
+    });
+  }
+  return deleted;
 }
 
 export function bindPolicy(
@@ -115,6 +140,16 @@ export function bindPolicy(
   db.prepare(
     'INSERT INTO agent_policy_bindings (id, agent_gallery_id, policy_id, expires_at, created_at) VALUES (?, ?, ?, ?, ?)'
   ).run(id, agentGalleryId, policyId, expiresAt ?? null, now);
+
+  logActivity(db, {
+    userId: 'system_default_user',
+    actorType: 'system',
+    actorId: 'iam_service',
+    action: 'iam.policy_bound',
+    entityType: 'agent_policy_binding',
+    entityId: id,
+    details: { agentGalleryId, policyId, ttlSeconds, expiresAt },
+  });
 
   return { id, agentGalleryId, policyId, expiresAt, createdAt: now };
 }
@@ -139,5 +174,16 @@ export function listBindings(db: ISqliteDriver, agentGalleryId: string): PolicyB
 }
 
 export function unbindPolicy(db: ISqliteDriver, bindingId: string): boolean {
-  return db.prepare('DELETE FROM agent_policy_bindings WHERE id = ?').run(bindingId).changes > 0;
+  const deleted = db.prepare('DELETE FROM agent_policy_bindings WHERE id = ?').run(bindingId).changes > 0;
+  if (deleted) {
+    logActivity(db, {
+      userId: 'system_default_user',
+      actorType: 'system',
+      actorId: 'iam_service',
+      action: 'iam.policy_unbound',
+      entityType: 'agent_policy_binding',
+      entityId: bindingId,
+    });
+  }
+  return deleted;
 }

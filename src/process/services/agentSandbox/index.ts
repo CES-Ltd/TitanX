@@ -4,6 +4,7 @@
  * Prevents rogue agents from accessing files outside workspace or exceeding budget.
  */
 
+import fs from 'fs';
 import path from 'path';
 import type { ISqliteDriver } from '../database/drivers/ISqliteDriver';
 
@@ -32,9 +33,17 @@ const SENSITIVE_PATTERNS = [/\.pem$/i, /\.key$/i, /\.p12$/i, /\.pfx$/i, /\.jks$/
 export function isPathAllowed(filePath: string, workspacePath: string): boolean {
   if (!filePath || !workspacePath) return false;
 
-  // Resolve to absolute paths (handles ../ traversal)
-  const resolved = path.resolve(filePath);
+  // Resolve to absolute paths (handles ../ traversal + symlinks)
+  let resolved = path.resolve(filePath);
   const workspace = path.resolve(workspacePath);
+
+  // Follow symlinks to prevent escape via symbolic link chains
+  try {
+    resolved = fs.realpathSync(resolved);
+  } catch {
+    // If the file doesn't exist yet (new file creation), realpathSync fails.
+    // Fall back to path.resolve which already handles ../ traversal.
+  }
 
   // Must be within workspace
   if (!resolved.startsWith(workspace + path.sep) && resolved !== workspace) {
@@ -74,7 +83,7 @@ export function isToolAllowed(toolName: string, allowedTools: string[]): boolean
 
 /**
  * Check if an agent has exceeded its budget.
- * Returns the overage amount in cents (0 = within budget, >0 = exceeded).
+ * Returns the overage details. Use `enforceAgentBudget()` for blocking enforcement.
  */
 export function checkAgentBudget(
   db: ISqliteDriver,
@@ -96,6 +105,19 @@ export function checkAgentBudget(
     spentCents: row.total,
     limitCents: maxBudgetCents,
   };
+}
+
+/**
+ * Enforce agent budget — throws if the budget is exceeded.
+ * Use this as a pre-flight check before executing tool calls.
+ */
+export function enforceAgentBudget(db: ISqliteDriver, agentType: string, maxBudgetCents: number | undefined): void {
+  const budget = checkAgentBudget(db, agentType, maxBudgetCents);
+  if (budget.exceeded) {
+    throw new Error(
+      `Agent budget exceeded: spent ${budget.spentCents}c of ${budget.limitCents}c limit this month. Action blocked.`
+    );
+  }
 }
 
 /**

@@ -22,6 +22,8 @@ export type TeamAgent = {
   status: TeammateStatus;
   cliPath?: string;
   customAgentId?: string;
+  /** Agent gallery ID for IAM policy bindings and runtime enforcement */
+  agentGalleryId?: string;
 };
 
 /** Persisted team record (stored in SQLite `teams` table) */

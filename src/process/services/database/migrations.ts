@@ -1598,6 +1598,36 @@ const migration_v33: IMigration = {
   },
 };
 
+/**
+ * Migration v33 -> v34: Agent session tokens for runtime IAM enforcement.
+ * Per-agent scoped tokens with policy snapshots and auto-expiry.
+ */
+const migration_v34: IMigration = {
+  version: 34,
+  name: 'Add agent_session_tokens table for runtime IAM',
+  up: (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS agent_session_tokens (
+      id TEXT PRIMARY KEY,
+      agent_slot_id TEXT NOT NULL,
+      team_id TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      parent_slot_id TEXT,
+      policy_snapshot TEXT NOT NULL DEFAULT '{}',
+      expires_at INTEGER NOT NULL,
+      revoked INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_session_tokens_agent ON agent_session_tokens(agent_slot_id, revoked)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_session_tokens_team ON agent_session_tokens(team_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_session_tokens_expiry ON agent_session_tokens(expires_at, revoked)');
+    console.log('[Migration v34] Added agent_session_tokens table');
+  },
+  down: (db) => {
+    db.exec('DROP TABLE IF EXISTS agent_session_tokens');
+    console.log('[Migration v34] Rolled back: Dropped agent_session_tokens');
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -1606,7 +1636,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v19, migration_v20, migration_v21, migration_v22,
   migration_v23, migration_v24, migration_v25,
   migration_v26, migration_v27, migration_v28, migration_v29,
-  migration_v30, migration_v31, migration_v32, migration_v33,
+  migration_v30, migration_v31, migration_v32, migration_v33, migration_v34,
 ];
 
 /**

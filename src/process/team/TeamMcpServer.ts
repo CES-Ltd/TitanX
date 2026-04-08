@@ -16,6 +16,8 @@ import type { TeamAgent } from './types';
 import { getDatabase } from '@process/services/database';
 import * as sprintService from '@process/services/sprintTasks';
 import * as activityLogService from '@process/services/activityLog';
+import * as policyService from '@process/services/policyEnforcement';
+import { startSpan, getCounter, getHistogram } from '@process/services/telemetry';
 
 type SpawnAgentFn = (agentName: string, agentType?: string) => Promise<TeamAgent>;
 
@@ -254,10 +256,87 @@ export class TeamMcpServer {
   // ── Tool dispatch ───────────────────────────────────────────────────────────
 
   private async handleToolCall(toolName: string, args: Record<string, unknown>, fromSlotId?: string): Promise<string> {
+    const span = startSpan('titanx.mcp', 'mcp.tool_call', {
+      'mcp.tool_name': toolName,
+      'mcp.agent_slot_id': fromSlotId ?? 'unknown',
+      'mcp.team_id': this.params.teamId,
+    });
+    const callStart = Date.now();
+
+    try {
+      return await this._handleToolCallInner(toolName, args, fromSlotId);
+    } catch (err) {
+      span.setStatus('error', err instanceof Error ? err.message : String(err));
+      getCounter('titanx.mcp', 'titanx.mcp.tool_calls_error', 'Failed tool calls').add(1, {
+        tool_name: toolName,
+        agent_slot_id: fromSlotId ?? 'unknown',
+      });
+      throw err;
+    } finally {
+      span.end();
+      const duration = Date.now() - callStart;
+      getHistogram('titanx.mcp', 'titanx.mcp.tool_call_duration_ms', 'Tool call duration').record(duration, {
+        tool_name: toolName,
+      });
+      getCounter('titanx.mcp', 'titanx.mcp.tool_calls', 'Total tool calls').add(1, {
+        tool_name: toolName,
+        agent_slot_id: fromSlotId ?? 'unknown',
+      });
+    }
+  }
+
+  private async _handleToolCallInner(
+    toolName: string,
+    args: Record<string, unknown>,
+    fromSlotId?: string
+  ): Promise<string> {
     // Rate limit check per agent
     if (fromSlotId) {
       this.checkRateLimit(fromSlotId);
     }
+
+    // Runtime IAM policy enforcement — evaluate before dispatch
+    if (fromSlotId) {
+      try {
+        const db = await getDatabase();
+        const driver = db.getDriver();
+        const agent = this.params.getAgents().find((a) => a.slotId === fromSlotId);
+        const decision = policyService.evaluateToolAccess(
+          driver,
+          fromSlotId,
+          agent?.agentGalleryId,
+          toolName,
+          this.params.teamId
+        );
+        policyService.logPolicyDecision(driver, decision, this.params.teamId);
+        if (!decision.allowed) {
+          throw new Error(`Policy denied: ${decision.reason}`);
+        }
+        // Audit log: tool call accepted
+        activityLogService.logActivity(driver, {
+          userId: 'system_default_user',
+          actorType: 'agent',
+          actorId: fromSlotId,
+          action: 'agent.tool_call',
+          entityType: 'mcp_tool',
+          entityId: toolName,
+          agentId: fromSlotId,
+          details: {
+            toolName,
+            teamId: this.params.teamId,
+            agentName: agent?.agentName,
+            argsKeys: Object.keys(args),
+          },
+        });
+      } catch (err) {
+        if (err instanceof Error && err.message.startsWith('Policy denied:')) {
+          throw err;
+        }
+        // Non-critical: if policy check fails due to DB issues, log and continue
+        console.warn('[TeamMcpServer] Policy check error (non-blocking):', err);
+      }
+    }
+
     switch (toolName) {
       case 'team_send_message':
         return this.handleSendMessage(args, fromSlotId);

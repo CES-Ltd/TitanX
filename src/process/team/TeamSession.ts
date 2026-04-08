@@ -10,6 +10,9 @@ import { Mailbox } from './Mailbox';
 import { TaskManager } from './TaskManager';
 import { TeammateManager } from './TeammateManager';
 import { TeamMcpServer, type StdioMcpConfig } from './TeamMcpServer';
+import { getDatabase } from '@process/services/database';
+import { revokeExpiredSessionTokens } from '@process/services/policyEnforcement';
+import { revokeExpiredTokens } from '@process/services/credentialAccess';
 
 type SpawnAgentFn = (agentName: string, agentType?: string) => Promise<TeamAgent>;
 
@@ -27,6 +30,8 @@ export class TeamSession extends EventEmitter {
   private readonly teammateManager: TeammateManager;
   private readonly mcpServer: TeamMcpServer;
   private mcpStdioConfig: StdioMcpConfig | null = null;
+  /** Interval handle for periodic expired token cleanup */
+  private tokenCleanupInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(team: TTeam, repo: ITeamRepository, workerTaskManager: IWorkerTaskManager, spawnAgent?: SpawnAgentFn) {
     super();
@@ -71,6 +76,27 @@ export class TeamSession extends EventEmitter {
     if (!this.mcpStdioConfig) {
       this.mcpStdioConfig = await this.mcpServer.start();
       this.teammateManager.setHasMcpTools(true);
+
+      // Start periodic cleanup of expired tokens (every 60s)
+      if (!this.tokenCleanupInterval) {
+        this.tokenCleanupInterval = setInterval(() => {
+          void (async () => {
+            try {
+              const db = await getDatabase();
+              const driver = db.getDriver();
+              const sessionRevoked = revokeExpiredSessionTokens(driver);
+              const credentialRevoked = revokeExpiredTokens(driver);
+              if (sessionRevoked > 0 || credentialRevoked > 0) {
+                console.log(
+                  `[TokenCleanup] Revoked ${sessionRevoked} session + ${credentialRevoked} credential expired tokens`
+                );
+              }
+            } catch {
+              // Non-critical cleanup
+            }
+          })();
+        }, 60_000);
+      }
     }
     return this.mcpStdioConfig;
   }
@@ -186,6 +212,11 @@ export class TeamSession extends EventEmitter {
 
   /** Clean up all IPC listeners, MCP server, and EventEmitter handlers */
   async dispose(): Promise<void> {
+    // Stop token cleanup scheduler
+    if (this.tokenCleanupInterval) {
+      clearInterval(this.tokenCleanupInterval);
+      this.tokenCleanupInterval = null;
+    }
     this.teammateManager.setHasMcpTools(false);
     this.teammateManager.dispose();
     await this.mcpServer.stop();

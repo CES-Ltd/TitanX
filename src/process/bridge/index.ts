@@ -57,6 +57,7 @@ import { initIAMBridge } from './iamBridge';
 import { initGitHubAuthBridge } from './githubAuthBridge';
 import { initProjectPlannerBridge } from './projectPlannerBridge';
 import { initCredentialAccessBridge } from './credentialAccessBridge';
+import { initTelemetryBridge } from './telemetryBridge';
 import type { TeamSessionService } from '@process/team/TeamSessionService';
 
 export interface BridgeDependencies {
@@ -122,6 +123,7 @@ export function initAllBridges(deps: BridgeDependencies): void {
   initGitHubAuthBridge();
   initProjectPlannerBridge();
   initCredentialAccessBridge();
+  initTelemetryBridge();
 }
 
 /**

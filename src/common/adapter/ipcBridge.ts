@@ -1730,3 +1730,23 @@ export const team = {
   agentRemoved: bridge.buildEmitter<import('@/common/types/teamTypes').ITeamAgentRemovedEvent>('team.agent.removed'),
   agentRenamed: bridge.buildEmitter<import('@/common/types/teamTypes').ITeamAgentRenamedEvent>('team.agent.renamed'),
 };
+
+// ── Telemetry / Observability Settings ───────────────────────────────────────
+
+export type ITelemetryConfig = {
+  enabled: boolean;
+  serviceName: string;
+  exporterType: 'otlp' | 'console' | 'none';
+  otlpEndpoint?: string;
+  otlpProtocol: 'http/protobuf' | 'grpc';
+  logLevel: 'none' | 'error' | 'warn' | 'info' | 'debug';
+  sampleRate: number;
+  enableTraces: boolean;
+  enableMetrics: boolean;
+};
+
+export const telemetry = {
+  getConfig: bridge.buildProvider<ITelemetryConfig, void>('telemetry.get-config'),
+  setConfig: bridge.buildProvider<void, ITelemetryConfig>('telemetry.set-config'),
+  restart: bridge.buildProvider<void, void>('telemetry.restart'),
+};

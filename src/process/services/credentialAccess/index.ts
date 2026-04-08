@@ -37,11 +37,9 @@ export function checkCredentialAccess(db: ISqliteDriver, agentGalleryId: string,
     const credentialIds: string[] = JSON.parse((row.credential_ids as string) || '[]');
     const ttlSeconds = (row.ttl_seconds as number) ?? undefined;
 
-    // Check if this policy covers both the agent and the credential
-    if (
-      (agentIds.length === 0 || agentIds.includes(agentGalleryId)) &&
-      (credentialIds.length === 0 || credentialIds.includes(secretId))
-    ) {
+    // Check if this policy covers both the agent and the credential.
+    // Empty arrays = no access (deny by default). Explicit IDs required.
+    if (agentIds.includes(agentGalleryId) && credentialIds.includes(secretId)) {
       return { allowed: true, policyId: row.id as string, ttlSeconds };
     }
   }

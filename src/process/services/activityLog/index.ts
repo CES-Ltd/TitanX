@@ -1,14 +1,14 @@
 /**
  * @license Apache-2.0
  * Activity log service for TitanX audit trail.
- * Provides immutable audit logging for all state-changing operations.
+ * Provides immutable audit logging with HMAC signatures for tamper detection.
  */
 
 import crypto from 'crypto';
 import type { ISqliteDriver } from '../database/drivers/ISqliteDriver';
 import { sanitizeRecord } from '@process/utils/redaction';
 
-type ActivityLogEntry = {
+export type ActivityLogEntry = {
   id: string;
   userId: string;
   actorType: 'user' | 'agent' | 'system';
@@ -18,10 +18,12 @@ type ActivityLogEntry = {
   entityId?: string;
   agentId?: string;
   details?: Record<string, unknown>;
+  signature?: string;
+  severity?: string;
   createdAt: number;
 };
 
-type LogActivityInput = Omit<ActivityLogEntry, 'id' | 'createdAt'>;
+export type LogActivityInput = Omit<ActivityLogEntry, 'id' | 'createdAt' | 'signature'>;
 
 type ListParams = {
   userId: string;
@@ -32,18 +34,45 @@ type ListParams = {
   offset?: number;
 };
 
+/** HMAC key for audit log signatures. In production, derive from master key. */
+const HMAC_KEY = process.env.TITANX_AUDIT_HMAC_KEY ?? 'titanx-audit-log-default-key-change-in-production';
+
+/**
+ * Compute HMAC-SHA256 signature for an audit log entry.
+ * Signs: id | action | actorId | createdAt to detect tampering.
+ */
+function signLogEntry(id: string, action: string, actorId: string, createdAt: number): string {
+  return crypto.createHmac('sha256', HMAC_KEY).update(`${id}|${action}|${actorId}|${createdAt}`).digest('hex');
+}
+
+/**
+ * Verify HMAC signature of an audit log entry.
+ * Returns true if the signature is valid, false if tampered.
+ */
+export function verifyLogEntry(entry: ActivityLogEntry): boolean {
+  if (!entry.signature) return false;
+  const expected = signLogEntry(entry.id, entry.action, entry.actorId, entry.createdAt);
+  const expectedBuf = Buffer.from(expected, 'hex');
+  const actualBuf = Buffer.from(entry.signature, 'hex');
+  if (expectedBuf.length !== actualBuf.length) return false;
+  return crypto.timingSafeEqual(expectedBuf, actualBuf);
+}
+
 /**
  * Record an activity in the immutable audit log.
- * Details are automatically sanitized to remove sensitive fields.
+ * Details are automatically sanitized. Entry is HMAC-signed for tamper detection.
  */
 export function logActivity(db: ISqliteDriver, input: LogActivityInput): ActivityLogEntry {
   const id = crypto.randomUUID();
   const createdAt = Date.now();
   const sanitizedDetails = input.details ? JSON.stringify(sanitizeRecord(input.details)) : '{}';
+  const severity =
+    input.severity ?? (input.action.includes('denied') || input.action.includes('blocked') ? 'warning' : 'info');
+  const signature = signLogEntry(id, input.action, input.actorId, createdAt);
 
   db.prepare(
-    `INSERT INTO activity_log (id, user_id, actor_type, actor_id, action, entity_type, entity_id, agent_id, details, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO activity_log (id, user_id, actor_type, actor_id, action, entity_type, entity_id, agent_id, details, signature, severity, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.userId,
@@ -54,6 +83,8 @@ export function logActivity(db: ISqliteDriver, input: LogActivityInput): Activit
     input.entityId ?? null,
     input.agentId ?? null,
     sanitizedDetails,
+    signature,
+    severity,
     createdAt
   );
 
@@ -61,6 +92,8 @@ export function logActivity(db: ISqliteDriver, input: LogActivityInput): Activit
     ...input,
     id,
     createdAt,
+    signature,
+    severity,
     details: input.details ? (sanitizeRecord(input.details) as Record<string, unknown>) : undefined,
   };
 }
@@ -123,6 +156,8 @@ function rowToActivityEntry(row: Record<string, unknown>): ActivityLogEntry {
     entityId: (row.entity_id as string) ?? undefined,
     agentId: (row.agent_id as string) ?? undefined,
     details: row.details ? JSON.parse(row.details as string) : undefined,
+    signature: (row.signature as string) ?? undefined,
+    severity: (row.severity as string) ?? undefined,
     createdAt: row.created_at as number,
   };
 }

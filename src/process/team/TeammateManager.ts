@@ -15,6 +15,8 @@ import { getDatabase } from '@process/services/database';
 import * as sprintService from '@process/services/sprintTasks';
 import * as costTrackingService from '@process/services/costTracking';
 import * as activityLogService from '@process/services/activityLog';
+import * as policyService from '@process/services/policyEnforcement';
+import { startSpan, getCounter } from '@process/services/telemetry';
 
 type SpawnAgentFn = (agentName: string, agentType?: string) => Promise<TeamAgent>;
 
@@ -230,11 +232,12 @@ export class TeammateManager extends EventEmitter {
     ipcBridge.team.agentStatusChanged.emit({ teamId: this.teamId, slotId, status, lastMessage });
     this.emit('agentStatusChanged', { teamId: this.teamId, slotId, status, lastMessage });
 
-    // Audit log agent status changes
+    // Audit log agent status changes + revoke tokens on completion/failure
     void (async () => {
       try {
         const db = await getDatabase();
-        activityLogService.logActivity(db.getDriver(), {
+        const driver = db.getDriver();
+        activityLogService.logActivity(driver, {
           userId: 'system_default_user',
           actorType: 'agent',
           actorId: slotId,
@@ -249,6 +252,13 @@ export class TeammateManager extends EventEmitter {
             teamId: this.teamId,
           },
         });
+        // Auto-invalidate session tokens when agent completes or fails
+        if (status === 'completed' || status === 'failed') {
+          const revoked = policyService.revokeAgentTokens(driver, slotId);
+          if (revoked > 0) {
+            console.log(`[TeammateManager] Revoked ${revoked} session token(s) for ${slotId} (${status})`);
+          }
+        }
       } catch {
         // Non-critical
       }
@@ -320,6 +330,13 @@ export class TeammateManager extends EventEmitter {
 
     const agent = this.agents.find((a) => a.conversationId === conversationId);
     if (!agent) return;
+
+    const turnSpan = startSpan('titanx.agent', 'agent.turn', {
+      'agent.slot_id': agent.slotId,
+      'agent.name': agent.agentName,
+      'agent.type': agent.agentType,
+      'team.id': this.teamId,
+    });
 
     const accumulatedText = this.responseBuffer.get(conversationId) ?? '';
     this.responseBuffer.delete(conversationId);
@@ -511,6 +528,16 @@ export class TeammateManager extends EventEmitter {
         this.maybeWakeLeaderWhenAllIdle(leadAgent.slotId);
       }
     }
+
+    // Telemetry: record turn completion
+    turnSpan.setAttribute('agent.actions_count', actions.length);
+    turnSpan.setAttribute('agent.text_length', accumulatedText.length);
+    turnSpan.setStatus('ok');
+    turnSpan.end();
+    getCounter('titanx.agent', 'titanx.agent.turns', 'Agent turns completed').add(1, {
+      agent_slot_id: agent.slotId,
+      agent_type: agent.agentType,
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -518,6 +545,28 @@ export class TeammateManager extends EventEmitter {
   // ---------------------------------------------------------------------------
 
   private async executeAction(action: ParsedAction, fromSlotId: string): Promise<void> {
+    // Runtime IAM policy enforcement for parsed actions
+    try {
+      const db = await getDatabase();
+      const driver = db.getDriver();
+      const agent = this.agents.find((a) => a.slotId === fromSlotId);
+      const toolName = `action.${action.type}`;
+      const decision = policyService.evaluateToolAccess(
+        driver,
+        fromSlotId,
+        agent?.agentGalleryId,
+        toolName,
+        this.teamId
+      );
+      policyService.logPolicyDecision(driver, decision, this.teamId);
+      if (!decision.allowed) {
+        console.warn(`[TeammateManager] Action blocked by policy: ${action.type} for ${fromSlotId}`);
+        return; // Skip this action
+      }
+    } catch {
+      // Non-critical: continue execution if policy check fails
+    }
+
     switch (action.type) {
       case 'send_message': {
         const targetSlotId = this.resolveSlotId(action.to);
