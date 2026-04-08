@@ -7,6 +7,7 @@
 import crypto from 'crypto';
 import type { ISqliteDriver } from '../database/drivers/ISqliteDriver';
 import { sanitizeRecord } from '@process/utils/redaction';
+import { ipcBridge } from '@/common';
 
 export type ActivityLogEntry = {
   id: string;
@@ -88,7 +89,7 @@ export function logActivity(db: ISqliteDriver, input: LogActivityInput): Activit
     createdAt
   );
 
-  return {
+  const entry: ActivityLogEntry = {
     ...input,
     id,
     createdAt,
@@ -96,6 +97,15 @@ export function logActivity(db: ISqliteDriver, input: LogActivityInput): Activit
     severity,
     details: input.details ? (sanitizeRecord(input.details) as Record<string, unknown>) : undefined,
   };
+
+  // Emit live event so the Audit Log UI auto-refreshes
+  try {
+    ipcBridge.liveEvents.activity.emit(entry);
+  } catch {
+    // Emit may fail during early startup before IPC is ready — ignore
+  }
+
+  return entry;
 }
 
 /**

@@ -7,7 +7,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Table, Select, Button, Empty, Tag, Space, Spin } from '@arco-design/web-react';
 import { Refresh } from '@icon-park/react';
-import { activityLog, type IActivityEntry } from '@/common/adapter/ipcBridge';
+import { activityLog, liveEvents, type IActivityEntry } from '@/common/adapter/ipcBridge';
 
 const { Option } = Select;
 
@@ -64,6 +64,14 @@ const ActivityLog: React.FC = () => {
 
   useEffect(() => {
     loadData();
+  }, [loadData]);
+
+  // Auto-refresh when new activity events are emitted
+  useEffect(() => {
+    const unsub = liveEvents.activity.on(() => {
+      void loadData();
+    });
+    return unsub;
   }, [loadData]);
 
   const columns = [
