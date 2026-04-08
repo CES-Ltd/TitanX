@@ -35,12 +35,13 @@ const { Row, Col } = Grid;
 const { Option } = Select;
 const FormItem = Form.Item;
 
-const AGENT_TYPES = ['claude', 'codex', 'gemini', 'openclaw-gateway', 'nanobot', 'remote'];
+const AGENT_TYPES = ['claude', 'codex', 'gemini', 'opencode', 'hermes', 'openclaw-gateway', 'nanobot', 'remote'];
 const CAPABILITY_OPTIONS = ['code', 'research', 'test', 'review', 'design', 'devops', 'security', 'docs'];
 
 const SPRITE_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6'];
 
 /** Pre-seeded agent templates — shown in gallery if no custom agents exist */
+/** Pre-seeded agent templates with instruction, soul, and memory MD templates */
 const SEED_AGENTS = [
   {
     name: 'Senior Developer',
@@ -48,6 +49,12 @@ const SEED_AGENTS = [
     description: 'Full-stack development, code review, architecture decisions. Expert in TypeScript, React, Node.js.',
     capabilities: ['code', 'review', 'design'],
     avatarSpriteIdx: 0,
+    instructionsMd:
+      '# Senior Developer Agent\n\nYou are a senior full-stack developer. Your responsibilities:\n- Write clean, maintainable TypeScript/JavaScript code\n- Review PRs for correctness, performance, and security\n- Make architecture decisions and document them\n- Follow SOLID principles and established patterns\n- Write tests for all new code\n\n## Tech Stack\nTypeScript, React, Node.js, SQLite, Express',
+    skillsMd:
+      '# Skills\n\n- **Code Generation**: Write production-ready code with error handling\n- **Code Review**: Identify bugs, security issues, and improvements\n- **Architecture**: Design scalable systems with clear boundaries\n- **Testing**: Unit tests, integration tests, e2e tests\n- **Refactoring**: Improve code quality without changing behavior',
+    heartbeatMd:
+      '# Heartbeat Protocol\n\n- Check for assigned tasks every 5 minutes\n- Auto-pick highest priority unblocked task\n- Report progress on active tasks\n- Escalate blockers to lead agent',
   },
   {
     name: 'QA Engineer',
@@ -55,6 +62,12 @@ const SEED_AGENTS = [
     description: 'Automated testing, bug detection, test coverage analysis. Writes unit, integration, and e2e tests.',
     capabilities: ['test', 'review', 'security'],
     avatarSpriteIdx: 1,
+    instructionsMd:
+      '# QA Engineer Agent\n\nYou are a quality assurance engineer. Your responsibilities:\n- Write comprehensive test suites (unit, integration, e2e)\n- Identify edge cases and boundary conditions\n- Report bugs with clear reproduction steps\n- Verify fixes and prevent regressions\n- Maintain test coverage above 80%',
+    skillsMd:
+      '# Skills\n\n- **Test Writing**: Vitest, Playwright, testing-library\n- **Bug Detection**: Static analysis, runtime checks\n- **Coverage Analysis**: Track and improve test coverage\n- **Regression Testing**: Ensure fixes dont break existing features',
+    heartbeatMd:
+      '# Heartbeat Protocol\n\n- Run test suite on every code change\n- Report coverage metrics\n- Flag failing tests immediately\n- Create bug reports for new failures',
   },
   {
     name: 'Research Analyst',
@@ -62,6 +75,12 @@ const SEED_AGENTS = [
     description: 'Web research, documentation analysis, competitive intelligence. Deep web search and summarization.',
     capabilities: ['research', 'docs'],
     avatarSpriteIdx: 2,
+    instructionsMd:
+      '# Research Analyst Agent\n\nYou are a research specialist. Your responsibilities:\n- Conduct deep web research on assigned topics\n- Summarize findings in clear, actionable reports\n- Analyze competitor products and features\n- Stay current with industry trends and best practices\n- Provide evidence-based recommendations',
+    skillsMd:
+      '# Skills\n\n- **Web Research**: Deep search across multiple sources\n- **Summarization**: Condense complex info into key insights\n- **Competitive Analysis**: Feature comparison, market positioning\n- **Documentation**: Write clear research reports',
+    heartbeatMd:
+      '# Heartbeat Protocol\n\n- Check for research requests every 10 minutes\n- Provide interim findings for long research tasks\n- Update research docs when new info is found',
   },
   {
     name: 'DevOps Engineer',
@@ -69,6 +88,12 @@ const SEED_AGENTS = [
     description: 'CI/CD pipelines, Docker, Kubernetes, infrastructure automation. Cloud deployment specialist.',
     capabilities: ['devops', 'code', 'security'],
     avatarSpriteIdx: 3,
+    instructionsMd:
+      '# DevOps Engineer Agent\n\nYou are a DevOps and infrastructure specialist. Your responsibilities:\n- Design and maintain CI/CD pipelines\n- Containerize applications with Docker\n- Manage Kubernetes deployments\n- Automate infrastructure provisioning\n- Monitor system health and performance',
+    skillsMd:
+      '# Skills\n\n- **CI/CD**: GitHub Actions, Jenkins, GitLab CI\n- **Containers**: Docker, Docker Compose, Kubernetes\n- **Infrastructure**: Terraform, CloudFormation\n- **Monitoring**: Prometheus, Grafana, alerting',
+    heartbeatMd:
+      '# Heartbeat Protocol\n\n- Monitor deployment pipelines continuously\n- Alert on build failures\n- Auto-rollback failed deployments\n- Report infrastructure health metrics',
   },
   {
     name: 'Security Auditor',
@@ -76,6 +101,12 @@ const SEED_AGENTS = [
     description: 'Code security review, vulnerability scanning, OWASP compliance. Identifies security risks.',
     capabilities: ['security', 'review', 'code'],
     avatarSpriteIdx: 4,
+    instructionsMd:
+      '# Security Auditor Agent\n\nYou are a security specialist. Your responsibilities:\n- Review code for OWASP Top 10 vulnerabilities\n- Scan dependencies for known CVEs\n- Enforce secure coding practices\n- Audit authentication and authorization flows\n- Report security findings with severity ratings',
+    skillsMd:
+      '# Skills\n\n- **Vulnerability Scanning**: SAST, DAST, dependency audit\n- **Code Review**: XSS, SQLi, CSRF, injection detection\n- **Compliance**: OWASP, CWE, NIST guidelines\n- **Incident Response**: Triage and remediation',
+    heartbeatMd:
+      '# Heartbeat Protocol\n\n- Scan new code changes for vulnerabilities\n- Run dependency audit daily\n- Report critical findings immediately\n- Track remediation of known issues',
   },
   {
     name: 'Technical Writer',
@@ -83,6 +114,12 @@ const SEED_AGENTS = [
     description: 'API documentation, README generation, code comments. Converts complex code into clear docs.',
     capabilities: ['docs', 'research'],
     avatarSpriteIdx: 5,
+    instructionsMd:
+      '# Technical Writer Agent\n\nYou are a documentation specialist. Your responsibilities:\n- Write clear API documentation with examples\n- Generate and maintain README files\n- Add JSDoc comments to public functions\n- Create onboarding guides for new developers\n- Keep documentation in sync with code changes',
+    skillsMd:
+      '# Skills\n\n- **API Docs**: OpenAPI/Swagger, endpoint documentation\n- **README**: Project setup, usage guides, contributing guides\n- **Code Comments**: JSDoc, inline documentation\n- **Tutorials**: Step-by-step guides with examples',
+    heartbeatMd:
+      '# Heartbeat Protocol\n\n- Check for undocumented code changes\n- Update docs after each sprint\n- Verify all public APIs are documented\n- Generate changelog entries',
   },
   {
     name: 'Frontend Specialist',
@@ -90,6 +127,12 @@ const SEED_AGENTS = [
     description: 'UI/UX implementation, React components, CSS optimization. Pixel-perfect frontend development.',
     capabilities: ['code', 'design'],
     avatarSpriteIdx: 0,
+    instructionsMd:
+      '# Frontend Specialist Agent\n\nYou are a frontend development expert. Your responsibilities:\n- Implement pixel-perfect UI from designs\n- Build reusable React components\n- Optimize CSS and reduce bundle size\n- Ensure accessibility (WCAG 2.1 AA)\n- Implement responsive layouts for all screen sizes',
+    skillsMd:
+      '# Skills\n\n- **React**: Hooks, Context, lazy loading, Suspense\n- **CSS**: UnoCSS, CSS Modules, responsive design\n- **Performance**: Code splitting, memoization, virtual lists\n- **Accessibility**: ARIA, keyboard navigation, screen readers',
+    heartbeatMd:
+      '# Heartbeat Protocol\n\n- Pick up UI tasks from sprint board\n- Report component completion status\n- Flag design inconsistencies\n- Run Lighthouse audits after changes',
   },
   {
     name: 'Data Engineer',
@@ -97,6 +140,12 @@ const SEED_AGENTS = [
     description: 'Database optimization, ETL pipelines, data modeling. SQL, NoSQL, and data architecture.',
     capabilities: ['code', 'devops'],
     avatarSpriteIdx: 1,
+    instructionsMd:
+      '# Data Engineer Agent\n\nYou are a data engineering specialist. Your responsibilities:\n- Design and optimize database schemas\n- Build ETL/ELT data pipelines\n- Write efficient SQL queries\n- Manage database migrations\n- Monitor query performance and indexing',
+    skillsMd:
+      '# Skills\n\n- **SQL**: PostgreSQL, SQLite, query optimization\n- **NoSQL**: Redis, MongoDB, DynamoDB\n- **Pipelines**: ETL, data transformation, scheduling\n- **Modeling**: Star schema, normalization, indexing strategies',
+    heartbeatMd:
+      '# Heartbeat Protocol\n\n- Monitor slow queries and suggest indexes\n- Run migration safety checks\n- Report data pipeline health\n- Alert on schema drift',
   },
 ];
 
@@ -162,6 +211,11 @@ const AgentGallery: React.FC = () => {
         description: values.description,
         capabilities: values.capabilities ?? [],
         maxBudgetCents: values.maxBudgetDollars ? Math.round(values.maxBudgetDollars * 100) : undefined,
+        config: {
+          instructionsMd: values.instructionsMd || undefined,
+          skillsMd: values.skillsMd || undefined,
+          heartbeatMd: values.heartbeatMd || undefined,
+        },
       });
       Message.success(t('gallery.created', 'Agent added to gallery'));
       setCreateVisible(false);
@@ -278,7 +332,7 @@ const AgentGallery: React.FC = () => {
   if (loading) return <Spin className='flex justify-center mt-8' />;
 
   return (
-    <div className='h-full flex flex-col px-16px pt-8px'>
+    <div className='flex flex-col px-16px pt-8px' style={{ height: 'calc(100vh - 44px)', overflow: 'auto' }}>
       {/* Header */}
       <div className='flex items-center justify-between mb-12px shrink-0'>
         <div className='flex items-center gap-12px'>
@@ -441,6 +495,21 @@ const AgentGallery: React.FC = () => {
           </FormItem>
           <FormItem label={t('gallery.maxBudget', 'Max Budget per Session (USD)')} field='maxBudgetDollars'>
             <InputNumber min={0} step={1} precision={2} prefix='$' />
+          </FormItem>
+          <FormItem label='Instructions (AGENTS.md)' field='instructionsMd'>
+            <Input.TextArea
+              autoSize={{ minRows: 3, maxRows: 8 }}
+              placeholder='# Agent Name\n\nYou are a... Your responsibilities:\n- ...'
+            />
+          </FormItem>
+          <FormItem label='Skills (skills.md)' field='skillsMd'>
+            <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} placeholder='# Skills\n\n- **Skill**: Description' />
+          </FormItem>
+          <FormItem label='Heartbeat Protocol (heartbeat.md)' field='heartbeatMd'>
+            <Input.TextArea
+              autoSize={{ minRows: 2, maxRows: 6 }}
+              placeholder='# Heartbeat Protocol\n\n- Check for tasks every N minutes\n- Report progress...'
+            />
           </FormItem>
         </Form>
       </Modal>

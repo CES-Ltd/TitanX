@@ -252,3 +252,47 @@ function rowToTask(row: Record<string, unknown>): SprintTask {
     updatedAt: row.updated_at as number,
   };
 }
+
+/**
+ * Sync team_tasks to sprint_tasks — ensures any tasks created before
+ * the sprint bridge was added are visible in the Sprint Board.
+ * Safe to call multiple times — skips tasks that already exist.
+ */
+export function syncTeamTasksToSprint(db: ISqliteDriver): number {
+  const teamTasks = db
+    .prepare(
+      'SELECT team_id, subject, description, owner, status, created_at, updated_at FROM team_tasks WHERE subject NOT IN (SELECT title FROM sprint_tasks)'
+    )
+    .all() as Array<Record<string, unknown>>;
+
+  let synced = 0;
+  for (const tt of teamTasks) {
+    const teamId = tt.team_id as string;
+    const statusMap: Record<string, string> = {
+      pending: 'todo',
+      in_progress: 'in_progress',
+      completed: 'done',
+      deleted: 'done',
+    };
+    const id = nextTaskId(db, teamId);
+    const now = Date.now();
+    db.prepare(
+      `INSERT INTO sprint_tasks (id, team_id, title, description, status, assignee_slot_id, priority, labels, blocked_by, comments, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'medium', '[]', '[]', '[]', ?, ?)`
+    ).run(
+      id,
+      teamId,
+      tt.subject as string,
+      (tt.description as string) ?? null,
+      statusMap[(tt.status as string) ?? 'pending'] ?? 'todo',
+      (tt.owner as string) ?? null,
+      (tt.created_at as number) ?? now,
+      (tt.updated_at as number) ?? now
+    );
+    synced++;
+  }
+  if (synced > 0) {
+    console.log(`[SprintTasks] Synced ${synced} team_tasks → sprint_tasks`);
+  }
+  return synced;
+}

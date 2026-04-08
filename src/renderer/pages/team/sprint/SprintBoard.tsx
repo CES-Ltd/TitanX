@@ -128,7 +128,7 @@ const SprintBoard: React.FC = () => {
   const agents = team?.agents ?? [];
 
   return (
-    <div className='h-full flex flex-col px-16px pt-8px'>
+    <div className='flex flex-col px-16px pt-8px' style={{ height: 'calc(100vh - 44px)', overflow: 'auto' }}>
       {/* Header */}
       <div className='flex items-center justify-between mb-12px shrink-0'>
         <div className='flex items-center gap-12px'>

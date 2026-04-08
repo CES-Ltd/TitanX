@@ -383,8 +383,9 @@ export function initConversationBridge(
 
   ipcBridge.conversation.getWorkspace.provider(async ({ workspace, search, path }) => {
     try {
+      console.log(`[Workspace] getWorkspace: workspace=${workspace}, path=${path}, search=${search || '(none)'}`);
       const fileService = GeminiAgent.buildFileServer(workspace);
-      return await readDirectoryRecursive(path, {
+      const result = await readDirectoryRecursive(path, {
         root: workspace,
         fileService,
         abortController: buildLastAbortController(),
@@ -395,7 +396,11 @@ export function initConversationBridge(
             void ipcBridge.conversation.responseSearchWorkSpace.invoke(result);
           },
         },
-      }).then((res) => (res ? [res] : []));
+      });
+      console.log(
+        `[Workspace] getWorkspace result: ${result ? `name=${result.name}, children=${result.children?.length ?? 0}` : 'null'}`
+      );
+      return result ? [result] : [];
     } catch (error) {
       // Catch abort / ENOENT errors to avoid unhandled rejection
       // (bridge provider callbacks have no .catch handler)

@@ -11,6 +11,10 @@ import type { TaskManager } from './TaskManager';
 import type { AgentResponse } from './adapters/PlatformAdapter';
 import { createPlatformAdapter } from './adapters/PlatformAdapter';
 import { acpDetector } from '@process/agent/acp/AcpDetector';
+import { getDatabase } from '@process/services/database';
+import * as sprintService from '@process/services/sprintTasks';
+import * as costTrackingService from '@process/services/costTracking';
+import * as activityLogService from '@process/services/activityLog';
 
 type SpawnAgentFn = (agentName: string, agentType?: string) => Promise<TeamAgent>;
 
@@ -166,7 +170,7 @@ export class TeammateManager extends EventEmitter {
       }
 
       // Only show team-verified backends in the leader's available agent types
-      const TEAM_ALLOWED_BACKENDS = new Set(['claude', 'codex']);
+      const TEAM_ALLOWED_BACKENDS = new Set(['claude', 'codex', 'opencode', 'gemini', 'hermes']);
       const availableAgentTypes = acpDetector
         .getDetectedAgents()
         .filter((a) => TEAM_ALLOWED_BACKENDS.has(a.backend))
@@ -221,9 +225,34 @@ export class TeammateManager extends EventEmitter {
 
   /** Set agent status, update the local agents array, and emit IPC event */
   setStatus(slotId: string, status: TeammateStatus, lastMessage?: string): void {
+    const agent = this.agents.find((a) => a.slotId === slotId);
     this.agents = this.agents.map((a) => (a.slotId === slotId ? { ...a, status } : a));
     ipcBridge.team.agentStatusChanged.emit({ teamId: this.teamId, slotId, status, lastMessage });
     this.emit('agentStatusChanged', { teamId: this.teamId, slotId, status, lastMessage });
+
+    // Audit log agent status changes
+    void (async () => {
+      try {
+        const db = await getDatabase();
+        activityLogService.logActivity(db.getDriver(), {
+          userId: 'system_default_user',
+          actorType: 'agent',
+          actorId: slotId,
+          action: `agent.status.${status}`,
+          entityType: 'agent',
+          entityId: slotId,
+          agentId: slotId,
+          details: {
+            agentName: agent?.agentName,
+            status,
+            lastMessage: lastMessage?.slice(0, 100),
+            teamId: this.teamId,
+          },
+        });
+      } catch {
+        // Non-critical
+      }
+    })();
   }
 
   /** Clean up all IPC listeners, timers, and EventEmitter handlers */
@@ -413,6 +442,50 @@ export class TeammateManager extends EventEmitter {
       }
     }
 
+    // Record cost event and audit log for this turn
+    try {
+      console.log(
+        `[TeammateManager] Recording cost + audit for agent ${agent.agentName} (${agent.slotId}), text length: ${accumulatedText.length}`
+      );
+      const db = await getDatabase();
+      const driver = db.getDriver();
+      const textLen = accumulatedText.length;
+      // Estimate tokens from text length (~4 chars per token)
+      const estimatedOutputTokens = Math.ceil(textLen / 4);
+      costTrackingService.recordCost(driver, {
+        userId: 'system_default_user',
+        conversationId,
+        agentType: agent.agentType,
+        provider: agent.agentType === 'gemini' ? 'google' : 'anthropic',
+        model: agent.agentType,
+        inputTokens: 0,
+        outputTokens: estimatedOutputTokens,
+        cachedInputTokens: 0,
+        costCents: 0, // Actual cost not available from stream — tracked as token usage
+        billingType: 'metered_api',
+        occurredAt: Date.now(),
+      });
+      // Audit log: agent turn completed
+      activityLogService.logActivity(driver, {
+        userId: 'system_default_user',
+        actorType: 'agent',
+        actorId: agent.slotId,
+        action: 'agent.turn_completed',
+        entityType: 'conversation',
+        entityId: conversationId,
+        agentId: agent.slotId,
+        details: {
+          agentName: agent.agentName,
+          agentType: agent.agentType,
+          actionsExecuted: actions.length,
+          outputTokensEstimate: estimatedOutputTokens,
+        },
+      });
+      console.log(`[TeammateManager] ✓ Cost + audit recorded for ${agent.agentName}`);
+    } catch (err) {
+      console.error('[TeammateManager] ✗ Failed to record cost/audit:', err);
+    }
+
     // Only set idle if executeAction did not already change status (e.g. idle_notification)
     const currentAgent = this.agents.find((a) => a.slotId === agent.slotId);
     if (currentAgent?.status === 'active') {
@@ -488,6 +561,7 @@ export class TeammateManager extends EventEmitter {
       }
 
       case 'task_create': {
+        // TaskManager.create() now handles sprint bridging + audit logging internally
         await this.taskManager.create({
           teamId: this.teamId,
           subject: action.subject,
@@ -504,6 +578,42 @@ export class TeammateManager extends EventEmitter {
         });
         if (action.status === 'completed') {
           await this.taskManager.checkUnblocks(action.taskId);
+        }
+
+        // Sync status to sprint_tasks
+        try {
+          const db = await getDatabase();
+          const sprintTasks = sprintService.listTasks(db.getDriver(), this.teamId);
+          // Find matching sprint task by subject (best-effort match)
+          const statusMap: Record<string, string> = {
+            pending: 'todo',
+            in_progress: 'in_progress',
+            completed: 'done',
+            deleted: 'done',
+          };
+          const mappedStatus = action.status ? (statusMap[action.status] ?? action.status) : undefined;
+          if (mappedStatus) {
+            for (const st of sprintTasks) {
+              if (st.id === action.taskId || st.title === action.taskId) {
+                sprintService.updateTask(db.getDriver(), st.id, {
+                  status: mappedStatus as 'backlog' | 'todo' | 'in_progress' | 'review' | 'done',
+                });
+                break;
+              }
+            }
+          }
+          // Audit log
+          activityLogService.logActivity(db.getDriver(), {
+            userId: 'system_default_user',
+            actorType: 'agent',
+            actorId: fromSlotId,
+            action: 'task.updated',
+            entityType: 'sprint_task',
+            entityId: action.taskId,
+            details: { status: action.status, owner: action.owner, teamId: this.teamId },
+          });
+        } catch (err) {
+          console.error('[TeammateManager] Failed to update sprint task:', err);
         }
         break;
       }

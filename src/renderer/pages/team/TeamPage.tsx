@@ -258,12 +258,22 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({ team, onAddAgent, onR
         agents={agents}
         teamId={team.id}
         leadSlotId={leadAgent?.slotId ?? ''}
+        workspace={effectiveWorkspace}
         statusMap={statusMap}
         onAgentClick={handleAgentClick}
         onLeadClick={handleLeadClick}
       />
     ),
-    [dispatchConversation, agents, team.id, leadAgent?.slotId, statusMap, handleAgentClick, handleLeadClick]
+    [
+      dispatchConversation,
+      agents,
+      team.id,
+      leadAgent?.slotId,
+      effectiveWorkspace,
+      statusMap,
+      handleAgentClick,
+      handleLeadClick,
+    ]
   );
 
   const updateScrollArrows = useCallback(() => {
@@ -378,12 +388,22 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({ team, onAddAgent, onR
         agents={agents}
         teamId={team.id}
         leadSlotId={leadAgent?.slotId ?? ''}
+        workspace={effectiveWorkspace}
         statusMap={statusMap}
         onAgentClick={handleAgentClickMain}
         onLeadClick={handleLeadClickMain}
       />
     ),
-    [dispatchConversation, agents, team.id, leadAgent?.slotId, statusMap, handleAgentClickMain, handleLeadClickMain]
+    [
+      dispatchConversation,
+      agents,
+      team.id,
+      leadAgent?.slotId,
+      effectiveWorkspace,
+      statusMap,
+      handleAgentClickMain,
+      handleLeadClickMain,
+    ]
   );
 
   return (
@@ -461,9 +481,9 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({ team, onAddAgent, onR
         }
       >
         {/* Command Center: Lead or selected agent chat + spawned agent cards */}
-        <div className='flex flex-col h-full'>
+        <div className='flex flex-col h-full overflow-hidden'>
           {/* Main chat area */}
-          <div className='flex-1 min-h-0'>
+          <div className='flex-1 min-h-0 overflow-hidden'>
             {viewingAgent ? (
               <AgentChatSlot
                 agent={viewingAgent}

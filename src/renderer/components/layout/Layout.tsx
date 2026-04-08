@@ -504,13 +504,7 @@ const Layout: React.FC<{
             onClick={() => {
               if (isMobile && !collapsed) setCollapsed(true);
             }}
-            style={
-              isMobile
-                ? {
-                    width: '100%',
-                  }
-                : undefined
-            }
+            style={isMobile ? { width: '100%' } : undefined}
           >
             <Outlet />
             {multiAgentContextHolder}

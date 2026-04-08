@@ -8,6 +8,16 @@ import { getDatabase } from '@process/services/database';
 import * as sprintService from '@process/services/sprintTasks';
 
 export function initSprintBridge(): void {
+  // One-time sync: ensure team_tasks are mirrored to sprint_tasks
+  void (async () => {
+    try {
+      const db = await getDatabase();
+      sprintService.syncTeamTasksToSprint(db.getDriver());
+    } catch {
+      // Non-critical
+    }
+  })();
+
   ipcBridge.sprintBoard.list.provider(async ({ teamId }) => {
     const db = await getDatabase();
     return sprintService.listTasks(db.getDriver(), teamId);

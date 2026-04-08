@@ -27,11 +27,20 @@ const ObservabilityPage: React.FC = () => {
   }, []);
 
   return (
-    <div className={`h-full flex flex-col ${isMobile ? 'px-2 pt-2' : 'px-6 pt-4'}`}>
+    <div
+      className={`flex flex-col ${isMobile ? 'px-2 pt-2' : 'px-6 pt-4'}`}
+      style={{ height: 'calc(100vh - 44px)', overflow: 'auto' }}
+    >
       <Title heading={4} className='mb-4'>
         {t('observability.title', 'Observability')}
       </Title>
-      <Tabs activeTab={activeTab} onChange={handleTabChange} type='rounded' className='flex-1 min-h-0'>
+      <Tabs
+        activeTab={activeTab}
+        onChange={handleTabChange}
+        type='rounded'
+        className='flex-1 min-h-0'
+        style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+      >
         <TabPane
           key='command-center'
           title={

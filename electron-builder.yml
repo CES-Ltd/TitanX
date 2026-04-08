@@ -224,7 +224,7 @@ electronDownload:
 
 publish:
   provider: github
-  owner: iOfficeAI
-  repo: AionUi
+  owner: CES-Ltd
+  repo: TitanX
   publishAutoUpdate: true
   releaseType: release

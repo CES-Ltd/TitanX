@@ -7,7 +7,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Card, Grid, Statistic, Spin, Tag, Button, Progress, Empty, Space } from '@arco-design/web-react';
+import { Card, Grid, Statistic, Spin, Tag, Button, Progress, Empty, Space, Table } from '@arco-design/web-react';
 import { Refresh, Peoples, Performance, CheckCorrect, Caution, HoneyOne } from '@icon-park/react';
 import {
   team as teamBridge,
@@ -27,6 +27,7 @@ import {
   type IWorkflowRule,
   type IActivityEntry,
   type ISprintTask,
+  type IAgentCostBreakdown,
 } from '@/common/adapter/ipcBridge';
 import type { TTeam, TeammateStatus } from '@/common/types/teamTypes';
 
@@ -63,6 +64,7 @@ const CommandCenter: React.FC = () => {
   const [incidents, setIncidents] = useState<IBudgetIncident[]>([]);
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
   const [pendingApprovals, setPendingApprovals] = useState<IApproval[]>([]);
+  const [costByAgent, setCostByAgent] = useState<IAgentCostBreakdown[]>([]);
   const [rules, setRules] = useState<IWorkflowRule[]>([]);
   const [activities, setActivities] = useState<IActivityEntry[]>([]);
   const [sprintTasks, setSprintTasks] = useState<Map<string, ISprintTask[]>>(new Map());
@@ -81,18 +83,20 @@ const CommandCenter: React.FC = () => {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [teamList, stats, summary, spend, pols, incs, pendCount, pendList, ruleList, actList] = await Promise.all([
-        teamBridge.list.invoke({ userId }),
-        agentRuns.stats.invoke({ userId }),
-        costTracking.summary.invoke({ userId }),
-        costTracking.windowSpend.invoke({ userId }),
-        budgets.listPolicies.invoke({ userId }),
-        budgets.listIncidents.invoke({ userId, status: 'active' }),
-        approvals.pendingCount.invoke({ userId }),
-        approvals.list.invoke({ userId, status: 'pending' }),
-        workflowRules.list.invoke({ userId }),
-        activityLog.list.invoke({ userId, limit: 10 }),
-      ]);
+      const [teamList, stats, summary, spend, pols, incs, pendCount, pendList, ruleList, actList, agentCosts] =
+        await Promise.all([
+          teamBridge.list.invoke({ userId }),
+          agentRuns.stats.invoke({ userId }),
+          costTracking.summary.invoke({ userId }),
+          costTracking.windowSpend.invoke({ userId }),
+          budgets.listPolicies.invoke({ userId }),
+          budgets.listIncidents.invoke({ userId, status: 'active' }),
+          approvals.pendingCount.invoke({ userId }),
+          approvals.list.invoke({ userId, status: 'pending' }),
+          workflowRules.list.invoke({ userId }),
+          activityLog.list.invoke({ userId, limit: 10 }),
+          costTracking.byAgent.invoke({ userId }),
+        ]);
 
       setTeams(teamList);
       setRunStats(stats);
@@ -104,6 +108,7 @@ const CommandCenter: React.FC = () => {
       setPendingApprovals(pendList);
       setRules(ruleList);
       setActivities(actList.data);
+      setCostByAgent(agentCosts);
 
       // Load sprint tasks per team
       const tasksMap = new Map<string, ISprintTask[]>();
@@ -194,6 +199,121 @@ const CommandCenter: React.FC = () => {
               value={incidents.length}
               prefix={<Caution size={14} />}
             />
+          </Card>
+        </Col>
+      </Row>
+
+      {/* Token Usage: Total + By Agent + By Team */}
+      <Row gutter={12}>
+        <Col span={6}>
+          <Card size='small'>
+            <Statistic
+              title={<span className='text-11px'>Input Tokens</span>}
+              value={(costSummary?.totalInputTokens ?? 0).toLocaleString()}
+            />
+          </Card>
+        </Col>
+        <Col span={6}>
+          <Card size='small'>
+            <Statistic
+              title={<span className='text-11px'>Output Tokens</span>}
+              value={(costSummary?.totalOutputTokens ?? 0).toLocaleString()}
+            />
+          </Card>
+        </Col>
+        <Col span={6}>
+          <Card size='small'>
+            <Statistic
+              title={<span className='text-11px'>Total Tokens</span>}
+              value={((costSummary?.totalInputTokens ?? 0) + (costSummary?.totalOutputTokens ?? 0)).toLocaleString()}
+            />
+          </Card>
+        </Col>
+        <Col span={6}>
+          <Card size='small'>
+            <Statistic title={<span className='text-11px'>Cost Events</span>} value={costSummary?.eventCount ?? 0} />
+          </Card>
+        </Col>
+      </Row>
+
+      {/* Token Usage by Agent */}
+      <Row gutter={12}>
+        <Col span={12}>
+          <Card title={<span className='text-13px font-medium'>Token Usage by Agent</span>} size='small'>
+            {costByAgent.length === 0 ? (
+              <Empty description='No token usage recorded' className='py-2' />
+            ) : (
+              <Table
+                columns={[
+                  { title: 'Agent', dataIndex: 'agentType' },
+                  {
+                    title: 'Input',
+                    dataIndex: 'totalInputTokens',
+                    render: (v: number) => v.toLocaleString(),
+                  },
+                  {
+                    title: 'Output',
+                    dataIndex: 'totalOutputTokens',
+                    render: (v: number) => v.toLocaleString(),
+                  },
+                  {
+                    title: 'Total',
+                    render: (_: unknown, r: IAgentCostBreakdown) =>
+                      (r.totalInputTokens + r.totalOutputTokens).toLocaleString(),
+                  },
+                  {
+                    title: 'Cost',
+                    dataIndex: 'totalCostCents',
+                    render: (v: number) => `$${(v / 100).toFixed(2)}`,
+                  },
+                  { title: 'Runs', dataIndex: 'eventCount' },
+                ]}
+                data={costByAgent}
+                rowKey='agentType'
+                pagination={false}
+                size='small'
+              />
+            )}
+          </Card>
+        </Col>
+        <Col span={12}>
+          <Card title={<span className='text-13px font-medium'>Token Usage by Team</span>} size='small'>
+            {teams.length === 0 ? (
+              <Empty description='No teams' className='py-2' />
+            ) : (
+              <div className='flex flex-col gap-4px'>
+                {teams.map((team) => {
+                  // Sum tokens for agents in this team by matching agentType
+                  const teamAgentTypes = new Set(team.agents.map((a) => a.agentType));
+                  const teamTokens = costByAgent
+                    .filter((c) => teamAgentTypes.has(c.agentType))
+                    .reduce(
+                      (acc, c) => ({
+                        input: acc.input + c.totalInputTokens,
+                        output: acc.output + c.totalOutputTokens,
+                        cost: acc.cost + c.totalCostCents,
+                      }),
+                      { input: 0, output: 0, cost: 0 }
+                    );
+                  return (
+                    <div key={team.id} className='flex items-center justify-between py-3px'>
+                      <span className='text-12px text-t-secondary truncate flex-1'>{team.name}</span>
+                      <div className='flex items-center gap-12px text-12px shrink-0'>
+                        <span className='text-t-quaternary'>
+                          In: <span className='text-t-primary'>{teamTokens.input.toLocaleString()}</span>
+                        </span>
+                        <span className='text-t-quaternary'>
+                          Out: <span className='text-t-primary'>{teamTokens.output.toLocaleString()}</span>
+                        </span>
+                        <span className='text-t-quaternary'>
+                          $<span className='text-t-primary'>{(teamTokens.cost / 100).toFixed(2)}</span>
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </Card>
         </Col>
       </Row>

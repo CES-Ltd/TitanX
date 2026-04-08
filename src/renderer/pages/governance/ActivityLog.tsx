@@ -56,31 +56,67 @@ const ActivityLog: React.FC = () => {
     {
       title: t('governance.activity.action', 'Action'),
       dataIndex: 'action',
-      width: 200,
-      render: (val: string) => <Tag>{val}</Tag>,
+      width: 180,
+      render: (val: string) => {
+        const color = val.includes('active')
+          ? 'green'
+          : val.includes('idle')
+            ? 'blue'
+            : val.includes('fail')
+              ? 'red'
+              : val.includes('task')
+                ? 'orange'
+                : 'gray';
+        return <Tag color={color}>{val}</Tag>;
+      },
     },
     {
-      title: t('governance.activity.actor', 'Actor'),
-      dataIndex: 'actorType',
-      width: 100,
-      render: (val: string, record: IActivityEntry) => (
-        <Tag color={val === 'user' ? 'blue' : val === 'agent' ? 'green' : 'gray'}>
-          {val}: {record.actorId}
-        </Tag>
-      ),
-    },
-    {
-      title: t('governance.activity.entity', 'Entity'),
-      dataIndex: 'entityType',
+      title: 'Agent / Actor',
+      dataIndex: 'details',
       width: 150,
-      render: (val: string, record: IActivityEntry) =>
-        `${val}${record.entityId ? `: ${record.entityId.slice(0, 8)}...` : ''}`,
+      render: (details: Record<string, unknown> | undefined, record: IActivityEntry) => {
+        const name = (details?.agentName as string) || record.actorId?.slice(0, 12) || record.actorType;
+        return (
+          <Tag color={record.actorType === 'agent' ? 'green' : 'blue'} size='small'>
+            {name}
+          </Tag>
+        );
+      },
+    },
+    {
+      title: 'Team / Entity',
+      dataIndex: 'details',
+      width: 160,
+      render: (details: Record<string, unknown> | undefined, record: IActivityEntry) => {
+        const teamId = (details?.teamId as string)?.slice(0, 8);
+        return (
+          <span className='text-12px'>
+            {record.entityType}
+            {teamId ? <span className='text-t-quaternary ml-4px'>({teamId})</span> : ''}
+          </span>
+        );
+      },
     },
     {
       title: t('governance.activity.details', 'Details'),
       dataIndex: 'details',
-      render: (val: Record<string, unknown> | undefined) =>
-        val ? <code className='text-xs'>{JSON.stringify(val)}</code> : '-',
+      render: (val: Record<string, unknown> | undefined) => {
+        if (!val) return '-';
+        // Format details nicely instead of raw JSON
+        const parts: string[] = [];
+        if (val.status) parts.push(`Status: ${val.status}`);
+        if (val.agentType) parts.push(`Type: ${val.agentType}`);
+        if (val.actionsExecuted !== undefined) parts.push(`Actions: ${val.actionsExecuted}`);
+        if (val.outputTokensEstimate) parts.push(`~${val.outputTokensEstimate} tokens`);
+        if (val.title) parts.push(`"${val.title}"`);
+        if (val.lastMessage) parts.push(`${String(val.lastMessage).slice(0, 50)}`);
+        if (val.name) parts.push(`${val.name}`);
+        return parts.length > 0 ? (
+          <span className='text-12px text-t-secondary'>{parts.join(' · ')}</span>
+        ) : (
+          <code className='text-10px text-t-quaternary'>{JSON.stringify(val).slice(0, 80)}</code>
+        );
+      },
     },
   ];
 
