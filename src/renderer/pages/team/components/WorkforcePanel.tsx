@@ -4,10 +4,12 @@
  * Displays lead → teammate tree with sprite avatars, live status, and click-to-view.
  */
 
-import React from 'react';
+import React, { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Tag, Empty } from '@arco-design/web-react';
+import { Tag, Empty, Popconfirm, Message } from '@arco-design/web-react';
+import { Delete } from '@icon-park/react';
 import type { TeamAgent, TeammateStatus } from '@/common/types/teamTypes';
+import { team as teamBridge } from '@/common/adapter/ipcBridge';
 import { getAgentLogo } from '@/renderer/utils/model/agentLogo';
 
 const STATUS_DOTS: Record<TeammateStatus, { color: string; label: string }> = {
@@ -24,6 +26,8 @@ type WorkforcePanelProps = {
   leadSlotId: string;
   onAgentClick: (slotId: string) => void;
   activeDetailSlotId: string | null;
+  teamId: string;
+  onAgentRemoved?: () => void;
 };
 
 const WorkforcePanel: React.FC<WorkforcePanelProps> = ({
@@ -32,8 +36,23 @@ const WorkforcePanel: React.FC<WorkforcePanelProps> = ({
   leadSlotId,
   onAgentClick,
   activeDetailSlotId,
+  teamId,
+  onAgentRemoved,
 }) => {
   const { t } = useTranslation();
+
+  const handleRemoveAgent = useCallback(
+    async (slotId: string, agentName: string) => {
+      try {
+        await teamBridge.removeAgent.invoke({ teamId, slotId });
+        Message.success(`${agentName} removed from team`);
+        onAgentRemoved?.();
+      } catch (err) {
+        Message.error(err instanceof Error ? err.message : 'Failed to remove agent');
+      }
+    },
+    [teamId, onAgentRemoved]
+  );
 
   if (agents.length === 0) {
     return <Empty description={t('team.workforce.empty', 'No agents in team')} className='mt-8' />;
@@ -94,6 +113,25 @@ const WorkforcePanel: React.FC<WorkforcePanelProps> = ({
             </span>
           </div>
         </div>
+
+        {/* Remove button — only for non-lead teammates */}
+        {!isLead && (
+          <Popconfirm
+            title={`Remove ${agent.agentName}?`}
+            content='This agent will be removed from the team.'
+            onOk={() => void handleRemoveAgent(agent.slotId, agent.agentName)}
+            okText='Remove'
+            okButtonProps={{ status: 'danger' }}
+          >
+            <button
+              type='button'
+              className='shrink-0 w-24px h-24px rd-6px flex items-center justify-center bg-transparent border-none cursor-pointer text-t-quaternary hover:text-[rgb(var(--red-6))] hover:bg-[rgba(var(--red-6),0.1)] transition-all'
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Delete theme='outline' size='13' />
+            </button>
+          </Popconfirm>
+        )}
       </div>
     );
   };

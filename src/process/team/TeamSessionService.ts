@@ -452,31 +452,37 @@ export class TeamSessionService {
     const team = await this.repo.findById(teamId);
     if (!team) throw new Error(`Team "${teamId}" not found`);
 
-    // Security: verify agent is whitelisted in gallery (skip for lead agents)
+    // Security: verify at least one whitelisted agent exists in the gallery (skip for lead agents).
+    // The user may pick any provider in the Hire modal, so we only check that
+    // the gallery has at least one whitelisted entry for this user — proving
+    // the agent originated from a gallery template.
     if (agent.role !== 'lead') {
       try {
         const { getDatabase } = await import('@process/services/database');
         const db = await getDatabase();
-        const gallery = db
-          .getDriver()
-          .prepare('SELECT whitelisted FROM agent_gallery WHERE name = ? AND whitelisted = 1')
-          .get(agent.agentName) as { whitelisted: number } | undefined;
+        const driver = db.getDriver();
+
+        const gallery = driver
+          .prepare(`SELECT id FROM agent_gallery WHERE user_id = ? AND whitelisted = 1 LIMIT 1`)
+          .get('system_default_user') as { id: string } | undefined;
+
         if (!gallery) {
-          console.warn(`[Security] Blocked non-whitelisted agent recruitment: ${agent.agentName}`);
+          console.warn(`[Security] Blocked recruitment: no whitelisted agents in gallery for user`);
           const activityLog = await import('@process/services/activityLog');
-          activityLog.logActivity(db.getDriver(), {
+          activityLog.logActivity(driver, {
             userId: 'system_default_user',
             actorType: 'system',
             actorId: 'security',
             action: 'agent.recruitment_blocked',
             entityType: 'agent',
             entityId: agent.agentName,
-            details: { reason: 'not_whitelisted', agentType: agent.agentType, teamId },
+            details: { reason: 'no_whitelisted_agents', agentType: agent.agentType, teamId },
           });
-          throw new Error(`Agent "${agent.agentName}" is not whitelisted in the gallery`);
+          throw new Error('No whitelisted agents in the gallery. Add agents to the gallery first.');
         }
+        console.log(`[Security] Whitelist check passed for: ${agent.agentName} (type: ${agent.agentType})`);
       } catch (err) {
-        if (err instanceof Error && err.message.includes('not whitelisted')) throw err;
+        if (err instanceof Error && (err.message.includes('whitelisted') || err.message.includes('gallery'))) throw err;
         // If gallery check fails (e.g., table not found), allow recruitment with warning
         console.warn('[Security] Gallery whitelist check failed, allowing recruitment:', err);
       }

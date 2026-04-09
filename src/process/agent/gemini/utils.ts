@@ -211,8 +211,50 @@ export const processGeminiStreamEvents = async (
           break;
         case ServerGeminiEventType.Finished:
           {
+            const finishedValue = (event as unknown as { value: unknown }).value;
             // 传递 Finished 事件，包含 token 使用统计
-            onStreamEvent({ type: event.type, data: (event as unknown as { value: unknown }).value });
+            onStreamEvent({ type: event.type, data: finishedValue });
+
+            // Record token usage to cost_events table
+            try {
+              const usage = finishedValue as Record<string, unknown> | null;
+              const meta = (usage?.usageMetadata ?? usage) as Record<string, number> | null;
+              if (meta) {
+                const inputTokens = meta.promptTokenCount ?? meta.inputTokens ?? 0;
+                const outputTokens = meta.candidatesTokenCount ?? meta.outputTokens ?? 0;
+                const cachedTokens = meta.cachedContentTokenCount ?? 0;
+                console.log(
+                  `[Gemini-Cost] Recording: input=${String(inputTokens)} output=${String(outputTokens)} cached=${String(cachedTokens)}`
+                );
+                if (inputTokens > 0 || outputTokens > 0) {
+                  void (async () => {
+                    try {
+                      const { getDatabase } = await import('@process/services/database');
+                      const costTracking = await import('@process/services/costTracking');
+                      const db = await getDatabase();
+                      costTracking.recordCost(db.getDriver(), {
+                        userId: 'system_default_user',
+                        conversationId: undefined,
+                        agentType: 'gemini',
+                        provider: 'google',
+                        model: 'gemini',
+                        inputTokens,
+                        outputTokens,
+                        cachedInputTokens: cachedTokens,
+                        costCents: 0,
+                        billingType: 'metered_api',
+                        occurredAt: Date.now(),
+                      });
+                      console.log('[Gemini-Cost] Recorded successfully');
+                    } catch (err) {
+                      console.error('[Gemini-Cost] Failed to record:', err);
+                    }
+                  })();
+                }
+              }
+            } catch (err) {
+              console.error('[Gemini-Cost] Error extracting usage:', err);
+            }
           }
           break;
         case ServerGeminiEventType.ContextWindowWillOverflow:

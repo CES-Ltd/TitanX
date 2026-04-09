@@ -60,6 +60,10 @@ type WindowSpend = {
 export function recordCost(db: ISqliteDriver, input: CostEventInput): CostEvent {
   const id = crypto.randomUUID();
 
+  console.log(
+    `[CostService] INSERT: provider=${input.provider} model=${input.model} input=${String(input.inputTokens)} output=${String(input.outputTokens)} cached=${String(input.cachedInputTokens)} cost=${String(input.costCents)}c conversation=${input.conversationId ?? 'none'}`
+  );
+
   db.prepare(
     `INSERT INTO cost_events (id, user_id, conversation_id, agent_type, provider, model, input_tokens, output_tokens, cached_input_tokens, cost_cents, billing_type, occurred_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -86,6 +90,7 @@ export function recordCost(db: ISqliteDriver, input: CostEventInput): CostEvent 
  */
 export function getCostSummary(db: ISqliteDriver, userId: string, fromDate?: number): CostSummary {
   const from = fromDate ?? getMonthStart();
+  console.log(`[CostService] SUMMARY query: userId=${userId} from=${String(from)}`);
   const row = db
     .prepare(
       `SELECT

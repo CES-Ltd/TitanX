@@ -1572,6 +1572,7 @@ export const agentGallery = {
   create: bridge.buildProvider<IGalleryAgent, ICreateGalleryAgentInput>('gallery.create'),
   update: bridge.buildProvider<void, { agentId: string; updates: Partial<IGalleryAgent> }>('gallery.update'),
   remove: bridge.buildProvider<boolean, { agentId: string }>('gallery.delete'),
+  checkName: bridge.buildProvider<{ available: boolean }, { userId: string; name: string }>('gallery.check-name'),
 };
 
 // ─── Workflow Rules ─────────────────────────────────────────────────────────

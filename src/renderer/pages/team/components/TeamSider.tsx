@@ -31,6 +31,7 @@ type TeamSiderProps = {
 const TeamSider: React.FC<TeamSiderProps> = ({
   conversation,
   agents,
+  teamId,
   leadSlotId,
   workspace,
   statusMap,
@@ -97,6 +98,7 @@ const TeamSider: React.FC<TeamSiderProps> = ({
             leadSlotId={leadSlotId}
             onAgentClick={handleAgentClick}
             activeDetailSlotId={null}
+            teamId={teamId}
           />
         </div>
       </TabPane>

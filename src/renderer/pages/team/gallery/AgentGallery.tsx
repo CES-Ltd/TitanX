@@ -251,6 +251,16 @@ const AgentGallery: React.FC = () => {
     [teamId, t]
   );
 
+  // Generate a unique default name when hiring an agent
+  useEffect(() => {
+    if (hireAgent) {
+      const shortId = Math.random().toString(16).slice(2, 6);
+      const defaultName = `${hireAgent.name.replace(/\s+/g, '_')}_${shortId}`;
+      hireForm.setFieldValue('agentName', defaultName);
+      console.log('[AgentGallery-UI] Pre-populated hire name:', defaultName);
+    }
+  }, [hireAgent, hireForm]);
+
   const handleHireConfirm = useCallback(async () => {
     if (!hireAgent) return;
     try {
@@ -260,19 +270,21 @@ const AgentGallery: React.FC = () => {
         Message.error('Please select a team');
         return;
       }
+      const agentName = (values.agentName as string)?.trim() || hireAgent.name;
       const agentType = values.provider || hireAgent.agentType || 'claude';
+      console.log('[AgentGallery-UI] Hiring agent:', agentName, 'type:', agentType, 'team:', targetTeamId);
       await teamBridge.addAgent.invoke({
         teamId: targetTeamId,
         agent: {
           conversationId: '',
           role: 'teammate',
           agentType,
-          agentName: hireAgent.name,
+          agentName,
           status: 'pending',
           conversationType: agentType === 'gemini' ? 'gemini' : 'acp',
         },
       });
-      Message.success(`${hireAgent.name} hired!`);
+      Message.success(`${agentName} hired!`);
       setHireAgent(null);
       hireForm.resetFields();
     } catch (err) {
@@ -558,6 +570,32 @@ const AgentGallery: React.FC = () => {
         unmountOnExit
       >
         <Form form={hireForm} layout='vertical'>
+          <FormItem
+            label='Agent Name'
+            field='agentName'
+            rules={[
+              { required: true, message: 'Agent name is required' },
+              {
+                validator: async (_value: unknown, callback: (error?: string) => void) => {
+                  const name = (_value as string)?.trim();
+                  if (!name) return;
+                  try {
+                    const { available } = await agentGallery.checkName.invoke({
+                      userId: 'system_default_user',
+                      name,
+                    });
+                    if (!available) {
+                      callback('This name is already taken. Please choose a unique name.');
+                    }
+                  } catch {
+                    // If check fails, allow submission (backend will catch it)
+                  }
+                },
+              },
+            ]}
+          >
+            <Input placeholder='Enter a unique agent name' />
+          </FormItem>
           <FormItem label='Team' field='teamId' rules={[{ required: true, message: 'Select a team' }]}>
             <Select placeholder='Select team...'>
               {teams.map((team) => (

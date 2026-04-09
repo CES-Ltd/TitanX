@@ -1981,6 +1981,42 @@ const migration_v48: IMigration = {
   },
 };
 
+// ── Phase 6: Enforce unique agent names per user ──────────────────────────────
+
+const migration_v49: IMigration = {
+  version: 49,
+  name: 'Unique agent names per user in agent_gallery',
+  up(db: ISqliteDriver) {
+    // De-duplicate any existing rows: append _N suffix to duplicates
+    const dupes = db
+      .prepare(
+        `SELECT user_id, name, COUNT(*) as cnt FROM agent_gallery GROUP BY user_id, name HAVING cnt > 1`
+      )
+      .all() as Array<{ user_id: string; name: string; cnt: number }>;
+
+    for (const dupe of dupes) {
+      const rows = db
+        .prepare(`SELECT id FROM agent_gallery WHERE user_id = ? AND name = ? ORDER BY created_at ASC`)
+        .all(dupe.user_id, dupe.name) as Array<{ id: string }>;
+      // Keep the first, rename the rest
+      for (let i = 1; i < rows.length; i++) {
+        const suffix = `_${String(i)}`;
+        db.prepare(`UPDATE agent_gallery SET name = ? WHERE id = ?`).run(
+          `${dupe.name}${suffix}`,
+          rows[i]!.id
+        );
+      }
+    }
+
+    console.log('[Migration-v49] De-duplicated agent names, creating unique index...');
+
+    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_gallery_user_name ON agent_gallery(user_id, name)`);
+  },
+  down(db: ISqliteDriver) {
+    db.exec(`DROP INDEX IF EXISTS idx_agent_gallery_user_name`);
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -1992,7 +2028,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v30, migration_v31, migration_v32, migration_v33, migration_v34,
   migration_v35, migration_v36, migration_v37, migration_v38, migration_v39,
   migration_v40, migration_v41, migration_v42, migration_v43, migration_v44,
-  migration_v45, migration_v46, migration_v47, migration_v48,
+  migration_v45, migration_v46, migration_v47, migration_v48, migration_v49,
 ];
 
 /**

@@ -10,6 +10,7 @@ import * as budgetService from '@process/services/budgets';
 
 export function initCostTrackingBridge(): void {
   ipcBridge.costTracking.record.provider(async (input) => {
+    console.log(`[CostBridge] record: provider=${input.provider} model=${input.model} input=${String(input.inputTokens)} output=${String(input.outputTokens)}`);
     const db = await getDatabase();
     const driver = db.getDriver();
     costTrackingService.recordCost(driver, input);
@@ -23,7 +24,9 @@ export function initCostTrackingBridge(): void {
 
   ipcBridge.costTracking.summary.provider(async ({ userId, fromDate }) => {
     const db = await getDatabase();
-    return costTrackingService.getCostSummary(db.getDriver(), userId, fromDate);
+    const result = costTrackingService.getCostSummary(db.getDriver(), userId, fromDate);
+    console.log(`[CostBridge] summary: events=${String(result.eventCount)} input=${String(result.totalInputTokens)} output=${String(result.totalOutputTokens)} cost=${String(result.totalCostCents)}c`);
+    return result;
   });
 
   ipcBridge.costTracking.byAgent.provider(async ({ userId, fromDate }) => {

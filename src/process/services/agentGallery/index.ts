@@ -49,7 +49,24 @@ type CreateGalleryAgentInput = {
   allowedTools?: string[];
 };
 
+/**
+ * Check if an agent name is available for a given user.
+ */
+export function isNameAvailable(db: ISqliteDriver, userId: string, name: string): boolean {
+  const row = db.prepare(`SELECT id FROM agent_gallery WHERE user_id = ? AND name = ?`).get(userId, name);
+  const available = !row;
+  console.log(`[AgentGallery] isNameAvailable: name="${name}" userId="${userId}" → ${String(available)}`);
+  return available;
+}
+
 export function createAgent(db: ISqliteDriver, input: CreateGalleryAgentInput): GalleryAgent {
+  // Enforce unique name per user
+  if (!isNameAvailable(db, input.userId, input.name)) {
+    console.log(`[AgentGallery] createAgent REJECTED: duplicate name="${input.name}" for userId="${input.userId}"`);
+    throw new Error(`An agent named "${input.name}" already exists. Please choose a different name.`);
+  }
+  console.log(`[AgentGallery] createAgent: name="${input.name}" type="${input.agentType}"`);
+
   const id = crypto.randomUUID();
   const now = Date.now();
 

@@ -1194,7 +1194,12 @@ export class AcpAgent {
    * Follows the same pattern as Gemini CLI's usageMetadata extraction.
    */
   private handlePromptUsage(usage: AcpPromptResponseUsage): void {
-    // Skip if usage_update notifications are already providing context usage data
+    // Always record cost — regardless of usage_update status
+    this.recordCostEvent(usage).catch((err) => {
+      console.error('[ACP-Cost] Failed to record cost event:', err);
+    });
+
+    // Skip UI event if usage_update notifications are already providing context usage data
     if (this.hasReceivedUsageUpdate) {
       return;
     }
@@ -1210,6 +1215,71 @@ export class AcpAgent {
         size: 0,
       },
     });
+  }
+
+  /**
+   * Record token usage to cost_events table and audit log.
+   * Uses dynamic imports to avoid circular dependencies.
+   */
+  private async recordCostEvent(usage: AcpPromptResponseUsage): Promise<void> {
+    try {
+      const backend = this.extra.backend as string;
+      const inputTokens = usage.inputTokens ?? 0;
+      const outputTokens = usage.outputTokens ?? 0;
+      const cachedTokens = usage.cachedReadTokens ?? 0;
+
+      console.log(
+        `[ACP-Cost] Recording: backend=${backend} conversation=${this.id} input=${String(inputTokens)} output=${String(outputTokens)} cached=${String(cachedTokens)} total=${String(usage.totalTokens)}`
+      );
+
+      const { getDatabase } = await import('@process/services/database');
+      const costTracking = await import('@process/services/costTracking');
+      const db = await getDatabase();
+      const driver = db.getDriver();
+
+      // Map ACP backend names to provider labels
+      const providerMap: Record<string, string> = {
+        claude: 'anthropic',
+        codex: 'anthropic',
+        opencode: 'anthropic',
+        gemini: 'google',
+        hermes: 'openai',
+      };
+
+      costTracking.recordCost(driver, {
+        userId: 'system_default_user',
+        conversationId: this.id,
+        agentType: backend,
+        provider: providerMap[backend] ?? backend,
+        model: backend,
+        inputTokens,
+        outputTokens,
+        cachedInputTokens: cachedTokens,
+        costCents: 0,
+        billingType: 'metered_api',
+        occurredAt: Date.now(),
+      });
+
+      // Also log to audit trail
+      try {
+        const activityLog = await import('@process/services/activityLog');
+        activityLog.logActivity(driver, {
+          userId: 'system_default_user',
+          actorType: 'agent',
+          actorId: backend,
+          action: 'agent.token_usage',
+          entityType: 'conversation',
+          entityId: this.id,
+          details: { inputTokens, outputTokens, cachedTokens, totalTokens: usage.totalTokens, backend },
+        });
+      } catch {
+        // Audit log failure is non-critical
+      }
+
+      console.log(`[ACP-Cost] Recorded successfully for ${backend}`);
+    } catch (err) {
+      console.error('[ACP-Cost] Error recording cost event:', err);
+    }
   }
 
   /**

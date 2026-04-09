@@ -32,4 +32,10 @@ export function initAgentGalleryBridge(): void {
     const db = await getDatabase();
     return galleryService.deleteAgent(db.getDriver(), agentId);
   });
+
+  ipcBridge.agentGallery.checkName.provider(async ({ userId, name }) => {
+    const db = await getDatabase();
+    const available = galleryService.isNameAvailable(db.getDriver(), userId, name);
+    return { available };
+  });
 }
