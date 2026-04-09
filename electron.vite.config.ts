@@ -174,7 +174,7 @@ export default defineConfig(({ mode }) => {
       ],
       build: {
         target: 'es2022',
-        sourcemap: enableSentrySourceMaps ? 'hidden' : isDevelopment,
+        sourcemap: enableSentrySourceMaps ? 'hidden' : false,
         minify: !isDevelopment,
         reportCompressedSize: false,
         chunkSizeWarningLimit: 1500,
@@ -194,8 +194,14 @@ export default defineConfig(({ mode }) => {
           output: {
             manualChunks(id: string) {
               if (!id.includes('node_modules')) return undefined;
+
+              // Core React — always loaded
               if (id.includes('/react-dom/') || id.includes('/react/')) return 'vendor-react';
+
+              // Arco Design UI library
               if (id.includes('/@arco-design/')) return 'vendor-arco';
+
+              // Markdown pipeline (remark/rehype/unified)
               if (
                 id.includes('/react-markdown/') ||
                 id.includes('/remark-') ||
@@ -206,22 +212,36 @@ export default defineConfig(({ mode }) => {
                 id.includes('/micromark')
               )
                 return 'vendor-markdown';
-              if (
-                id.includes('/react-syntax-highlighter/') ||
-                id.includes('/refractor/') ||
-                id.includes('/highlight.js/')
-              )
+
+              // Syntax highlighting — split core from language definitions
+              if (id.includes('/react-syntax-highlighter/')) return 'vendor-highlight';
+              if (id.includes('/refractor/') || id.includes('/highlight.js/')) {
+                // Individual language files go to a separate chunk (lazy-loaded on demand)
+                if (id.includes('/languages/')) return 'vendor-highlight-langs';
                 return 'vendor-highlight';
-              if (
-                id.includes('/monaco-editor/') ||
-                id.includes('/@monaco-editor/') ||
-                id.includes('/codemirror/') ||
-                id.includes('/@codemirror/')
-              )
-                return 'vendor-editor';
+              }
+
+              // Code editors — split Monaco and CodeMirror into separate lazy chunks
+              if (id.includes('/monaco-editor/') || id.includes('/@monaco-editor/'))
+                return 'vendor-monaco';
+              if (id.includes('/codemirror/') || id.includes('/@codemirror/'))
+                return 'vendor-codemirror';
+
+              // Visualization libraries — separate chunks for lazy loading
+              if (id.includes('/mermaid/')) return 'vendor-mermaid';
+              if (id.includes('/cytoscape')) return 'vendor-cytoscape';
+              if (id.includes('/chart.js/') || id.includes('/chartjs-')) return 'vendor-chartjs';
+              if (id.includes('/d3-') || id.includes('/d3/')) return 'vendor-d3';
+
+              // Other libraries
               if (id.includes('/katex/')) return 'vendor-katex';
               if (id.includes('/@icon-park/')) return 'vendor-icons';
               if (id.includes('/diff2html/')) return 'vendor-diff';
+
+              // LangChain (only in main process, but guard in case)
+              if (id.includes('/@langchain/') || id.includes('/langchain/'))
+                return 'vendor-langchain';
+
               return undefined;
             },
           },
