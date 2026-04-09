@@ -6,36 +6,16 @@
 
 import React, { useMemo } from 'react';
 import { useThemeContext } from '@renderer/hooks/context/ThemeContext';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  ArcElement,
-  RadialLinearScale,
-  Filler,
-  Tooltip,
-  Legend,
-  Title,
-} from 'chart.js';
+// Import chart.js/auto to auto-register ALL controllers, elements, scales, and plugins.
+// Without this, Chart.js v4 throws "X is not a registered controller" at runtime.
+import 'chart.js/auto';
+import { Chart as ChartJS } from 'chart.js';
 import { Chart } from 'react-chartjs-2';
 import type { ChartData, ChartOptions, ChartType } from 'chart.js';
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  ArcElement,
-  RadialLinearScale,
-  Filler,
-  Tooltip,
-  Legend,
-  Title
-);
+// Ensure Filler plugin is registered for area charts
+import { Filler } from 'chart.js';
+ChartJS.register(Filler);
 
 const PALETTE_DARK = ['#3C7EFF', '#14C9C9', '#F7BA1E', '#9FDB1D', '#F77234', '#E865DF', '#722ED1', '#EB2F96'];
 
