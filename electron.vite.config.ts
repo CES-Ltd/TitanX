@@ -230,7 +230,8 @@ export default defineConfig(({ mode }) => {
               // Visualization libraries — separate chunks for lazy loading
               if (id.includes('/mermaid/')) return 'vendor-mermaid';
               if (id.includes('/cytoscape')) return 'vendor-cytoscape';
-              if (id.includes('/chart.js/') || id.includes('/chartjs-')) return 'vendor-chartjs';
+              // chart.js must NOT be split — ChartJS.register() must run in the same chunk scope
+              // as react-chartjs-2 to avoid "not a registered controller" errors
               if (id.includes('/d3-') || id.includes('/d3/')) return 'vendor-d3';
 
               // Other libraries
