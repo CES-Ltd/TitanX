@@ -736,7 +736,13 @@ const PreviewPanel: React.FC = () => {
         )}
 
         {/* 预览内容 / Preview content */}
-        <Suspense fallback={<div className='flex-1 flex items-center justify-center'><Spin /></div>}>
+        <Suspense
+          fallback={
+            <div className='flex-1 flex items-center justify-center'>
+              <Spin />
+            </div>
+          }
+        >
           {renderContent()}
         </Suspense>
 

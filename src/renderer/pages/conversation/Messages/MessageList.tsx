@@ -34,6 +34,8 @@ import MessageCronTrigger from './components/MessageCronTrigger';
 import MessageSkillSuggest from './components/MessageSkillSuggest';
 import MessageText from './components/MessagetText';
 import MessageThinking from './components/MessageThinking';
+import { MessageStep, MessageActivity } from './agui';
+import { MessageInterrupt, MessageTaskProgress } from './agui';
 import type { WriteFileResult } from './types';
 import { useAutoScroll } from './useAutoScroll';
 import { useAutoPreviewOfficeFiles } from '@/renderer/hooks/file/useAutoPreviewOfficeFiles';
@@ -139,6 +141,14 @@ const MessageItem: React.FC<{ message: TMessage; highlighted?: boolean }> = Reac
         return <MessageSkillSuggest message={message} />;
       case 'cron_trigger':
         return <MessageCronTrigger message={message} />;
+      case 'agui_step':
+        return <MessageStep message={message} />;
+      case 'agui_activity':
+        return <MessageActivity message={message} />;
+      case 'agui_interrupt':
+        return <MessageInterrupt message={message} />;
+      case 'agui_task_progress':
+        return <MessageTaskProgress message={message} />;
       case 'available_commands':
         return null;
       default:

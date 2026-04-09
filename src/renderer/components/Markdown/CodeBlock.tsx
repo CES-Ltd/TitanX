@@ -13,6 +13,7 @@ import { Copy, Down, Up } from '@icon-park/react';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import MermaidBlock from './MermaidBlock';
+import VisualCodeBlock from './VisualCodeBlock';
 import { formatCode, getDiffLineStyle } from './markdownUtils';
 
 // Lazy KaTeX renderer — loads katex (~253KB) only when a math block is encountered
@@ -36,7 +37,12 @@ function LazyKaTeX({ source }: { source: string }) {
       cancelled = true;
     };
   }, [source]);
-  if (html === null) return <pre><code>{source}</code></pre>;
+  if (html === null)
+    return (
+      <pre>
+        <code>{source}</code>
+      </pre>
+    );
   return <div className='katex-display' dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
@@ -119,6 +125,29 @@ function CodeBlock(props: CodeBlockProps) {
 
   if (language === 'mermaid') {
     return <MermaidBlock code={formatCode(children)} style={props.codeStyle} />;
+  }
+
+  // Interactive BI visual blocks — render as charts, tables, KPIs, pivots, and AG-UI visuals
+  if (
+    [
+      'echarts',
+      'chart',
+      'kpi',
+      'table',
+      'pivot',
+      'visual',
+      'plan',
+      'metric',
+      'timeline',
+      'gauge',
+      'comparison',
+      'citation',
+      'task-progress',
+      'hitl',
+      'subgraph',
+    ].includes(language)
+  ) {
+    return <VisualCodeBlock language={language} code={formatCode(children)} style={props.codeStyle} />;
   }
 
   if (!String(children).includes('\n')) {

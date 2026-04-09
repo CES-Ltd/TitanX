@@ -174,7 +174,6 @@ const Layout: React.FC<{
   }, [loadAndHealCustomCss]);
 
   useEffect(() => {
-
     const handleCssUpdate = (event: CustomEvent) => {
       if (event.detail?.customCss !== undefined) {
         const css = event.detail.customCss || '';

@@ -1879,3 +1879,18 @@ export const traceSystem = {
   ),
   listFeedback: bridge.buildProvider<unknown[], { runId: string }>('tracing.list-feedback'),
 };
+
+// ── Deep Agent ───────────────────────────────────────────────────────────────
+
+export const deepAgent = {
+  startSession: bridge.buildProvider<
+    unknown,
+    { sessionId: string; question: string; mcpServers: string[]; connectors: string[] }
+  >('deepAgent.start-session'),
+  sendMessage: bridge.buildProvider<
+    unknown,
+    { sessionId: string; content: string; mcpServers: string[]; connectors: string[] }
+  >('deepAgent.send-message'),
+  getSession: bridge.buildProvider<unknown | null, { sessionId: string }>('deepAgent.get-session'),
+  stopSession: bridge.buildProvider<void, { sessionId: string }>('deepAgent.stop-session'),
+};

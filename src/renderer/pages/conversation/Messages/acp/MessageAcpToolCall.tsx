@@ -12,6 +12,7 @@ import { Card, Tag } from '@arco-design/web-react';
 import { createTwoFilesPatch } from 'diff';
 import React, { useMemo } from 'react';
 import MarkdownView from '@renderer/components/Markdown';
+import { hasToolCard, ToolCardRenderer } from '@renderer/components/agent/toolCards';
 
 const StatusTag: React.FC<{ status: string }> = ({ status }) => {
   const getTagProps = () => {
@@ -85,8 +86,38 @@ const MessageAcpToolCall: React.FC<{ message: IMessageAcpToolCall }> = ({ messag
   const { update } = content;
   const { toolCallId, kind, title, status, rawInput, content: diffContent } = update;
 
-  const getKindDisplayName = (kind: string) => {
-    switch (kind) {
+  // Derive tool name for custom card matching
+  const toolName = title || kind || '';
+
+  // Check if a rich tool card renderer exists for this tool
+  if (hasToolCard(toolName)) {
+    // Parse result from diffContent text items
+    let result: Record<string, unknown> = {};
+    if (diffContent && diffContent.length > 0) {
+      for (const item of diffContent) {
+        if (item.type === 'content' && item.content?.type === 'text' && item.content.text) {
+          try {
+            result = JSON.parse(item.content.text) as Record<string, unknown>;
+          } catch {
+            result = { text: item.content.text };
+          }
+          break;
+        }
+      }
+    }
+
+    return (
+      <ToolCardRenderer
+        toolName={toolName}
+        args={(rawInput as Record<string, unknown>) ?? {}}
+        result={result}
+        status={status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : 'running'}
+      />
+    );
+  }
+
+  const getKindDisplayName = (k: string) => {
+    switch (k) {
       case 'edit':
         return 'File Edit';
       case 'read':
@@ -94,7 +125,7 @@ const MessageAcpToolCall: React.FC<{ message: IMessageAcpToolCall }> = ({ messag
       case 'execute':
         return 'Shell Command';
       default:
-        return kind;
+        return k;
     }
   };
 
@@ -117,8 +148,8 @@ const MessageAcpToolCall: React.FC<{ message: IMessageAcpToolCall }> = ({ messag
           )}
           {diffContent && diffContent.length > 0 && (
             <div>
-              {diffContent.map((content, index) => (
-                <ContentView key={index} content={content} />
+              {diffContent.map((c, index) => (
+                <ContentView key={index} content={c} />
               ))}
             </div>
           )}

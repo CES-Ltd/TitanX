@@ -79,7 +79,11 @@ type TMessageType =
   | 'thinking'
   | 'available_commands'
   | 'skill_suggest'
-  | 'cron_trigger';
+  | 'cron_trigger'
+  | 'agui_step'
+  | 'agui_activity'
+  | 'agui_interrupt'
+  | 'agui_task_progress';
 
 interface IMessage<T extends TMessageType, Content extends Record<string, any>> {
   /**
@@ -352,6 +356,42 @@ export type IMessageCronTrigger = IMessage<
   }
 >;
 
+export type IMessageAgUiStep = IMessage<
+  'agui_step',
+  {
+    stepName: string;
+    status: 'started' | 'finished';
+    startedAt?: number;
+    finishedAt?: number;
+  }
+>;
+
+export type IMessageAgUiActivity = IMessage<
+  'agui_activity',
+  {
+    activityType: string;
+    content: string;
+  }
+>;
+
+export type IMessageAgUiInterrupt = IMessage<
+  'agui_interrupt',
+  {
+    interruptId: string;
+    message: string;
+    steps: Array<{ description: string; status: 'enabled' | 'disabled' | 'executing' }>;
+    interruptStatus: 'pending' | 'accepted' | 'rejected';
+  }
+>;
+
+export type IMessageAgUiTaskProgress = IMessage<
+  'agui_task_progress',
+  {
+    title?: string;
+    steps: Array<{ description: string; status: 'pending' | 'completed' | 'executing' }>;
+  }
+>;
+
 // eslint-disable-next-line max-len
 export type TMessage =
   | IMessageText
@@ -367,7 +407,11 @@ export type TMessage =
   | IMessageThinking
   | IMessageAvailableCommands
   | IMessageSkillSuggest
-  | IMessageCronTrigger;
+  | IMessageCronTrigger
+  | IMessageAgUiStep
+  | IMessageAgUiActivity
+  | IMessageAgUiInterrupt
+  | IMessageAgUiTaskProgress;
 
 // 统一所有需要用户交互的用户类型
 export interface IConfirmation<Option extends any = any> {
@@ -559,6 +603,66 @@ export const transformMessage = (message: IResponseMessage): TMessage => {
         content: triggerData,
       };
     }
+    case 'agui_step': {
+      const stepData = message.data as {
+        stepName: string;
+        status: 'started' | 'finished';
+        startedAt?: number;
+        finishedAt?: number;
+      };
+      return {
+        id: uuid(),
+        type: 'agui_step',
+        msg_id: message.msg_id,
+        conversation_id: message.conversation_id,
+        position: 'left',
+        content: stepData,
+      };
+    }
+    case 'agui_activity': {
+      const activityData = message.data as {
+        activityType: string;
+        content: string;
+      };
+      return {
+        id: uuid(),
+        type: 'agui_activity',
+        msg_id: message.msg_id,
+        conversation_id: message.conversation_id,
+        position: 'center',
+        content: activityData,
+      };
+    }
+    case 'agui_interrupt': {
+      const interruptData = message.data as {
+        interruptId: string;
+        message: string;
+        steps: Array<{ description: string; status: 'enabled' | 'disabled' | 'executing' }>;
+        interruptStatus: 'pending' | 'accepted' | 'rejected';
+      };
+      return {
+        id: uuid(),
+        type: 'agui_interrupt',
+        msg_id: message.msg_id,
+        conversation_id: message.conversation_id,
+        position: 'left',
+        content: interruptData,
+      };
+    }
+    case 'agui_task_progress': {
+      const progressData = message.data as {
+        title?: string;
+        steps: Array<{ description: string; status: 'pending' | 'completed' | 'executing' }>;
+      };
+      return {
+        id: uuid(),
+        type: 'agui_task_progress',
+        msg_id: message.msg_id,
+        conversation_id: message.conversation_id,
+        position: 'left',
+        content: progressData,
+      };
+    }
     case 'start':
     case 'finish':
     case 'thought':
@@ -568,6 +672,7 @@ export const transformMessage = (message: IResponseMessage): TMessage => {
     case 'codex_model_info': // Codex model info updates, handled by AcpModelSelector
     case 'acp_context_usage': // Context usage updates, handled by AcpSendBox
     case 'request_trace': // Request trace events, logged to F12 console (not persisted)
+    case 'agui_state': // AG-UI state sync, handled by useAgUiState hook (not a message)
       break;
     default: {
       console.warn(
@@ -687,6 +792,18 @@ export const composeMessage = (
       }
     }
     // If no existing tool call found, add new one
+    return pushMessage(message);
+  }
+
+  // Handle agui_step message merging — merge "finished" into existing "started" by stepName
+  if (message.type === 'agui_step') {
+    for (let i = 0, len = list.length; i < len; i++) {
+      const msg = list[i];
+      if (msg.type === 'agui_step' && msg.content.stepName === message.content.stepName) {
+        const merged = { ...msg.content, ...message.content };
+        return updateMessage(i, { ...msg, content: merged });
+      }
+    }
     return pushMessage(message);
   }
 

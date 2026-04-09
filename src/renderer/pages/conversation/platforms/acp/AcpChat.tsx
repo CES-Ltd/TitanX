@@ -13,6 +13,7 @@ import HOC from '@renderer/utils/ui/HOC';
 import React from 'react';
 import ConversationChatConfirm from '../../components/ConversationChatConfirm';
 import AcpSendBox from './AcpSendBox';
+import { useAcpMessage } from './useAcpMessage';
 
 const AcpChat: React.FC<{
   conversation_id: string;
@@ -39,14 +40,19 @@ const AcpChat: React.FC<{
 }) => {
   useMessageLstCache(conversation_id);
 
+  // When the send box is hidden (e.g. Deep Agent), we still need the IPC stream subscription
+  // that normally lives inside AcpSendBox via useAcpMessage. When hideSendBox is false,
+  // the subscription is a harmless duplicate since addOrUpdateMessage is idempotent by msg_id.
+  useAcpMessage(conversation_id);
+
   return (
     <ConversationProvider value={{ conversationId: conversation_id, workspace, type: 'acp', cronJobId, hideSendBox }}>
       <div className='flex-1 flex flex-col px-20px min-h-0'>
         <FlexFullContainer>
           <MessageList className='flex-1'></MessageList>
         </FlexFullContainer>
-        {!hideSendBox && (
-          <ConversationChatConfirm conversation_id={conversation_id}>
+        <ConversationChatConfirm conversation_id={conversation_id}>
+          {!hideSendBox && (
             <AcpSendBox
               conversation_id={conversation_id}
               backend={backend}
@@ -56,8 +62,8 @@ const AcpChat: React.FC<{
               teamId={teamId}
               agentSlotId={agentSlotId}
             ></AcpSendBox>
-          </ConversationChatConfirm>
-        )}
+          )}
+        </ConversationChatConfirm>
       </div>
     </ConversationProvider>
   );

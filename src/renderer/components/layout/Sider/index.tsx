@@ -8,7 +8,8 @@ import { blurActiveElement } from '@renderer/utils/ui/focus';
 import { useThemeContext } from '@renderer/hooks/context/ThemeContext';
 import { useAllCronJobs } from '@renderer/pages/cron/useCronJobs';
 import { useTeamList } from '@renderer/pages/team/hooks/useTeamList';
-import { Peoples, Plus } from '@icon-park/react';
+import { Brain, Peoples, Plus } from '@icon-park/react';
+import { Tag } from '@arco-design/web-react';
 import { Tooltip } from '@arco-design/web-react';
 import TeamCreateModal from '@renderer/pages/team/components/TeamCreateModal';
 import { ipcBridge } from '@/common';
@@ -128,6 +129,19 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
     }
   };
 
+  const handleDeepAgentClick = () => {
+    cleanupSiderTooltips();
+    blurActiveElement();
+    closePreview();
+    setIsBatchMode(false);
+    Promise.resolve(navigate('/deep-agent')).catch((error) => {
+      console.error('Navigation failed:', error);
+    });
+    if (onSessionClick) {
+      onSessionClick();
+    }
+  };
+
   const handleQuickThemeToggle = () => {
     void setTheme(theme === 'dark' ? 'light' : 'dark');
   };
@@ -201,6 +215,55 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
               siderTooltipProps={siderTooltipProps}
               onClick={handleObservabilityClick}
             />
+            {/* Deep Agent entry */}
+            {collapsed ? (
+              <Tooltip {...siderTooltipProps} content='Deep Agent' position='right'>
+                <div
+                  className={classNames(
+                    'w-full py-6px flex items-center justify-center cursor-pointer transition-colors rd-8px',
+                    pathname === '/deep-agent'
+                      ? 'bg-[rgba(var(--primary-6),0.12)] text-primary'
+                      : 'hover:bg-fill-3 active:bg-fill-4'
+                  )}
+                  onClick={handleDeepAgentClick}
+                >
+                  <Brain
+                    theme='outline'
+                    size='20'
+                    fill={pathname === '/deep-agent' ? 'rgb(var(--primary-6))' : 'currentColor'}
+                    className='block leading-none shrink-0'
+                    style={{ lineHeight: 0 }}
+                  />
+                </div>
+              </Tooltip>
+            ) : (
+              <Tooltip {...siderTooltipProps} content='Deep Agent' position='right'>
+                <div
+                  className={classNames(
+                    'h-36px w-full flex items-center justify-start gap-8px px-10px rd-0.5rem cursor-pointer shrink-0 transition-all text-t-primary',
+                    isMobile && 'sider-action-btn-mobile',
+                    pathname === '/deep-agent'
+                      ? 'bg-[rgba(var(--primary-6),0.12)] text-primary'
+                      : 'hover:bg-fill-3 active:bg-fill-4'
+                  )}
+                  onClick={handleDeepAgentClick}
+                >
+                  <span className='w-28px h-28px flex items-center justify-center shrink-0'>
+                    <Brain
+                      theme='outline'
+                      size='18'
+                      fill={pathname === '/deep-agent' ? 'rgb(var(--primary-6))' : 'currentColor'}
+                      className='block leading-none'
+                      style={{ lineHeight: 0 }}
+                    />
+                  </span>
+                  <span className='collapsed-hidden text-t-primary text-14px font-medium leading-22px'>Deep Agent</span>
+                  <Tag size='small' color='arcoblue' className='ml-auto'>
+                    BETA
+                  </Tag>
+                </div>
+              </Tooltip>
+            )}
             {/* Divider between fixed top nav and scrollable content area */}
             <div
               className={classNames(

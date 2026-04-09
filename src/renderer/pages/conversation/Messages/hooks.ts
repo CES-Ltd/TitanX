@@ -22,6 +22,7 @@ interface MessageIndex {
   msgIdIndex: Map<string, number>; // msg_id -> index
   callIdIndex: Map<string, number>; // tool_call.callId -> index
   toolCallIdIndex: Map<string, number>; // codex_tool_call.toolCallId / acp_tool_call.toolCallId -> index
+  stepNameIndex: Map<string, number>; // agui_step.stepName -> index (merge started/finished)
 }
 
 // 使用 WeakMap 缓存索引，当列表被 GC 时自动清理
@@ -34,6 +35,7 @@ function buildMessageIndex(list: TMessage[]): MessageIndex {
   const msgIdIndex = new Map<string, number>();
   const callIdIndex = new Map<string, number>();
   const toolCallIdIndex = new Map<string, number>();
+  const stepNameIndex = new Map<string, number>();
 
   for (let i = 0; i < list.length; i++) {
     const msg = list[i];
@@ -47,9 +49,12 @@ function buildMessageIndex(list: TMessage[]): MessageIndex {
     if (msg.type === 'acp_tool_call' && msg.content?.update?.toolCallId) {
       toolCallIdIndex.set(msg.content.update.toolCallId, i);
     }
+    if (msg.type === 'agui_step' && msg.content?.stepName) {
+      stepNameIndex.set(msg.content.stepName, i);
+    }
   }
 
-  return { msgIdIndex, callIdIndex, toolCallIdIndex };
+  return { msgIdIndex, callIdIndex, toolCallIdIndex, stepNameIndex };
 }
 
 // 获取或构建索引（带缓存）
@@ -147,6 +152,67 @@ function composeMessageWithIndex(message: TMessage, list: TMessage[], index: Mes
     // 未找到，添加新消息并更新索引
     const newIdx = list.length;
     index.toolCallIdIndex.set(message.content.update.toolCallId, newIdx);
+    if (message.msg_id) index.msgIdIndex.set(message.msg_id, newIdx);
+    return list.concat(message);
+  }
+
+  // agui_step: merge "finished" into existing "started" message by stepName
+  if (message.type === 'agui_step' && message.content?.stepName) {
+    const existingIdx = index.stepNameIndex.get(message.content.stepName);
+    if (existingIdx !== undefined && existingIdx < list.length) {
+      const existingMsg = list[existingIdx];
+      if (existingMsg.type === 'agui_step') {
+        const newList = list.slice();
+        newList[existingIdx] = {
+          ...existingMsg,
+          content: { ...existingMsg.content, ...message.content },
+        };
+        return newList;
+      }
+    }
+    // Not found — add new step message and update index
+    const newIdx = list.length;
+    index.stepNameIndex.set(message.content.stepName, newIdx);
+    if (message.msg_id) index.msgIdIndex.set(message.msg_id, newIdx);
+    return list.concat(message);
+  }
+
+  // agui_task_progress: update in place (replace last progress message)
+  if (message.type === 'agui_task_progress' && message.msg_id) {
+    const existingIdx = index.msgIdIndex.get(message.msg_id);
+    if (existingIdx !== undefined && existingIdx < list.length) {
+      const newList = list.slice();
+      newList[existingIdx] = message as TMessage;
+      return newList;
+    }
+    // Also check if there's any prior task_progress to replace
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (list[i].type === 'agui_task_progress') {
+        const newList = list.slice();
+        newList[i] = message as TMessage;
+        if (message.msg_id) index.msgIdIndex.set(message.msg_id, i);
+        return newList;
+      }
+    }
+    const newIdx = list.length;
+    if (message.msg_id) index.msgIdIndex.set(message.msg_id, newIdx);
+    return list.concat(message);
+  }
+
+  // agui_interrupt: update in place by interruptId
+  if (message.type === 'agui_interrupt' && message.content?.interruptId) {
+    for (let i = list.length - 1; i >= 0; i--) {
+      const msg = list[i];
+      if (
+        msg.type === 'agui_interrupt' &&
+        (msg.content as { interruptId: string }).interruptId === message.content.interruptId
+      ) {
+        const newList = list.slice();
+        newList[i] = message as TMessage;
+        return newList;
+      }
+    }
+    const newIdx = list.length;
     if (message.msg_id) index.msgIdIndex.set(message.msg_id, newIdx);
     return list.concat(message);
   }

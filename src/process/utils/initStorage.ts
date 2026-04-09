@@ -507,9 +507,7 @@ const initBuiltinAssistantRules = async (): Promise<void> => {
       try {
         const files = await fs.readdir(assistantsDir);
         await Promise.all(
-          files
-            .filter((file) => rulesFilePattern.test(file))
-            .map((file) => fs.unlink(path.join(assistantsDir, file)))
+          files.filter((file) => rulesFilePattern.test(file)).map((file) => fs.unlink(path.join(assistantsDir, file)))
         );
       } catch (_error) {
         // 忽略删除失败 / Ignore deletion failure
@@ -553,9 +551,7 @@ const initBuiltinAssistantRules = async (): Promise<void> => {
       try {
         const files = await fs.readdir(assistantsDir);
         await Promise.all(
-          files
-            .filter((file) => skillsFilePattern.test(file))
-            .map((file) => fs.unlink(path.join(assistantsDir, file)))
+          files.filter((file) => skillsFilePattern.test(file)).map((file) => fs.unlink(path.join(assistantsDir, file)))
         );
       } catch (_error) {
         // 忽略删除失败 / Ignore deletion failure

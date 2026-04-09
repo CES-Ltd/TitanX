@@ -240,6 +240,18 @@ export const useAcpMessage = (conversation_id: string): UseAcpMessageReturn => {
         case 'acp_model_info':
           // Model info updates are handled by AcpModelSelector, no action needed here
           break;
+        case 'agui_state':
+          // AG-UI state sync — handled by useAgUiState hook, not a chat message
+          break;
+        case 'agui_interrupt':
+        case 'agui_task_progress':
+          // AG-UI interactive messages — render inline in chat
+          if (!runningRef.current && !turnFinishedRef.current) {
+            setRunning(true);
+            runningRef.current = true;
+          }
+          addOrUpdateMessage(transformedMessage);
+          break;
         case 'slash_commands_updated':
           // Slash commands became available (often during bootstrap when
           // agent_status events are suppressed). Update acpStatus so

@@ -67,6 +67,7 @@ import { initWorkflowEngineBridge } from './workflowEngineBridge';
 import { initAgentMemoryBridge } from './agentMemoryBridge';
 import { initAgentPlansBridge } from './agentPlansBridge';
 import { initTracingBridge } from './tracingBridge';
+import { initDeepAgentBridge } from './deepAgentBridge';
 import type { TeamSessionService } from '@process/team/TeamSessionService';
 
 export interface BridgeDependencies {
@@ -142,6 +143,7 @@ export function initAllBridges(deps: BridgeDependencies): void {
   initAgentMemoryBridge();
   initAgentPlansBridge();
   initTracingBridge();
+  initDeepAgentBridge(deps.conversationService, deps.workerTaskManager);
 }
 
 /**
