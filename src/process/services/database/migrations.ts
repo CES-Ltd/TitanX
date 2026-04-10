@@ -2012,6 +2012,22 @@ const migration_v49: IMigration = {
   },
 };
 
+// ── Phase 6b: Add category column to agent_gallery ────────────────────────────
+
+const migration_v50: IMigration = {
+  version: 50,
+  name: 'Add category column to agent_gallery for segmented display',
+  up(db: ISqliteDriver) {
+    db.exec(`ALTER TABLE agent_gallery ADD COLUMN category TEXT DEFAULT 'technical'`);
+    console.log('[Migration-v50] Added category column to agent_gallery');
+  },
+  down(db: ISqliteDriver) {
+    // SQLite doesn't support DROP COLUMN before 3.35.0, so we just ignore
+    console.log('[Migration-v50] Down: category column cannot be removed in SQLite < 3.35');
+    void db;
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -2023,7 +2039,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v30, migration_v31, migration_v32, migration_v33, migration_v34,
   migration_v35, migration_v36, migration_v37, migration_v38, migration_v39,
   migration_v40, migration_v41, migration_v42, migration_v43, migration_v44,
-  migration_v45, migration_v46, migration_v47, migration_v48, migration_v49,
+  migration_v45, migration_v46, migration_v47, migration_v48, migration_v49, migration_v50,
 ];
 
 /**

@@ -18,6 +18,7 @@ export type GalleryAgent = {
   userId: string;
   name: string;
   agentType: string;
+  category: string;
   description?: string;
   avatarSpriteIdx: number;
   capabilities: string[];
@@ -40,6 +41,7 @@ type CreateGalleryAgentInput = {
   userId: string;
   name: string;
   agentType: string;
+  category?: string;
   description?: string;
   avatarSpriteIdx?: number;
   capabilities?: string[];
@@ -71,13 +73,14 @@ export function createAgent(db: ISqliteDriver, input: CreateGalleryAgentInput): 
   const now = Date.now();
 
   db.prepare(
-    `INSERT INTO agent_gallery (id, user_id, name, agent_type, description, avatar_sprite_idx, capabilities, config, whitelisted, max_budget_cents, allowed_tools, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO agent_gallery (id, user_id, name, agent_type, category, description, avatar_sprite_idx, capabilities, config, whitelisted, max_budget_cents, allowed_tools, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.userId,
     input.name,
     input.agentType,
+    input.category ?? 'technical',
     input.description ?? null,
     input.avatarSpriteIdx ?? Math.floor(Math.random() * 6),
     JSON.stringify(input.capabilities ?? []),
@@ -94,6 +97,7 @@ export function createAgent(db: ISqliteDriver, input: CreateGalleryAgentInput): 
     userId: input.userId,
     name: input.name,
     agentType: input.agentType,
+    category: input.category ?? 'technical',
     description: input.description,
     avatarSpriteIdx: input.avatarSpriteIdx ?? 0,
     capabilities: input.capabilities ?? [],
@@ -204,6 +208,7 @@ function rowToAgent(row: Record<string, unknown>): GalleryAgent {
     userId: row.user_id as string,
     name: row.name as string,
     agentType: row.agent_type as string,
+    category: (row.category as string) ?? 'technical',
     description: (row.description as string) ?? undefined,
     avatarSpriteIdx: (row.avatar_sprite_idx as number) ?? 0,
     capabilities: JSON.parse((row.capabilities as string) || '[]'),

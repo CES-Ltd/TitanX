@@ -1535,6 +1535,7 @@ export type IGalleryAgent = {
   userId: string;
   name: string;
   agentType: string;
+  category: string;
   description?: string;
   avatarSpriteIdx: number;
   capabilities: string[];
@@ -1557,6 +1558,7 @@ export type ICreateGalleryAgentInput = {
   userId: string;
   name: string;
   agentType: string;
+  category?: string;
   description?: string;
   avatarSpriteIdx?: number;
   capabilities?: string[];
