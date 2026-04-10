@@ -157,6 +157,19 @@ https://github.com/CES-Ltd/TitanX/raw/main/docs/screenshots/demo-security.mp4
 - **Auto-plan creation** — agents creating 2+ tasks automatically generate a plan
 - **Backfill from tasks** — existing team_tasks synced to plans on startup
 
+### 🧬 Agent OS Features
+
+- **Agent Hook System** — 6 event types (PreToolUse, PostToolUse, Stop, etc.) with command/http/function hooks for extensible tool execution
+- **ReasoningBank** — Store and replay successful execution trajectories (RETRIEVE → JUDGE → DISTILL pattern, ~32% token savings)
+- **Micro-Compaction** — Selective truncation of stale tool results to prevent context overflow without full conversation compaction
+- **Queen Mode** — Hierarchical swarm coordinator role with drift detection and checkpoint gates
+- **Custom Agent Definitions** — Load agent specs from `.claude/agents/` (JSON/Markdown with YAML frontmatter)
+- **CLAUDE.md Chain Loading** — Walk up parent directories for project-level system prompt rules
+- **Caveman Mode** — Token-saving prompt injection (Lite/Full/Ultra, 30-75% reduction) with observability tracking
+- **Live Flow Visualizer** — Real-time interactive SVG graph of agent execution events with zoom/pan/click-to-inspect
+- **Sprint Analytics** — Burndown charts, agent utilization, velocity tracking
+- **Cost Projections** — Token usage over time, multi-provider cost estimates, caveman savings comparison
+
 ### 📊 Trace System (LangSmith-Compatible)
 
 - **Hierarchical parent-child traces** — root runs with nested child runs
