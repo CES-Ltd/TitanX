@@ -231,8 +231,104 @@ Wrap each step in progress markers for the live timeline:
 Your fenced code blocks render as beautiful interactive cards with tooltips, animations, sorting, filtering, and fullscreen expansion. This is BETTER than any file — always use inline visuals.
 `;
 
-export function buildDeepAgentPrompt(question: string, mcpTools?: string[]): string {
+/**
+ * Load AGENTS.md memory files from the workspace for context injection.
+ * Checks both project root and .deepagents/ directory.
+ */
+export async function loadAgentMemory(workspacePath?: string): Promise<string> {
+  if (!workspacePath) return '';
+
+  const fs = await import('fs/promises');
+  const path = await import('path');
+  const memorySources = [
+    path.join(workspacePath, 'AGENTS.md'),
+    path.join(workspacePath, '.deepagents', 'AGENTS.md'),
+    path.join(workspacePath, '.claude', 'AGENTS.md'),
+  ];
+
+  const memoryBlocks: string[] = [];
+  for (const source of memorySources) {
+    try {
+      const content = await fs.readFile(source, 'utf-8');
+      if (content.trim().length > 0) {
+        memoryBlocks.push(`<agent_memory source="${source}">\n${content.trim()}\n</agent_memory>`);
+        console.log(`[DeepAgent-Memory] Loaded memory from: ${source} (${String(content.length)} chars)`);
+      }
+    } catch {
+      // File doesn't exist — skip silently
+    }
+  }
+
+  return memoryBlocks.length > 0
+    ? `\n\n## Agent Memory\nThe following context was loaded from project memory files:\n\n${memoryBlocks.join('\n\n')}`
+    : '';
+}
+
+/**
+ * Load SKILL.md files from standard skill directories.
+ */
+export async function loadSkills(workspacePath?: string): Promise<string> {
+  if (!workspacePath) return '';
+
+  const fs = await import('fs/promises');
+  const path = await import('path');
+  const skillDirs = [path.join(workspacePath, '.deepagents', 'skills'), path.join(workspacePath, '.claude', 'skills')];
+
+  const skills: Array<{ name: string; description: string }> = [];
+
+  for (const dir of skillDirs) {
+    try {
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const skillFile = path.join(dir, entry.name, 'SKILL.md');
+          try {
+            const content = await fs.readFile(skillFile, 'utf-8');
+            // Parse YAML frontmatter
+            const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+            if (fmMatch) {
+              const nameMatch = fmMatch[1]!.match(/name:\s*(.+)/);
+              const descMatch = fmMatch[1]!.match(/description:\s*(.+)/);
+              skills.push({
+                name: nameMatch?.[1]?.trim() ?? entry.name,
+                description: descMatch?.[1]?.trim() ?? '',
+              });
+            } else {
+              skills.push({ name: entry.name, description: '' });
+            }
+          } catch {
+            // No SKILL.md in this directory
+          }
+        }
+      }
+    } catch {
+      // Directory doesn't exist
+    }
+  }
+
+  if (skills.length === 0) return '';
+
+  console.log(`[DeepAgent-Skills] Loaded ${String(skills.length)} skills`);
+  const skillList = skills.map((s) => `- **${s.name}**: ${s.description}`).join('\n');
+  return `\n\n## Available Skills\n${skillList}\n\nYou can reference these skills in your research approach.`;
+}
+
+export function buildDeepAgentPrompt(
+  question: string,
+  mcpTools?: string[],
+  extra?: { memory?: string; skills?: string }
+): string {
   let prompt = DEEP_AGENT_SYSTEM_PROMPT;
+
+  // Inject agent memory (AGENTS.md)
+  if (extra?.memory) {
+    prompt += extra.memory;
+  }
+
+  // Inject skills
+  if (extra?.skills) {
+    prompt += extra.skills;
+  }
 
   if (mcpTools && mcpTools.length > 0) {
     const toolList = mcpTools.map((t) => `- ${t}`).join('\n');

@@ -193,4 +193,24 @@ export class StreamBridge {
       conversation_id: this.conversationId,
     });
   }
+
+  /** Emit subagent started event (renders in SubgraphStatus component). */
+  emitSubagentStarted(agentName: string, stepDescription: string): void {
+    console.log(`[DeepAgent-Subagent] Started: ${agentName} — ${stepDescription}`);
+    this.emitStateSnapshot({
+      progress: -1,
+      currentPhase: 'subagent',
+      activeAgent: agentName,
+    });
+  }
+
+  /** Emit subagent completed event. */
+  emitSubagentCompleted(agentName: string, resultSummary: string): void {
+    console.log(`[DeepAgent-Subagent] Completed: ${agentName} (${String(resultSummary.length)} chars)`);
+    this.emitStateSnapshot({
+      progress: -1,
+      currentPhase: 'researching',
+      activeAgent: undefined,
+    });
+  }
 }

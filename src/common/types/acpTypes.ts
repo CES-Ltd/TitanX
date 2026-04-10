@@ -75,6 +75,7 @@ export type AcpBackendAll =
   | 'kiro' // Kiro CLI (AWS)
   | 'remote' // Remote agent (WebSocket, no local CLI)
   | 'aionrs' // Aion CLI agent (Rust binary, JSON Lines protocol)
+  | 'deepagents' // LangChain DeepAgents (deepagents-acp CLI)
   | 'custom'; // User-configured custom ACP agent
 
 /**
@@ -524,6 +525,16 @@ export const ACP_BACKENDS_ALL: Record<AcpBackendAll, AcpBackendConfig> = {
     authRequired: false, // Auth handled via env vars from model config
     enabled: true,
     supportsStreaming: true,
+  },
+  deepagents: {
+    id: 'deepagents',
+    name: 'DeepAgents',
+    cliCommand: 'deepagents-acp',
+    authRequired: false,
+    enabled: true,
+    supportsStreaming: true,
+    acpArgs: [],
+    skillsDirs: ['.deepagents/skills'],
   },
   custom: {
     id: 'custom',

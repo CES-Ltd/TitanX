@@ -31,9 +31,15 @@ export const ResearchState = Annotation.Root({
     default: () => 0,
   }),
 
-  /** Accumulated research findings (append-only). */
+  /** Accumulated research findings. Supports both append (normal) and replace (compaction). */
   researchNotes: Annotation<string[]>({
-    reducer: (existing, incoming) => existing.concat(incoming),
+    reducer: (existing, incoming) => {
+      // If incoming has a special marker (more items than 1 when we'd expect 1),
+      // it means the researcher compacted and is sending a full replacement.
+      // Convention: incoming.length > 1 after compaction = full replacement
+      if (incoming.length > 1) return incoming;
+      return existing.concat(incoming);
+    },
     default: () => [],
   }),
 
@@ -41,6 +47,30 @@ export const ResearchState = Annotation.Root({
   done: Annotation<boolean>({
     reducer: (_prev, next) => next,
     default: () => false,
+  }),
+
+  /** How many times research notes were auto-compacted to prevent context overflow. */
+  summaryCount: Annotation<number>({
+    reducer: (_prev, next) => next,
+    default: () => 0,
+  }),
+
+  /** In-memory context facts saved via save_to_memory tool. */
+  contextMemory: Annotation<Array<{ key: string; value: string; source: string; confidence: number }>>({
+    reducer: (existing, incoming) => existing.concat(incoming),
+    default: () => [],
+  }),
+
+  /** Active subagent session IDs for delegation tracking. */
+  activeSubagents: Annotation<string[]>({
+    reducer: (existing, incoming) => existing.concat(incoming),
+    default: () => [],
+  }),
+
+  /** Results collected from completed subagent sessions. */
+  subagentResults: Annotation<Record<string, string>>({
+    reducer: (existing, incoming) => ({ ...existing, ...incoming }),
+    default: () => ({}),
   }),
 });
 

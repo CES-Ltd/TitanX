@@ -4,7 +4,7 @@
  */
 
 import type { TProviderWithModel } from '@/common/config/storage';
-import { buildDeepAgentPrompt } from '../prompts';
+import { buildDeepAgentPrompt, loadAgentMemory, loadSkills } from '../prompts';
 import { createChatModel } from './providers';
 import { researchTools } from './tools';
 import { StreamBridge } from './streamBridge';
@@ -45,11 +45,17 @@ export async function runResearchGraph(params: RunResearchGraphParams): Promise<
     // Create LLM from provider config
     const llm = await createChatModel(provider);
 
+    // Load agent memory (AGENTS.md) and skills (SKILL.md) from workspace
+    const [memory, skills] = await Promise.all([loadAgentMemory(), loadSkills()]);
+
     // Build the system prompt (reuses existing prompt from prompts.ts)
-    const systemPrompt = buildDeepAgentPrompt(question, mcpServers);
+    const systemPrompt = buildDeepAgentPrompt(question, mcpServers, { memory, skills });
+
+    // Detect Anthropic provider for prompt caching
+    const isAnthropic = ['anthropic', 'claude', 'codex'].includes(provider.platform);
 
     // Build and compile the research graph
-    const graph = buildResearchGraph(llm, researchTools, bridge, systemPrompt);
+    const graph = buildResearchGraph(llm, researchTools, bridge, systemPrompt, { isAnthropic });
 
     // Run the graph
     await graph.invoke({ question }, signal ? { signal } : {});

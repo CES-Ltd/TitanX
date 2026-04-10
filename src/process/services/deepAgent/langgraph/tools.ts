@@ -156,5 +156,70 @@ export const analyzeDataTool = tool(
   }
 );
 
+/**
+ * Write-todos tool — the LLM can call this to break down complex steps
+ * into actionable sub-tasks. Emitted as task progress to the UI.
+ * The bridge reference is injected at graph build time via setToolBridge().
+ */
+let _toolBridge: {
+  emitTaskProgress: (steps: Array<{ description: string; status: string }>, title?: string) => void;
+} | null = null;
+
+/** Inject the StreamBridge reference for tools that need to emit UI events. */
+export function setToolBridge(bridge: typeof _toolBridge): void {
+  _toolBridge = bridge;
+}
+
+export const writeTodosTool = tool(
+  async ({ todos }: { todos: Array<{ description: string; priority: string }> }): Promise<string> => {
+    console.log(`[DeepAgent-Todos] write_todos called with ${String(todos.length)} items`);
+
+    if (_toolBridge) {
+      _toolBridge.emitTaskProgress(
+        todos.map((t) => ({ description: `[${t.priority.toUpperCase()}] ${t.description}`, status: 'pending' })),
+        'Action Items'
+      );
+    }
+
+    return `Created ${String(todos.length)} action items:\n${todos.map((t, i) => `${String(i + 1)}. [${t.priority}] ${t.description}`).join('\n')}`;
+  },
+  {
+    name: 'write_todos',
+    description:
+      'Break down a complex research step into actionable sub-tasks. Call this when a step has multiple parts or requires sequential investigation. Each todo should be specific and actionable.',
+    schema: z.object({
+      todos: z
+        .array(
+          z.object({
+            description: z.string().describe('Specific actionable task'),
+            priority: z.enum(['high', 'medium', 'low']).describe('Task priority'),
+          })
+        )
+        .describe('List of actionable sub-tasks'),
+    }),
+  }
+);
+
+/**
+ * Save-to-memory tool — the LLM can call this to persist key findings
+ * for use in later research steps and the synthesis phase.
+ */
+export const saveToMemoryTool = tool(
+  async ({ facts, source }: { facts: string[]; source: string }): Promise<string> => {
+    console.log(`[DeepAgent-Memory] save_to_memory: ${String(facts.length)} facts from ${source}`);
+    // Facts are returned as text — the graph captures them in researchNotes
+    return `Saved ${String(facts.length)} key findings from ${source}:\n${facts.map((f, i) => `  ${String(i + 1)}. ${f}`).join('\n')}`;
+  },
+  {
+    name: 'save_to_memory',
+    description:
+      'Save important findings, data points, or insights discovered during research. These are persisted across steps and used during synthesis. Call this after discovering significant data.',
+    schema: z.object({
+      facts: z.array(z.string()).describe('Key facts or data points to remember'),
+      source: z.string().describe('Where this data came from (tool name or URL)'),
+    }),
+  }
+);
+
 /** All research tools bundled for the graph. */
-export const researchTools = [webSearchTool, fetchUrlTool, analyzeDataTool];
+export const researchTools = [webSearchTool, fetchUrlTool, analyzeDataTool, writeTodosTool, saveToMemoryTool];

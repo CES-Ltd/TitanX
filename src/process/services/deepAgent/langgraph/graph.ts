@@ -13,6 +13,23 @@ import type { StructuredToolInterface } from '@langchain/core/tools';
 import type { AIMessageChunk } from '@langchain/core/messages';
 import { ResearchState } from './state';
 import type { StreamBridge } from './streamBridge';
+import { setToolBridge } from './tools';
+
+/** Token-count estimate: ~4 chars per token. */
+const CHARS_PER_TOKEN = 4;
+/** Auto-summarize when accumulated notes + messages exceed this char count (~12K tokens). */
+const SUMMARIZE_THRESHOLD = 50_000;
+
+/** Create a system message with optional Anthropic prompt caching. */
+function cachedSystemMessage(content: string, isAnthropic: boolean): SystemMessage {
+  if (isAnthropic) {
+    return new SystemMessage({
+      content,
+      additional_kwargs: { cache_control: { type: 'ephemeral' } },
+    });
+  }
+  return new SystemMessage(content);
+}
 
 const PLAN_EXTRACTION_PROMPT = `Based on the user's research question, create a research plan with 3-7 specific steps.
 Output ONLY a JSON array of step labels, like:
@@ -73,16 +90,27 @@ export function buildResearchGraph(
   llm: BaseChatModel,
   tools: StructuredToolInterface[],
   bridge: StreamBridge,
-  systemPrompt: string
+  systemPrompt: string,
+  options?: { isAnthropic?: boolean }
 ) {
+  const isAnthropic = options?.isAnthropic ?? false;
+  if (isAnthropic) {
+    console.log('[DeepAgent] Anthropic prompt caching enabled');
+  }
   const llmWithTools = llm.bindTools(tools);
+
+  // Wire the StreamBridge into tools that need to emit UI events (write_todos etc.)
+  setToolBridge(bridge);
 
   // ─── Planner Node ─────────────────────────────────────────────────
   async function plannerNode(state: typeof ResearchState.State): Promise<Partial<typeof ResearchState.State>> {
     bridge.emitStepStarted('Planning research');
     bridge.emitActivity('planning', 'Analyzing question and creating research plan...');
 
-    const response = await llm.invoke([new SystemMessage(PLAN_EXTRACTION_PROMPT), new HumanMessage(state.question)]);
+    const response = await llm.invoke([
+      cachedSystemMessage(PLAN_EXTRACTION_PROMPT, isAnthropic),
+      new HumanMessage(state.question),
+    ]);
 
     let plan: string[] = [];
     const text = typeof response.content === 'string' ? response.content : '';
@@ -181,12 +209,45 @@ export function buildResearchGraph(
       dataSources: [],
     });
 
+    // ─── Auto-Summarization: compact old notes if context is too large ──
+    let workingNotes = [...state.researchNotes];
+    const totalChars = workingNotes.reduce((sum, n) => sum + n.length, 0);
+    let summaryCount = state.summaryCount ?? 0;
+
+    if (totalChars > SUMMARIZE_THRESHOLD && workingNotes.length > 2) {
+      console.log(
+        `[DeepAgent-Summarize] Context too large (${String(totalChars)} chars, ~${String(Math.round(totalChars / CHARS_PER_TOKEN))} tokens). Compacting ${String(workingNotes.length)} notes...`
+      );
+      bridge.emitActivity('summarizing', 'Compacting research context to prevent overflow...');
+
+      try {
+        const compactResponse = await llm.invoke([
+          new SystemMessage(
+            'Summarize the following research findings into a concise summary. Preserve all specific data points, numbers, and key facts. Output a single compact paragraph per original section.'
+          ),
+          new HumanMessage(workingNotes.map((n, i) => `[Step ${String(i + 1)}]\n${n}`).join('\n\n')),
+        ]);
+        const compactText = typeof compactResponse.content === 'string' ? compactResponse.content : '';
+        if (compactText.length > 0 && compactText.length < totalChars * 0.7) {
+          console.log(
+            `[DeepAgent-Summarize] Compacted: ${String(totalChars)} → ${String(compactText.length)} chars (${String(Math.round((1 - compactText.length / totalChars) * 100))}% reduction)`
+          );
+          workingNotes = [compactText];
+          summaryCount++;
+        }
+      } catch (err) {
+        console.warn('[DeepAgent-Summarize] Compaction failed, continuing with full context:', err);
+      }
+    }
+
     // Build step-specific prompt
     const stepPrompt = [
-      new SystemMessage(
+      cachedSystemMessage(
         `${systemPrompt}\n\nYou are executing step ${String(stepIdx + 1)} of ${String(totalSteps)}: "${stepLabel}"\n` +
-          `Previous findings:\n${state.researchNotes.map((n, i) => `[Step ${String(i + 1)}] ${n.slice(0, 200)}`).join('\n')}\n\n` +
-          `Use available tools to gather data for this step. Be thorough and specific.`
+          `Previous findings:\n${workingNotes.map((n, i) => `[Step ${String(i + 1)}] ${n.slice(0, 200)}`).join('\n')}\n\n` +
+          `Use available tools to gather data for this step. Be thorough and specific.\n` +
+          `You can call write_todos to break complex steps into sub-tasks, and save_to_memory to persist key findings.`,
+        isAnthropic
       ),
       ...state.messages,
       new HumanMessage(
@@ -255,11 +316,18 @@ export function buildResearchGraph(
 
     bridge.emitStepFinished(stepLabel);
 
+    // If notes were compacted, replace all with compacted + new step
+    const updatedNotes =
+      workingNotes.length < state.researchNotes.length
+        ? [...workingNotes, stepContent] // compacted: replace old with summary + new
+        : [stepContent]; // no compaction: just append new step
+
     return {
       currentStepIndex: stepIdx + 1,
-      researchNotes: [stepContent],
+      researchNotes: updatedNotes,
       messages: newMessages,
       done: stepIdx + 1 >= totalSteps,
+      summaryCount,
     };
   }
 
@@ -286,7 +354,7 @@ export function buildResearchGraph(
 
     // Stream the synthesis response token by token
     const stream: AsyncIterable<AIMessageChunk> = await llm.stream([
-      new SystemMessage(`${systemPrompt}\n\n${SYNTHESIS_PROMPT}`),
+      cachedSystemMessage(`${systemPrompt}\n\n${SYNTHESIS_PROMPT}`, isAnthropic),
       new HumanMessage(
         `Original question: ${state.question}\n\n` +
           `Research findings:\n${notesText}\n\n` +
