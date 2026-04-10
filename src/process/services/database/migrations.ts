@@ -2055,6 +2055,33 @@ const migration_v51: IMigration = {
   },
 };
 
+// ── Phase 8: ReasoningBank for trajectory storage ─────────────────────────────
+
+const migration_v52: IMigration = {
+  version: 52,
+  name: 'Create reasoning_bank table for trajectory storage and replay',
+  up(db: ISqliteDriver) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS reasoning_bank (
+        id TEXT PRIMARY KEY,
+        trajectory_hash TEXT UNIQUE,
+        task_description TEXT NOT NULL,
+        trajectory TEXT NOT NULL DEFAULT '[]',
+        success_score REAL NOT NULL DEFAULT 0,
+        usage_count INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_reasoning_bank_hash ON reasoning_bank(trajectory_hash)`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_reasoning_bank_score ON reasoning_bank(success_score, usage_count)`);
+    console.log('[Migration-v52] Created reasoning_bank table');
+  },
+  down(db: ISqliteDriver) {
+    db.exec(`DROP TABLE IF EXISTS reasoning_bank`);
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -2066,7 +2093,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v30, migration_v31, migration_v32, migration_v33, migration_v34,
   migration_v35, migration_v36, migration_v37, migration_v38, migration_v39,
   migration_v40, migration_v41, migration_v42, migration_v43, migration_v44,
-  migration_v45, migration_v46, migration_v47, migration_v48, migration_v49, migration_v50, migration_v51,
+  migration_v45, migration_v46, migration_v47, migration_v48, migration_v49, migration_v50, migration_v51, migration_v52,
 ];
 
 /**
