@@ -127,6 +127,19 @@ https://github.com/CES-Ltd/TitanX/raw/main/docs/screenshots/demo-security.mp4
 - **Automatic storage** — every agent turn stores buffer memory
 - **Team-scoped** — memories isolated per agent per team
 
+### 🧪 Deep Agent — AG-UI Research Engine
+
+- **LangGraph research graph** — planner → researcher (loop) → synthesizer, runs in-process
+- **13+ inline visual types** — chart (line/bar/pie/area/scatter/radar), kpi, metric grid, table, pivot, timeline, gauge, comparison, citation, plan — all rendered as interactive cards in chat
+- **Smart data auto-visualization** — plain text with numbers, bullet lists, trends, percentages, and comparisons auto-detected and rendered as charts/metrics
+- **Human-in-the-Loop (HITL)** — agent proposes research steps, user confirms/rejects via inline checkbox UI before execution
+- **AG-UI task progress** — live step-by-step progress bar with status icons (pending/executing/completed)
+- **Subgraph status** — multi-agent delegation display showing active sub-agent
+- **Tool card registry** — rich visual cards for weather, web search, and URL fetch tool results
+- **Dual-render pipeline** — fenced code blocks for agent-generated visuals + IPC message types for real-time interactive components
+- **Dynamic connector & MCP selection** — inline chip selectors for backend providers and MCP servers
+- **Insights panel** — extracted visuals displayed in a side panel for at-a-glance research overview
+
 ### 📋 Agent Planning (DeepAgents-Inspired)
 
 - **Structured task decomposition** — ordered steps with progress tracking
@@ -274,6 +287,7 @@ https://github.com/CES-Ltd/TitanX/raw/main/docs/screenshots/demo-security.mp4
 | **AI Providers**       | 20+ LLM providers (Claude, GPT, Gemini, Codex, OpenCode, Hermes, Ollama, etc.)    |
 | **Workflow Engine**    | n8n-inspired DAG execution with topological sort, retry, error routing            |
 | **Agent Intelligence** | LangChain memory, DeepAgents planning, reflection, structured output              |
+| **Deep Agent**         | LangGraph JS, AG-UI protocol, Chart.js inline visuals, HITL, smart data detection |
 | **Testing**            | Vitest 4, 310+ test files, 80% coverage target                                    |
 | **Package Manager**    | Bun                                                                               |
 
@@ -313,7 +327,8 @@ TitanX/
 │   │   │   ├── governance/     # IAM, Workflows, Security, Blueprints, Traces, Audit
 │   │   │   ├── observability/  # Command Center, Cost Analytics, Runtime
 │   │   │   ├── team/           # Team Chat, Sprint, Gallery, Live, Planner
-│   │   │   └── conversation/   # Chat messages, markdown, tool calls
+│   │   │   ├── conversation/   # Chat messages, markdown, tool calls
+│   │   │   └── deepAgent/     # AG-UI research engine with inline visuals
 │   │   └── components/         # Shared UI + Easter Eggs
 │   ├── process/                # Main process (backend)
 │   │   ├── services/
@@ -323,6 +338,7 @@ TitanX/
 │   │   │   ├── blueprints/         # Declarative security profiles
 │   │   │   ├── agentMemory/        # LangChain-inspired memory
 │   │   │   ├── agentPlanning/      # DeepAgents-inspired planning
+│   │   │   ├── deepAgent/         # LangGraph research graph + AG-UI protocol
 │   │   │   ├── tracing/            # LangSmith-compatible traces
 │   │   │   ├── workflows/          # n8n-inspired DAG engine
 │   │   │   ├── telemetry/          # OpenTelemetry SDK

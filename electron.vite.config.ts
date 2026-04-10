@@ -222,10 +222,8 @@ export default defineConfig(({ mode }) => {
               }
 
               // Code editors — split Monaco and CodeMirror into separate lazy chunks
-              if (id.includes('/monaco-editor/') || id.includes('/@monaco-editor/'))
-                return 'vendor-monaco';
-              if (id.includes('/codemirror/') || id.includes('/@codemirror/'))
-                return 'vendor-codemirror';
+              if (id.includes('/monaco-editor/') || id.includes('/@monaco-editor/')) return 'vendor-monaco';
+              if (id.includes('/codemirror/') || id.includes('/@codemirror/')) return 'vendor-codemirror';
 
               // Visualization libraries — separate chunks for lazy loading
               if (id.includes('/mermaid/')) return 'vendor-mermaid';
@@ -240,8 +238,7 @@ export default defineConfig(({ mode }) => {
               if (id.includes('/diff2html/')) return 'vendor-diff';
 
               // LangChain (only in main process, but guard in case)
-              if (id.includes('/@langchain/') || id.includes('/langchain/'))
-                return 'vendor-langchain';
+              if (id.includes('/@langchain/') || id.includes('/langchain/')) return 'vendor-langchain';
 
               return undefined;
             },

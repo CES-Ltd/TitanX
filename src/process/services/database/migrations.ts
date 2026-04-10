@@ -1989,9 +1989,7 @@ const migration_v49: IMigration = {
   up(db: ISqliteDriver) {
     // De-duplicate any existing rows: append _N suffix to duplicates
     const dupes = db
-      .prepare(
-        `SELECT user_id, name, COUNT(*) as cnt FROM agent_gallery GROUP BY user_id, name HAVING cnt > 1`
-      )
+      .prepare(`SELECT user_id, name, COUNT(*) as cnt FROM agent_gallery GROUP BY user_id, name HAVING cnt > 1`)
       .all() as Array<{ user_id: string; name: string; cnt: number }>;
 
     for (const dupe of dupes) {
@@ -2001,10 +1999,7 @@ const migration_v49: IMigration = {
       // Keep the first, rename the rest
       for (let i = 1; i < rows.length; i++) {
         const suffix = `_${String(i)}`;
-        db.prepare(`UPDATE agent_gallery SET name = ? WHERE id = ?`).run(
-          `${dupe.name}${suffix}`,
-          rows[i]!.id
-        );
+        db.prepare(`UPDATE agent_gallery SET name = ? WHERE id = ?`).run(`${dupe.name}${suffix}`, rows[i]!.id);
       }
     }
 

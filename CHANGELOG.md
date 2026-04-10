@@ -9,6 +9,7 @@ All notable changes to TitanX are documented in this file.
 ### Added
 
 #### Deep Agent — AG-UI Research Engine
+
 - **LangGraph research graph**: In-process planner → researcher (loop) → synthesizer pipeline with 3 tools (web_search, fetch_url, analyze_data)
 - **13+ inline visual types**: chart (line/bar/pie/area/scatter/radar/doughnut/bubble), kpi, metric grid, table, pivot, timeline, gauge, comparison, citation, plan — all rendered as interactive Chart.js cards in chat
 - **Human-in-the-Loop (HITL)**: Agent proposes steps, user confirms/rejects via inline checkbox UI with IPC callback to resume graph
@@ -19,6 +20,7 @@ All notable changes to TitanX are documented in this file.
 - **Deep Agent page**: Two-panel layout (conversation + insights) with progress bar, connector selection, and visual extraction
 
 #### Smart Data Auto-Visualization
+
 - **Universal data point extractor**: 5-pass tokenizer extracts label-value pairs from any text format (structured pairs, inline prose, temporal series, percentages, change patterns)
 - **Dynamic visual decision**: Feeds extracted data into existing `analyzeTableData()` decision tree — automatically picks line/bar/pie/scatter/radar based on data shape
 - **Markdown table detection**: Existing tables auto-converted to best chart type (date+numeric → line, categorical → bar, proportions → pie)
@@ -27,17 +29,20 @@ All notable changes to TitanX are documented in this file.
 - **Trend data detection**: Temporal sequences (Q1, Q2, months, years) auto-rendered as line charts
 
 #### Send Box Redesign
+
 - **Single-container layout**: Clean rounded input with bottom bar (matching reference design)
 - **Inline selectors**: `+` file upload button, connector chip dropdown, MCP server chip dropdown — all inside the input container
 - **Dynamic MCP fetching**: McpServerSelector now self-fetches server list via IPC on popover open
 - **Focus highlight**: Input container border turns primary color on focus
 
 ### Fixed
+
 - **`transformMessage()` missing AG-UI cases**: Added `case 'agui_interrupt'` and `case 'agui_task_progress'` to `chatLib.ts` — previously hit default case and returned undefined, blocking all AG-UI message rendering
 - **`useAcpMessage` silent drop**: Added explicit handling for AG-UI types with proper running state management
 - **LLM visual output**: Strengthened prompts to enforce JSON fenced code blocks over matplotlib/Python code — researcher follow-up, synthesizer, and system prompt all now include concrete JSON examples and mandatory visualization rules
 
 ### Changed
+
 - **Removed `DeepAgentToolbar.tsx`**: Toolbar absorbed into redesigned SendBox bottom bar
 - **McpServerSelector**: No longer requires `servers` prop — fetches dynamically from IPC
 - **CodeBlock**: Extended visual language detection with `task-progress`, `hitl`, `subgraph` tags
