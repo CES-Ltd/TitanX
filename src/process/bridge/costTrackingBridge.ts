@@ -47,4 +47,9 @@ export function initCostTrackingBridge(): void {
     const db = await getDatabase();
     return costTrackingService.getWindowSpend(db.getDriver(), userId);
   });
+
+  ipcBridge.costTracking.byDay.provider(async ({ userId, daysBack }) => {
+    const db = await getDatabase();
+    return costTrackingService.getCostByDay(db.getDriver(), userId, daysBack ?? 30);
+  });
 }

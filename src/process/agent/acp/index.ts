@@ -1276,6 +1276,30 @@ export class AcpAgent {
         // Audit log failure is non-critical
       }
 
+      // Record Caveman savings if mode is active
+      try {
+        const { getCurrentCavemanMode } = await import('@process/bridge/cavemanBridge');
+        const cavemanMode = await getCurrentCavemanMode();
+        if (cavemanMode !== 'off') {
+          const { estimateRegularTokens } = await import('@process/services/caveman');
+          const savingsTracker = await import('@process/services/caveman/savingsTracker');
+          const estimatedRegular = estimateRegularTokens(outputTokens, cavemanMode);
+          const saved = estimatedRegular - outputTokens;
+          savingsTracker.recordSavings(driver, {
+            userId: 'system_default_user',
+            conversationId: this.id,
+            mode: cavemanMode,
+            inputTokens,
+            outputTokens,
+            estimatedRegularOutput: estimatedRegular,
+            tokensSaved: saved,
+            occurredAt: Date.now(),
+          });
+        }
+      } catch {
+        // Caveman savings recording is non-critical
+      }
+
       console.log(`[ACP-Cost] Recorded successfully for ${backend}`);
     } catch (err) {
       console.error('[ACP-Cost] Error recording cost event:', err);

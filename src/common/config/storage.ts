@@ -112,6 +112,8 @@ export interface IConfigStorageRefer {
   'system.keepAwake'?: boolean;
   // Whether conversation command queue is enabled
   'system.commandQueueEnabled'?: boolean;
+  // Caveman mode for token saving: off, lite, full, ultra
+  'system.cavemanMode'?: string;
   // Telegram assistant default model / Telegram 助手默认模型
   'assistant.telegram.defaultModel'?: {
     id: string;

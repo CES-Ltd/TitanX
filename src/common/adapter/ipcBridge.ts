@@ -1444,6 +1444,10 @@ export const costTracking = {
     'costs.by-provider'
   ),
   windowSpend: bridge.buildProvider<IWindowSpend[], { userId: string }>('costs.window-spend'),
+  byDay: bridge.buildProvider<
+    Array<{ date: string; inputTokens: number; outputTokens: number; costCents: number; eventCount: number }>,
+    { userId: string; daysBack?: number }
+  >('costs.by-day'),
 };
 
 export const budgets = {
@@ -1575,6 +1579,32 @@ export const agentGallery = {
   update: bridge.buildProvider<void, { agentId: string; updates: Partial<IGalleryAgent> }>('gallery.update'),
   remove: bridge.buildProvider<boolean, { agentId: string }>('gallery.delete'),
   checkName: bridge.buildProvider<{ available: boolean }, { userId: string; name: string }>('gallery.check-name'),
+};
+
+// ─── Caveman Mode ──────────────────────────────────────────────────────────
+
+export type ICavemanSummary = {
+  totalOutputTokens: number;
+  totalEstimatedRegular: number;
+  totalTokensSaved: number;
+  savingsPercent: number;
+  eventCount: number;
+};
+
+export type ICavemanModeBreakdown = {
+  mode: string;
+  totalOutputTokens: number;
+  totalEstimatedRegular: number;
+  totalTokensSaved: number;
+  savingsPercent: number;
+  eventCount: number;
+};
+
+export const caveman = {
+  getMode: bridge.buildProvider<{ mode: string }, void>('caveman.get-mode'),
+  setMode: bridge.buildProvider<void, { mode: string }>('caveman.set-mode'),
+  getSummary: bridge.buildProvider<ICavemanSummary, { userId: string; fromDate?: number }>('caveman.summary'),
+  getByMode: bridge.buildProvider<ICavemanModeBreakdown[], { userId: string; fromDate?: number }>('caveman.by-mode'),
 };
 
 // ─── Workflow Rules ─────────────────────────────────────────────────────────

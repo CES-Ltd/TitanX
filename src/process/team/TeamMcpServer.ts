@@ -522,38 +522,10 @@ export class TeamMcpServer {
     const description = args.description ? String(args.description) : undefined;
     const owner = args.owner ? String(args.owner) : undefined;
 
+    // taskManager.create() handles both team_tasks AND sprint_tasks creation
+    // with proper teamTaskId linking and audit logging — no duplicate needed here.
     const task = await taskManager.create({ teamId, subject, description, owner });
-
-    // Also create in sprint_tasks so it shows in Sprint Board
-    try {
-      console.log(`[TeamMcpServer] Creating sprint task + audit: "${subject}" owner=${owner ?? 'none'}`);
-      const db = await getDatabase();
-      const driver = db.getDriver();
-      const agents = this.params.getAgents();
-      const assigneeSlotId = owner
-        ? agents.find((a) => a.agentName.toLowerCase() === owner.toLowerCase())?.slotId
-        : undefined;
-      const sprintTask = sprintService.createTask(driver, {
-        teamId,
-        title: subject,
-        description,
-        assigneeSlotId,
-        priority: 'medium',
-      });
-      sprintService.updateTask(driver, sprintTask.id, { status: 'todo' });
-      // Audit log
-      activityLogService.logActivity(driver, {
-        userId: 'system_default_user',
-        actorType: 'agent',
-        actorId: 'mcp',
-        action: 'task.created',
-        entityType: 'sprint_task',
-        entityId: sprintTask.id,
-        details: { title: subject, assignee: owner, teamId },
-      });
-    } catch {
-      // Non-critical
-    }
+    console.log(`[TeamMcpServer] team_task_create: "${subject}" → task ${task.id} + sprint task created via TaskManager`);
 
     return `Task created: [${task.id.slice(0, 8)}] "${subject}"${owner ? ` (assigned to ${owner})` : ''}`;
   }

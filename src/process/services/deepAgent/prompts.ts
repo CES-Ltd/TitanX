@@ -316,9 +316,15 @@ export async function loadSkills(workspacePath?: string): Promise<string> {
 export function buildDeepAgentPrompt(
   question: string,
   mcpTools?: string[],
-  extra?: { memory?: string; skills?: string }
+  extra?: { memory?: string; skills?: string; cavemanPrefix?: string }
 ): string {
   let prompt = DEEP_AGENT_SYSTEM_PROMPT;
+
+  // Inject Caveman mode prompt prefix (token saving)
+  if (extra?.cavemanPrefix) {
+    prompt = extra.cavemanPrefix + prompt;
+    console.log('[DeepAgent-Caveman] Caveman prompt injected into Deep Agent system prompt');
+  }
 
   // Inject agent memory (AGENTS.md)
   if (extra?.memory) {

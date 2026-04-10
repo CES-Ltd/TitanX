@@ -7,11 +7,15 @@
 import React, { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Tabs, Typography } from '@arco-design/web-react';
-import { DataDisplay, HoneyOne, Performance, GamePs } from '@icon-park/react';
+import { DataDisplay, HoneyOne, Performance, Fire, Calculator, Log, Peoples } from '@icon-park/react';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import CommandCenter from './CommandCenter';
 import CostDashboard from '@renderer/pages/governance/CostDashboard';
 import RuntimeMonitor from '@renderer/pages/governance/RuntimeMonitor';
+import CavemanSavings from './CavemanSavings';
+import CostProjections from './CostProjections';
+import CavemanLog from './CavemanLog';
+import SprintAnalytics from './SprintAnalytics';
 
 const { TabPane } = Tabs;
 const { Title } = Typography;
@@ -73,6 +77,50 @@ const ObservabilityPage: React.FC = () => {
           }
         >
           <RuntimeMonitor />
+        </TabPane>
+        <TabPane
+          key='caveman'
+          title={
+            <span className='flex items-center gap-1'>
+              <Fire size={16} />
+              {t('observability.tabs.caveman', 'Token Savings')}
+            </span>
+          }
+        >
+          <CavemanSavings />
+        </TabPane>
+        <TabPane
+          key='projections'
+          title={
+            <span className='flex items-center gap-1'>
+              <Calculator size={16} />
+              {t('observability.tabs.projections', 'Cost Projections')}
+            </span>
+          }
+        >
+          <CostProjections />
+        </TabPane>
+        <TabPane
+          key='sprint'
+          title={
+            <span className='flex items-center gap-1'>
+              <Peoples size={16} />
+              {t('observability.tabs.sprint', 'Sprint Analytics')}
+            </span>
+          }
+        >
+          <SprintAnalytics />
+        </TabPane>
+        <TabPane
+          key='caveman-log'
+          title={
+            <span className='flex items-center gap-1'>
+              <Log size={16} />
+              {t('observability.tabs.cavemanLog', 'Caveman Log')}
+            </span>
+          }
+        >
+          <CavemanLog />
         </TabPane>
       </Tabs>
     </div>

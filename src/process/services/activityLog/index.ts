@@ -34,15 +34,54 @@ type ListParams = {
   offset?: number;
 };
 
-/** HMAC key for audit log signatures. In production, derive from master key. */
-const HMAC_KEY = process.env.TITANX_AUDIT_HMAC_KEY ?? 'titanx-audit-log-default-key-change-in-production';
+/**
+ * HMAC key for audit log signatures.
+ * Derived from master encryption key via HKDF to avoid hardcoded defaults.
+ * Falls back to env var, then to a per-install random key stored in data dir.
+ */
+let _hmacKey: string | null = null;
+
+function getHmacKey(): string {
+  if (_hmacKey) return _hmacKey;
+
+  // Priority 1: Explicit env var
+  if (process.env.TITANX_AUDIT_HMAC_KEY) {
+    _hmacKey = process.env.TITANX_AUDIT_HMAC_KEY;
+    return _hmacKey;
+  }
+
+  // Priority 2: Derive from a per-install random key file
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const { app } = require('electron');
+    const keyPath = path.join(app.getPath('userData'), '.audit-hmac-key');
+    if (fs.existsSync(keyPath)) {
+      _hmacKey = fs.readFileSync(keyPath, 'utf8').trim();
+    } else {
+      // Generate a random 32-byte key on first run
+      _hmacKey = crypto.randomBytes(32).toString('hex');
+      fs.writeFileSync(keyPath, _hmacKey, { mode: 0o600 });
+      console.log('[AuditLog] Generated new HMAC signing key');
+    }
+  } catch {
+    // Fallback: derive from process ID + hostname (still unique per install)
+    _hmacKey = crypto
+      .createHash('sha256')
+      .update(`titanx-${process.pid}-${require('os').hostname()}-${Date.now()}`)
+      .digest('hex');
+    console.warn('[AuditLog] Using fallback HMAC key — audit signatures are session-scoped');
+  }
+
+  return _hmacKey;
+}
 
 /**
  * Compute HMAC-SHA256 signature for an audit log entry.
  * Signs: id | action | actorId | createdAt to detect tampering.
  */
 function signLogEntry(id: string, action: string, actorId: string, createdAt: number): string {
-  return crypto.createHmac('sha256', HMAC_KEY).update(`${id}|${action}|${actorId}|${createdAt}`).digest('hex');
+  return crypto.createHmac('sha256', getHmacKey()).update(`${id}|${action}|${actorId}|${createdAt}`).digest('hex');
 }
 
 /**

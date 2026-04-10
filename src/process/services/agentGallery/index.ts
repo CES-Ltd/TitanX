@@ -125,12 +125,17 @@ export function updateAgent(
       GalleryAgent,
       | 'name'
       | 'description'
+      | 'category'
       | 'capabilities'
       | 'config'
       | 'whitelisted'
       | 'maxBudgetCents'
       | 'allowedTools'
       | 'avatarSpriteIdx'
+      | 'instructionsMd'
+      | 'skillsMd'
+      | 'heartbeatMd'
+      | 'agentType'
     >
   >
 ): void {
@@ -168,6 +173,26 @@ export function updateAgent(
   if (updates.avatarSpriteIdx !== undefined) {
     setClauses.push('avatar_sprite_idx = ?');
     args.push(updates.avatarSpriteIdx);
+  }
+  if (updates.category !== undefined) {
+    setClauses.push('category = ?');
+    args.push(updates.category);
+  }
+  if (updates.agentType !== undefined) {
+    setClauses.push('agent_type = ?');
+    args.push(updates.agentType);
+  }
+  if (updates.instructionsMd !== undefined) {
+    setClauses.push('instructions_md = ?');
+    args.push(updates.instructionsMd);
+  }
+  if (updates.skillsMd !== undefined) {
+    setClauses.push('skills_md = ?');
+    args.push(updates.skillsMd);
+  }
+  if (updates.heartbeatMd !== undefined) {
+    setClauses.push('heartbeat_md = ?');
+    args.push(updates.heartbeatMd);
   }
 
   if (setClauses.length === 0) return;

@@ -160,10 +160,25 @@ export function initWebuiBridge(): void {
     }
   });
 
-  // 修改密码（不需要当前密码）/ Change password (no current password required)
+  // Change password — audit logged for security visibility.
+  // NOTE: No current password required — local desktop app where user has physical access.
   webui.changePassword.provider(async ({ newPassword }) => {
     return WebuiService.handleAsync(async () => {
       await WebuiService.changePassword(newPassword);
+      try {
+        const { getDatabase } = await import('@process/services/database');
+        const activityLog = await import('@process/services/activityLog');
+        const db = await getDatabase();
+        activityLog.logActivity(db.getDriver(), {
+          userId: 'system_default_user',
+          actorType: 'user',
+          actorId: 'system_default_user',
+          action: 'webui.password_changed',
+          entityType: 'setting',
+          entityId: 'webui.password',
+          details: { timestamp: Date.now() },
+        });
+      } catch { /* audit non-critical */ }
       return { success: true };
     }, 'Change password');
   });

@@ -2028,6 +2028,33 @@ const migration_v50: IMigration = {
   },
 };
 
+// ── Phase 7: Caveman Mode savings tracking ───────────────────────────────────
+
+const migration_v51: IMigration = {
+  version: 51,
+  name: 'Create caveman_savings table for token savings tracking',
+  up(db: ISqliteDriver) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS caveman_savings (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        conversation_id TEXT,
+        mode TEXT NOT NULL,
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        output_tokens INTEGER NOT NULL DEFAULT 0,
+        estimated_regular_output INTEGER NOT NULL DEFAULT 0,
+        tokens_saved INTEGER NOT NULL DEFAULT 0,
+        occurred_at INTEGER NOT NULL
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_caveman_savings_user ON caveman_savings(user_id, occurred_at)`);
+    console.log('[Migration-v51] Created caveman_savings table');
+  },
+  down(db: ISqliteDriver) {
+    db.exec(`DROP TABLE IF EXISTS caveman_savings`);
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -2039,7 +2066,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v30, migration_v31, migration_v32, migration_v33, migration_v34,
   migration_v35, migration_v36, migration_v37, migration_v38, migration_v39,
   migration_v40, migration_v41, migration_v42, migration_v43, migration_v44,
-  migration_v45, migration_v46, migration_v47, migration_v48, migration_v49, migration_v50,
+  migration_v45, migration_v46, migration_v47, migration_v48, migration_v49, migration_v50, migration_v51,
 ];
 
 /**

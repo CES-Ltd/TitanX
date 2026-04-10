@@ -189,6 +189,41 @@ export function getWindowSpend(db: ISqliteDriver, userId: string): WindowSpend[]
   });
 }
 
+type DayCost = {
+  date: string;
+  inputTokens: number;
+  outputTokens: number;
+  costCents: number;
+  eventCount: number;
+};
+
+/**
+ * Get cost data grouped by day for time-series charts.
+ */
+export function getCostByDay(db: ISqliteDriver, userId: string, daysBack: number = 30): DayCost[] {
+  const from = Date.now() - daysBack * 24 * 60 * 60 * 1000;
+  const rows = db
+    .prepare(
+      `SELECT
+       DATE(occurred_at / 1000, 'unixepoch') as date,
+       CAST(COALESCE(SUM(input_tokens), 0) AS INTEGER) as input_tokens,
+       CAST(COALESCE(SUM(output_tokens), 0) AS INTEGER) as output_tokens,
+       CAST(COALESCE(SUM(cost_cents), 0) AS INTEGER) as cost_cents,
+       COUNT(*) as event_count
+     FROM cost_events WHERE user_id = ? AND occurred_at >= ?
+     GROUP BY date ORDER BY date`
+    )
+    .all(userId, from) as Array<Record<string, unknown>>;
+
+  return rows.map((r) => ({
+    date: r.date as string,
+    inputTokens: (r.input_tokens as number) ?? 0,
+    outputTokens: (r.output_tokens as number) ?? 0,
+    costCents: (r.cost_cents as number) ?? 0,
+    eventCount: (r.event_count as number) ?? 0,
+  }));
+}
+
 function getMonthStart(): number {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), 1).getTime();

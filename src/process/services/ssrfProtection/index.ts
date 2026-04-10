@@ -23,7 +23,7 @@ const PRIVATE_IPV4_RANGES: Array<{ network: number; mask: number; label: string 
 ];
 
 /** IPv6 prefixes that are never reachable by agents */
-const PRIVATE_IPV6_PREFIXES = ['::1', 'fe80:', 'fc00:', 'fd00:', '::ffff:'];
+const PRIVATE_IPV6_PREFIXES = ['::1', '::', 'fe80:', 'fc00:', 'fd00:', '::ffff:', '0:0:0:0:0:0:0:0', '0:0:0:0:0:0:0:1'];
 
 /** URL schemes that agents may use (all others blocked) */
 const ALLOWED_SCHEMES = new Set(['http:', 'https:']);
@@ -47,14 +47,28 @@ function isPrivateIPv4(ip: string): string | null {
   return null;
 }
 
-/** Check if an IPv6 address is private/link-local/loopback */
+/** Check if an IPv6 address is private/link-local/loopback/unspecified */
 function isPrivateIPv6(ip: string): string | null {
-  const normalized = ip.toLowerCase();
-  for (const prefix of PRIVATE_IPV6_PREFIXES) {
+  const normalized = ip.toLowerCase().trim();
+
+  // Exact match: all-zeros (unspecified address)
+  if (normalized === '::' || normalized === '0:0:0:0:0:0:0:0') {
+    return ':: (unspecified IPv6)';
+  }
+
+  // Exact match: loopback
+  if (normalized === '::1' || normalized === '0:0:0:0:0:0:0:1') {
+    return '::1 (loopback IPv6)';
+  }
+
+  // Prefix match: link-local, unique-local, IPv4-mapped
+  const prefixRules = ['fe80:', 'fc00:', 'fd00:', '::ffff:'];
+  for (const prefix of prefixRules) {
     if (normalized.startsWith(prefix)) {
       return `${prefix} (private IPv6)`;
     }
   }
+
   return null;
 }
 

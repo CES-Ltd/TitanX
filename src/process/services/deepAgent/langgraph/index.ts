@@ -48,8 +48,22 @@ export async function runResearchGraph(params: RunResearchGraphParams): Promise<
     // Load agent memory (AGENTS.md) and skills (SKILL.md) from workspace
     const [memory, skills] = await Promise.all([loadAgentMemory(), loadSkills()]);
 
+    // Check Caveman mode for token saving
+    let cavemanPrefix: string | undefined;
+    try {
+      const { getCurrentCavemanMode } = await import('@process/bridge/cavemanBridge');
+      const { getCavemanPromptPrefix } = await import('@process/services/caveman');
+      const mode = await getCurrentCavemanMode();
+      if (mode !== 'off') {
+        cavemanPrefix = getCavemanPromptPrefix(mode);
+        console.log(`[DeepAgent-Caveman] Mode: ${mode} — injecting prompt prefix`);
+      }
+    } catch {
+      // Caveman not available — continue without
+    }
+
     // Build the system prompt (reuses existing prompt from prompts.ts)
-    const systemPrompt = buildDeepAgentPrompt(question, mcpServers, { memory, skills });
+    const systemPrompt = buildDeepAgentPrompt(question, mcpServers, { memory, skills, cavemanPrefix });
 
     // Detect Anthropic provider for prompt caching
     const isAnthropic = ['anthropic', 'claude', 'codex'].includes(provider.platform);

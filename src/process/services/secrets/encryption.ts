@@ -70,6 +70,17 @@ export function loadOrCreateMasterKey(): Buffer {
 }
 
 /**
+ * Zero-fill a Buffer to clear sensitive key material from memory.
+ * Call on app shutdown to minimize exposure window.
+ */
+export function clearKeyFromMemory(key: Buffer): void {
+  if (key && Buffer.isBuffer(key)) {
+    key.fill(0);
+    console.log('[Secrets] Master key cleared from memory');
+  }
+}
+
+/**
  * Encrypt a plaintext value using AES-256-GCM.
  * Returns serialized material (scheme + iv + tag + ciphertext).
  */

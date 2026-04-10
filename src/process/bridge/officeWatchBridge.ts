@@ -104,18 +104,26 @@ function killSession(filePath: string, sessions: Map<string, WatchSession>): voi
 /**
  * Auto-install officecli if not found.
  */
+/**
+ * Safe install: download script to temp file, then execute separately.
+ * Avoids piping remote content directly to shell (SSRF/MITM risk).
+ */
 function installOfficecli(emitStatus: StatusEmitter): boolean {
   try {
     emitStatus({ state: 'installing' });
+    const os = require('os');
+    const path = require('path');
+
     if (process.platform === 'win32') {
-      execSync(
-        'powershell -Command "irm https://raw.githubusercontent.com/iOfficeAI/OfficeCli/main/install.ps1 | iex"',
-        { stdio: 'inherit' }
-      );
+      const tmpScript = path.join(os.tmpdir(), `officecli_install_${Date.now()}.ps1`);
+      execSync(`powershell -Command "Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/iOfficeAI/OfficeCli/main/install.ps1' -OutFile '${tmpScript}'"`, { stdio: 'pipe', timeout: 30000 });
+      execSync(`powershell -ExecutionPolicy Bypass -File "${tmpScript}"`, { stdio: 'inherit', timeout: 60000 });
+      try { require('fs').unlinkSync(tmpScript); } catch {}
     } else {
-      execSync('curl -fsSL https://raw.githubusercontent.com/iOfficeAI/OfficeCli/main/install.sh | bash', {
-        stdio: 'inherit',
-      });
+      const tmpScript = path.join(os.tmpdir(), `officecli_install_${Date.now()}.sh`);
+      execSync(`curl -fsSL -o "${tmpScript}" https://raw.githubusercontent.com/iOfficeAI/OfficeCli/main/install.sh`, { stdio: 'pipe', timeout: 30000 });
+      execSync(`chmod +x "${tmpScript}" && bash "${tmpScript}"`, { stdio: 'inherit', timeout: 60000 });
+      try { require('fs').unlinkSync(tmpScript); } catch {}
       try {
         execSync('xattr -cr ~/.local/bin/officecli && codesign -s - --force ~/.local/bin/officecli', { stdio: 'pipe' });
       } catch {}

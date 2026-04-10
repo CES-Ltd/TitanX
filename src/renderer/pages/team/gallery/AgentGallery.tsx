@@ -83,43 +83,53 @@ const AgentGallery: React.FC = () => {
     try {
       let list = await agentGallery.list.invoke({ userId });
 
-      // Auto-seed from expanded templates if gallery is empty
-      if (list.length === 0) {
-        console.log(`[AgentGallery] Seeding ${String(ALL_AGENT_TEMPLATES.length)} agent templates...`);
-        for (const seed of ALL_AGENT_TEMPLATES) {
-          try {
-            await agentGallery.create.invoke({
-              userId,
-              name: seed.name,
-              agentType: seed.agentType,
-              category: seed.category,
-              description: seed.description,
-              capabilities: seed.capabilities,
-              avatarSpriteIdx: seed.avatarSpriteIdx,
-              whitelisted: true,
-              maxBudgetCents: seed.maxBudgetCents,
-              allowedTools: seed.allowedTools,
-            });
-          } catch (err) {
-            console.warn(`[AgentGallery] Failed to seed ${seed.name}:`, err);
-          }
-        }
-        // Now update each with markdown templates
+      // Auto-seed missing templates — runs on empty gallery OR when new templates are added
+      const existingNames = new Set(list.map((a) => a.name));
+      const missingTemplates = ALL_AGENT_TEMPLATES.filter((t) => !existingNames.has(t.name));
+
+      if (missingTemplates.length > 0) {
+        console.log(
+          `[AgentGallery] Seeding ${String(missingTemplates.length)} missing templates:`,
+          missingTemplates.map((t) => t.name)
+        );
+        await Promise.all(
+          missingTemplates.map((seed) =>
+            agentGallery.create
+              .invoke({
+                userId,
+                name: seed.name,
+                agentType: seed.agentType,
+                category: seed.category,
+                description: seed.description,
+                capabilities: seed.capabilities,
+                avatarSpriteIdx: seed.avatarSpriteIdx,
+                whitelisted: true,
+                maxBudgetCents: seed.maxBudgetCents,
+                allowedTools: seed.allowedTools,
+              })
+              .catch((err: unknown) => console.warn(`[AgentGallery] Failed to seed ${seed.name}:`, err))
+          )
+        );
+        // Update all with markdown templates (including newly seeded ones)
         list = await agentGallery.list.invoke({ userId });
         for (const agent of list) {
           const template = ALL_AGENT_TEMPLATES.find((t) => t.name === agent.name);
           if (template) {
-            try {
-              await agentGallery.update.invoke({
-                agentId: agent.id,
-                updates: {
-                  instructionsMd: template.instructionsMd,
-                  skillsMd: template.skillsMd,
-                  heartbeatMd: template.heartbeatMd,
-                },
-              });
-            } catch {
-              // Non-critical
+            const needsUpdate = !agent.instructionsMd || agent.category === 'technical';
+            if (needsUpdate) {
+              try {
+                await agentGallery.update.invoke({
+                  agentId: agent.id,
+                  updates: {
+                    category: template.category,
+                    instructionsMd: agent.instructionsMd || template.instructionsMd,
+                    skillsMd: agent.skillsMd || template.skillsMd,
+                    heartbeatMd: agent.heartbeatMd || template.heartbeatMd,
+                  },
+                });
+              } catch {
+                // Non-critical
+              }
             }
           }
         }
