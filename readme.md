@@ -61,6 +61,15 @@ https://github.com/CES-Ltd/TitanX/raw/main/docs/screenshots/demo-security.mp4
 
 ---
 
+## 🏗 Architecture
+
+<p align="center">
+  <img src="./docs/screenshots/titanx-architecture.gif" alt="TitanX Architecture — Animated data flow across 6 layers" width="800">
+  <br/><em>Animated architecture — User → Renderer (9 pages) → IPC Bridge (59 channels) → Main Process (30 services) → Security (IAM/Audit/SSRF) → External APIs (Claude/Gemini/DeepAgents/MCP)</em>
+</p>
+
+---
+
 ## 📸 Screenshots
 
 <p align="center">
