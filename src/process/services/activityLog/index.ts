@@ -127,7 +127,7 @@ export function logActivity(db: ISqliteDriver, input: LogActivityInput): Activit
     createdAt
   );
 
-  return {
+  const entry: ActivityLogEntry = {
     ...input,
     id,
     createdAt,
@@ -135,6 +135,16 @@ export function logActivity(db: ISqliteDriver, input: LogActivityInput): Activit
     severity,
     details: input.details ? (sanitizeRecord(input.details) as Record<string, unknown>) : undefined,
   };
+
+  // Emit live event so real-time visualizers can pick it up immediately
+  try {
+    const { ipcBridge } = require('@/common');
+    ipcBridge.liveEvents.activity.emit(entry);
+  } catch {
+    // Live event emission is non-critical — may fail during early startup
+  }
+
+  return entry;
 }
 
 /**
