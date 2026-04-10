@@ -7,7 +7,7 @@
 import React, { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Tabs, Typography } from '@arco-design/web-react';
-import { DataDisplay, HoneyOne, Performance, Fire, Calculator, Log, Peoples } from '@icon-park/react';
+import { DataDisplay, HoneyOne, Performance, Fire, Calculator, Log, Peoples, Eyes } from '@icon-park/react';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import CommandCenter from './CommandCenter';
 import CostDashboard from '@renderer/pages/governance/CostDashboard';
@@ -16,6 +16,7 @@ import CavemanSavings from './CavemanSavings';
 import CostProjections from './CostProjections';
 import CavemanLog from './CavemanLog';
 import SprintAnalytics from './SprintAnalytics';
+import LiveFlowVisualizer from './LiveFlowVisualizer';
 
 const { TabPane } = Tabs;
 const { Title } = Typography;
@@ -45,6 +46,17 @@ const ObservabilityPage: React.FC = () => {
         className='flex-1 min-h-0'
         style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
       >
+        <TabPane
+          key='live-flow'
+          title={
+            <span className='flex items-center gap-1'>
+              <Eyes size={16} />
+              {t('observability.tabs.liveFlow', 'Live Flow')}
+            </span>
+          }
+        >
+          <LiveFlowVisualizer />
+        </TabPane>
         <TabPane
           key='command-center'
           title={

@@ -2,8 +2,13 @@
 // Shared team types used by both main process and renderer.
 // Renderer code should import from here instead of @process/team/types.
 
-/** Role of a teammate within a team */
-export type TeammateRole = 'lead' | 'teammate';
+/**
+ * Role of a teammate within a team.
+ * - lead: Primary agent that coordinates the team
+ * - queen: Authoritative swarm coordinator with drift detection (Agent OS)
+ * - teammate: Worker agent that executes tasks
+ */
+export type TeammateRole = 'lead' | 'queen' | 'teammate';
 
 /** Lifecycle status of a teammate agent */
 export type TeammateStatus = 'pending' | 'idle' | 'active' | 'completed' | 'failed';

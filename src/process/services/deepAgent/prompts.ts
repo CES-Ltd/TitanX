@@ -240,11 +240,28 @@ export async function loadAgentMemory(workspacePath?: string): Promise<string> {
 
   const fs = await import('fs/promises');
   const path = await import('path');
-  const memorySources = [
+  // Chain loading: walk up parent directories for CLAUDE.md/AGENTS.md files
+  // (inspired by open-claude-code's parent directory chain)
+  const memorySources: string[] = [];
+
+  // Walk up from workspace to root, collecting CLAUDE.md files (root-first order)
+  const parentChain: string[] = [];
+  let current = workspacePath;
+  for (let i = 0; i < 10; i++) {
+    const claudeMd = path.join(current, 'CLAUDE.md');
+    parentChain.unshift(claudeMd); // Prepend so root is first
+    const parent = path.dirname(current);
+    if (parent === current) break; // Reached filesystem root
+    current = parent;
+  }
+  memorySources.push(...parentChain);
+
+  // Also check workspace-local AGENTS.md files
+  memorySources.push(
     path.join(workspacePath, 'AGENTS.md'),
     path.join(workspacePath, '.deepagents', 'AGENTS.md'),
     path.join(workspacePath, '.claude', 'AGENTS.md'),
-  ];
+  );
 
   const memoryBlocks: string[] = [];
   for (const source of memorySources) {
