@@ -33,7 +33,8 @@ export function buildRolePrompt(params: BuildRolePromptParams): string {
   // Teammate: find the lead from the full list (teammates array excludes self)
   const lead = teammates.find((t) => t.role === 'lead');
   const otherTeammates = teammates.filter((t) => t.role !== 'lead');
-  const assignedTasks = tasks.filter((t) => t.owner === agent.slotId || t.owner === agent.agentName);
+  // Match by agentName first (canonical owner), then slotId (legacy/fallback)
+  const assignedTasks = tasks.filter((t) => t.owner === agent.agentName || t.owner === agent.slotId);
 
   return buildTeammatePrompt({
     agent,

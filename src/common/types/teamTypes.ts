@@ -51,10 +51,13 @@ export type TeamTask = {
   subject: string;
   description?: string;
   status: 'pending' | 'in_progress' | 'completed' | 'deleted';
+  /** Canonical owner — always stored as agentName (stable across restarts), never slotId */
   owner?: string;
   blockedBy: string[];
   blocks: string[];
   metadata: Record<string, unknown>;
+  /** Agent progress notes — what was done, what remains. Critical for resume after restart. */
+  progressNotes?: string;
   createdAt: number;
   updatedAt: number;
 };

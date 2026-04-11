@@ -1,6 +1,6 @@
 // src/process/team/TaskManager.ts
 import type { ITeamRepository } from './repository/ITeamRepository';
-import type { TeamTask } from './types';
+import type { TeamAgent, TeamTask } from './types';
 import { getDatabase } from '@process/services/database';
 import * as sprintService from '@process/services/sprintTasks';
 import * as activityLogService from '@process/services/activityLog';
@@ -10,8 +10,11 @@ type CreateTaskParams = {
   teamId: string;
   subject: string;
   description?: string;
+  /** Owner should be the agent's name (stable identity), not slotId */
   owner?: string;
   blockedBy?: string[];
+  /** Pass current agents to resolve agentName → slotId for sprint board */
+  agents?: TeamAgent[];
 };
 
 /** Parameters for updating an existing task */
@@ -19,6 +22,10 @@ type UpdateTaskParams = {
   status?: TeamTask['status'];
   owner?: string;
   description?: string;
+  /** Progress notes — what was done and what remains */
+  progressNotes?: string;
+  /** Pass agents for name → slotId resolution when syncing to sprint board */
+  agents?: TeamAgent[];
 };
 
 /**
@@ -71,13 +78,22 @@ export class TaskManager {
       const db = await getDatabase();
       const driver = db.getDriver();
 
-      console.log(`[TaskManager] Creating sprint task for team=${params.teamId} title="${params.subject}" teamTaskId=${created.id}`);
+      console.log(
+        `[TaskManager] Creating sprint task for team=${params.teamId} title="${params.subject}" teamTaskId=${created.id}`
+      );
+
+      // Resolve agentName → slotId for the sprint board's assignee_slot_id column.
+      // task.owner stores agentName (stable identity); sprint board needs slotId.
+      const resolvedSlotId =
+        params.owner && params.agents
+          ? params.agents.find((a) => a.agentName.toLowerCase() === params.owner!.toLowerCase())?.slotId
+          : undefined;
 
       const sprintTask = sprintService.createTask(driver, {
         teamId: params.teamId,
         title: params.subject,
         description: params.description,
-        assigneeSlotId: params.owner,
+        assigneeSlotId: resolvedSlotId ?? params.owner,
         priority: 'medium',
         teamTaskId: created.id,
       });
@@ -115,10 +131,15 @@ export class TaskManager {
           entityId: sprintTask.id,
           createdAt: Date.now(),
         });
-      } catch { /* non-critical */ }
+      } catch {
+        /* non-critical */
+      }
     } catch (err) {
       console.error('[TaskManager] ❌ Sprint task creation FAILED:', err);
-      console.error('[TaskManager] Params:', JSON.stringify({ teamId: params.teamId, subject: params.subject, teamTaskId: created.id }));
+      console.error(
+        '[TaskManager] Params:',
+        JSON.stringify({ teamId: params.teamId, subject: params.subject, teamTaskId: created.id })
+      );
     }
 
     return created;
@@ -146,12 +167,18 @@ export class TaskManager {
         };
         const sprintStatus = statusMap[updates.status] ?? updates.status;
 
+        // Resolve agentName → slotId for sprint board assignee
+        const resolvedOwnerSlotId =
+          updates.owner && updates.agents
+            ? updates.agents.find((a) => a.agentName.toLowerCase() === updates.owner!.toLowerCase())?.slotId
+            : undefined;
+
         // Find sprint task by team_task_id (reliable link)
         const sprintTask = sprintService.findByTeamTaskId(driver, taskId);
         if (sprintTask) {
           sprintService.updateTask(driver, sprintTask.id, {
             status: sprintStatus as 'backlog' | 'todo' | 'in_progress' | 'review' | 'done',
-            assigneeSlotId: updates.owner ?? sprintTask.assigneeSlotId,
+            assigneeSlotId: resolvedOwnerSlotId ?? updates.owner ?? sprintTask.assigneeSlotId,
           });
           console.log(`[TaskManager] Sprint task ${sprintTask.id} status → ${sprintStatus}`);
         } else {

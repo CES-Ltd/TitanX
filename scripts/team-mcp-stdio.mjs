@@ -191,16 +191,23 @@ Best practices:
 createTeamTool(
   server,
   'team_task_update',
-  `Update the status or assignment of an existing task.
+  `Update the status, assignment, or progress notes of an existing task.
 
 Use this to:
 - Mark a task as completed or in_progress
 - Reassign a task to a different teammate
-- Update task status when work is done`,
+- Save progress notes (CRITICAL for resuming after restarts)
+
+ALWAYS include notes when updating task status. Example:
+  team_task_update(task_id: "abc123", status: "in_progress", notes: "Implemented login form. Remaining: add validation and error handling.")`,
   {
     task_id: z.string().describe('Task ID (first 8 chars are enough)'),
     status: z.enum(['pending', 'in_progress', 'completed', 'deleted']).optional().describe('New task status'),
     owner: z.string().optional().describe('New owner (teammate name)'),
+    notes: z
+      .string()
+      .optional()
+      .describe('Progress notes: what was done and what remains. Critical for resuming after restarts.'),
   },
   TEAM_MCP_PORT,
   TEAM_AGENT_SLOT_ID,

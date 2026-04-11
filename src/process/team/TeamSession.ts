@@ -210,6 +210,21 @@ export class TeamSession extends EventEmitter {
     return this.teammateManager.getAgents();
   }
 
+  /** Get the task manager for direct task queries */
+  getTaskManager(): TaskManager {
+    return this.taskManager;
+  }
+
+  /** Get the mailbox for writing system messages */
+  getMailbox(): Mailbox {
+    return this.mailbox;
+  }
+
+  /** Wake an agent by slotId */
+  async wakeAgent(slotId: string): Promise<void> {
+    return this.teammateManager.wake(slotId);
+  }
+
   /**
    * Transition all 'pending' agents to 'idle'.
    * Called after session initialization so agents don't stay stuck in pending state.

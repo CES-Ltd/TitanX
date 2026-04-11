@@ -42,6 +42,7 @@ type TaskRow = {
   blocked_by: string;
   blocks: string;
   metadata: string;
+  progress_notes: string | null;
   created_at: number;
   updated_at: number;
 };
@@ -89,6 +90,7 @@ function rowToTask(row: TaskRow): TeamTask {
     blockedBy: JSON.parse(row.blocked_by) as string[],
     blocks: JSON.parse(row.blocks) as string[],
     metadata: JSON.parse(row.metadata) as Record<string, unknown>,
+    progressNotes: row.progress_notes ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -280,7 +282,7 @@ export class SqliteTeamRepository implements ITeamRepository {
     db.prepare(
       `UPDATE team_tasks
        SET subject = ?, description = ?, status = ?, owner = ?,
-           blocked_by = ?, blocks = ?, metadata = ?, updated_at = ?
+           blocked_by = ?, blocks = ?, metadata = ?, progress_notes = ?, updated_at = ?
        WHERE id = ?`
     ).run(
       merged.subject,
@@ -290,6 +292,7 @@ export class SqliteTeamRepository implements ITeamRepository {
       JSON.stringify(merged.blockedBy),
       JSON.stringify(merged.blocks),
       JSON.stringify(merged.metadata),
+      merged.progressNotes ?? '',
       merged.updatedAt,
       id
     );

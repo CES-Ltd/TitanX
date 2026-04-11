@@ -2215,6 +2215,51 @@ const migration_v55: IMigration = {
   },
 };
 
+// ── Phase 12: Agent progress notes + owner identity normalization ────────────
+
+const migration_v56: IMigration = {
+  version: 56,
+  name: 'Add progress_notes to team_tasks and normalize owner to agentName',
+  up(db: ISqliteDriver) {
+    // Add progress_notes column for agent resume context
+    db.exec(`ALTER TABLE team_tasks ADD COLUMN progress_notes TEXT NOT NULL DEFAULT ''`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_owner ON team_tasks(team_id, owner)');
+
+    // Normalize historical owner values from slotId to agentName.
+    // Build slotId→agentName map from all teams' agents JSON.
+    const teams = db.prepare('SELECT id, agents FROM teams').all() as Array<{ id: string; agents: string }>;
+    const slotToName = new Map<string, string>();
+
+    for (const team of teams) {
+      try {
+        const agents = JSON.parse(team.agents) as Array<{ slotId: string; agentName: string }>;
+        for (const agent of agents) {
+          if (agent.slotId && agent.agentName) {
+            slotToName.set(agent.slotId, agent.agentName);
+          }
+        }
+      } catch {
+        // Skip malformed agents JSON
+      }
+    }
+
+    // Update team_tasks.owner from slotId to agentName where applicable
+    let normalized = 0;
+    for (const [slotId, agentName] of slotToName) {
+      const result = db.prepare('UPDATE team_tasks SET owner = ? WHERE owner = ?').run(agentName, slotId);
+      normalized += result.changes;
+    }
+
+    console.log(
+      `[Migration-v56] Added progress_notes column. Normalized ${String(normalized)} task owners to agentName.`
+    );
+  },
+  down(_db: ISqliteDriver) {
+    console.warn('[Migration-v56] Rollback: columns remain (SQLite limitation).');
+    void _db;
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -2227,7 +2272,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v35, migration_v36, migration_v37, migration_v38, migration_v39,
   migration_v40, migration_v41, migration_v42, migration_v43, migration_v44,
   migration_v45, migration_v46, migration_v47, migration_v48, migration_v49, migration_v50, migration_v51, migration_v52, migration_v53,
-  migration_v54, migration_v55,
+  migration_v54, migration_v55, migration_v56,
 ];
 
 /**

@@ -28,7 +28,15 @@ function roleDescription(agentType: string): string {
 
 function formatTasks(tasks: TeamTask[]): string {
   if (tasks.length === 0) return 'No assigned tasks.';
-  return tasks.map((t) => `- [${t.id.slice(0, 8)}] ${t.subject} (${t.status})`).join('\n');
+  return tasks
+    .map((t) => {
+      let line = `- [${t.id.slice(0, 8)}] ${t.subject} (${t.status})`;
+      if (t.progressNotes) {
+        line += `\n  Last progress: ${t.progressNotes}`;
+      }
+      return line;
+    })
+    .join('\n');
 }
 
 function formatMessages(messages: MailboxMessage[], allAgents: TeamAgent[]): string {
@@ -86,19 +94,23 @@ system and will break team coordination. Always use the \`team_*\` versions:
 ## How to Work
 1. Read your unread messages to understand your assignment
 2. Check team_task_list for tasks assigned to you
-3. If you have a task, call team_task_update(status: "in_progress") immediately
-4. Do the actual work (read files, write code, search, etc.)
-5. When done, call team_task_update(status: "done")
-6. Report results to the lead via team_send_message — include what you did and the outcome
-7. If your task board is empty and no assignment in messages, acknowledge you're ready and stand by
+3. Read progress notes on your tasks — they tell you exactly where you left off after a restart
+4. If you have a task, call team_task_update(status: "in_progress") immediately
+5. Do the actual work (read files, write code, search, etc.)
+6. **ALWAYS save progress notes** via team_task_update(notes: "Completed X. Remaining: Y.") — this is CRITICAL for resuming after restarts
+7. When done, call team_task_update(status: "done", notes: "Final summary of what was done")
+8. Report results to the lead via team_send_message — include what you did and the outcome
+9. If your task board is empty and no assignment in messages, acknowledge you're ready and stand by
 
 ## Heartbeat Protocol
 Every time you wake up:
 1. Check team_task_list for your assigned tasks
-2. Check unread messages for new instructions
-3. Update task status as you work (in_progress → done)
-4. Report completion to the lead via team_send_message
-5. If blocked, message the lead explaining what you need
+2. Read progress notes on your tasks to remember where you left off
+3. Check unread messages for new instructions
+4. Update task status as you work (in_progress → done)
+5. Save progress notes after each significant step via team_task_update(notes: "...")
+6. Report completion to the lead via team_send_message
+7. If blocked, message the lead explaining what you need
 
 ## Bug Fix Priority
 When fixing bugs: **locate the problem → fix the problem → types/code style last**.

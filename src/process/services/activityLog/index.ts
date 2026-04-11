@@ -7,21 +7,7 @@
 import crypto from 'crypto';
 import type { ISqliteDriver } from '../database/drivers/ISqliteDriver';
 import { sanitizeRecord } from '@process/utils/redaction';
-
-/** Lazy-loaded device identity module (non-critical — audit still works without it) */
-let _deviceIdentity: {
-  signAuditEntry: (id: string, action: string, actorId: string, ts: number) => { signature: string; deviceId: string };
-} | null = null;
-
-function getDeviceIdentityModule() {
-  if (_deviceIdentity) return _deviceIdentity;
-  try {
-    _deviceIdentity = require('../deviceIdentity') as typeof _deviceIdentity;
-  } catch {
-    // Device identity not available — non-critical
-  }
-  return _deviceIdentity;
-}
+import { signAuditEntry as deviceSignAuditEntry } from '@process/services/deviceIdentity';
 
 /** Cached ipcBridge reference for live event emission (avoids require() on every log call) */
 let _ipcBridge: { liveEvents: { activity: { emit: (entry: unknown) => void } } } | null = null;
@@ -135,12 +121,9 @@ export function logActivity(db: ISqliteDriver, input: LogActivityInput): Activit
   let deviceSignature: string | null = null;
   let deviceId: string | null = null;
   try {
-    const deviceMod = getDeviceIdentityModule();
-    if (deviceMod) {
-      const signed = deviceMod.signAuditEntry(id, input.action, input.actorId, createdAt);
-      deviceSignature = signed.signature;
-      deviceId = signed.deviceId;
-    }
+    const signed = deviceSignAuditEntry(id, input.action, input.actorId, createdAt);
+    deviceSignature = signed.signature;
+    deviceId = signed.deviceId;
   } catch {
     // Device signing is non-critical — HMAC signature is the primary integrity check
   }
