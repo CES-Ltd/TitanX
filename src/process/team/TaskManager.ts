@@ -70,16 +70,27 @@ export class TaskManager {
     try {
       const db = await getDatabase();
       const driver = db.getDriver();
+
+      console.log(`[TaskManager] Creating sprint task for team=${params.teamId} title="${params.subject}" teamTaskId=${created.id}`);
+
       const sprintTask = sprintService.createTask(driver, {
         teamId: params.teamId,
         title: params.subject,
         description: params.description,
         assigneeSlotId: params.owner,
         priority: 'medium',
-        teamTaskId: created.id, // Link sprint task to team task for status sync
+        teamTaskId: created.id,
       });
+
+      console.log(`[TaskManager] Sprint task INSERT OK: ${sprintTask.id} status=${sprintTask.status}`);
+
       sprintService.updateTask(driver, sprintTask.id, { status: 'todo' });
-      console.log(`[TaskManager] Sprint task created: ${sprintTask.id} "${params.subject}"`);
+      console.log(`[TaskManager] Sprint task status updated to 'todo': ${sprintTask.id}`);
+
+      // Verify the task is actually in the database
+      const verify = sprintService.listTasks(driver, params.teamId);
+      console.log(`[TaskManager] Sprint board now has ${String(verify.length)} tasks for team ${params.teamId}`);
+
       // Audit log
       activityLogService.logActivity(driver, {
         userId: 'system_default_user',
@@ -88,10 +99,26 @@ export class TaskManager {
         action: 'task.created',
         entityType: 'sprint_task',
         entityId: sprintTask.id,
-        details: { title: params.subject, assignee: params.owner, teamId: params.teamId },
+        details: { title: params.subject, assignee: params.owner, teamId: params.teamId, sprintTaskId: sprintTask.id },
       });
+
+      // Emit live event so Sprint Board can auto-refresh
+      try {
+        const { ipcBridge } = require('@/common');
+        ipcBridge.liveEvents.activity.emit({
+          id: sprintTask.id,
+          userId: 'system_default_user',
+          actorType: 'agent',
+          actorId: params.owner ?? 'system',
+          action: 'sprint_task.created',
+          entityType: 'sprint_task',
+          entityId: sprintTask.id,
+          createdAt: Date.now(),
+        });
+      } catch { /* non-critical */ }
     } catch (err) {
-      console.error('[TaskManager] Sprint bridge failed:', err);
+      console.error('[TaskManager] ❌ Sprint task creation FAILED:', err);
+      console.error('[TaskManager] Params:', JSON.stringify({ teamId: params.teamId, subject: params.subject, teamTaskId: created.id }));
     }
 
     return created;

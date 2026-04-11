@@ -72,6 +72,14 @@ const SprintBoard: React.FC = () => {
     loadData();
   }, [loadData]);
 
+  // Auto-refresh: poll every 5 seconds to pick up agent-created tasks
+  useEffect(() => {
+    const interval = setInterval(() => {
+      void loadData();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [loadData]);
+
   const handleCreateTask = useCallback(async () => {
     if (!teamId) return;
     try {
