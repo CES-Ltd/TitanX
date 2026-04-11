@@ -145,6 +145,21 @@ export class TeammateManager extends EventEmitter {
       if (!this.pendingWakes.has(slotId)) {
         this.pendingWakes.add(slotId);
         console.log(`[TeammateManager] wake(${slotId}): QUEUED (agent busy, will retry after current turn)`);
+        // Audit log: wake queued
+        void (async () => {
+          try {
+            const db = await getDatabase();
+            activityLogService.logActivity(db.getDriver(), {
+              userId: 'system_default_user',
+              actorType: 'system',
+              actorId: 'heartbeat',
+              action: 'heartbeat.wake_queued',
+              entityType: 'agent',
+              entityId: slotId,
+              details: { reason: 'agent_busy', teamId: this.teamId },
+            });
+          } catch { /* non-critical */ }
+        })();
       }
       return;
     }
@@ -153,6 +168,22 @@ export class TeammateManager extends EventEmitter {
     if (!agent) return;
 
     console.log(`[TeammateManager] wake(${agent.agentName}): status=${agent.status}, proceeding`);
+
+    // Audit log: heartbeat wake
+    void (async () => {
+      try {
+        const db = await getDatabase();
+        activityLogService.logActivity(db.getDriver(), {
+          userId: 'system_default_user',
+          actorType: 'system',
+          actorId: 'heartbeat',
+          action: 'heartbeat.agent_woken',
+          entityType: 'agent',
+          entityId: agent.slotId,
+          details: { agentName: agent.agentName, previousStatus: agent.status, teamId: this.teamId },
+        });
+      } catch { /* non-critical */ }
+    })();
 
     this.activeWakes.add(slotId);
     try {
@@ -255,6 +286,21 @@ export class TeammateManager extends EventEmitter {
       if (!this.pendingWakes.has(retryKey)) {
         this.pendingWakes.add(retryKey);
         console.log(`[TeammateManager] wake(${agent.agentName}): FAILED, scheduling retry in 3s`);
+        // Audit log: wake failed, retrying
+        void (async () => {
+          try {
+            const db = await getDatabase();
+            activityLogService.logActivity(db.getDriver(), {
+              userId: 'system_default_user',
+              actorType: 'system',
+              actorId: 'heartbeat',
+              action: 'heartbeat.wake_retry',
+              entityType: 'agent',
+              entityId: slotId,
+              details: { agentName: agent.agentName, retryDelayMs: 3000, teamId: this.teamId },
+            });
+          } catch { /* non-critical */ }
+        })();
         setTimeout(() => {
           this.pendingWakes.delete(retryKey);
           this.setStatus(slotId, 'idle');
@@ -403,6 +449,21 @@ export class TeammateManager extends EventEmitter {
     if (this.pendingWakes.has(agent.slotId)) {
       this.pendingWakes.delete(agent.slotId);
       console.log(`[TeammateManager] Processing queued wake for ${agent.agentName} (was busy during previous request)`);
+      // Audit log: deferred wake processed
+      void (async () => {
+        try {
+          const db = await getDatabase();
+          activityLogService.logActivity(db.getDriver(), {
+            userId: 'system_default_user',
+            actorType: 'system',
+            actorId: 'heartbeat',
+            action: 'heartbeat.deferred_wake_processed',
+            entityType: 'agent',
+            entityId: agent.slotId,
+            details: { agentName: agent.agentName, teamId: this.teamId },
+          });
+        } catch { /* non-critical */ }
+      })();
       // Defer slightly to let current turn fully complete
       setTimeout(() => void this.wake(agent.slotId), 500);
     }

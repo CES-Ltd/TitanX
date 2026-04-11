@@ -38,6 +38,10 @@ const ENTITY_TYPES = [
 ];
 
 const ACTION_TYPES = [
+  'heartbeat.agent_woken',
+  'heartbeat.wake_queued',
+  'heartbeat.deferred_wake_processed',
+  'heartbeat.wake_retry',
   'hook.fired',
   'hook.blocked',
   'reasoning_bank.trajectory_matched',
@@ -133,6 +137,7 @@ const ActivityLog: React.FC = () => {
           val.includes('deleted')
         )
           color = 'red';
+        else if (val.includes('heartbeat.')) color = 'arcoblue';
         else if (val.includes('hook.fired') || val.includes('hook.blocked')) color = 'purple';
         else if (val.includes('reasoning_bank')) color = 'magenta';
         else if (val.includes('queen.drift') || val.includes('queen.correction')) color = 'orangered';
@@ -195,6 +200,9 @@ const ActivityLog: React.FC = () => {
         if (val.savedChars !== undefined) parts.push(`Saved: ${val.savedChars} chars`);
         if (val.previousMode) parts.push(`${val.previousMode} → ${val.newMode}`);
         if (val.event) parts.push(`Event: ${val.event}`);
+        if (val.previousStatus) parts.push(`Was: ${val.previousStatus}`);
+        if (val.reason) parts.push(`Reason: ${val.reason}`);
+        if (val.retryDelayMs) parts.push(`Retry: ${val.retryDelayMs}ms`);
         if (val.count !== undefined) parts.push(`Count: ${val.count}`);
         if (val.agent) parts.push(`Agent: ${val.agent}`);
         return parts.length > 0 ? (
