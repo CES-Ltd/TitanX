@@ -8,19 +8,29 @@ import { buildRolePrompt } from './buildRolePrompt';
  * XML fallback instructions for platforms that do NOT support MCP tool use.
  * Only describes XML tag syntax — no mention of MCP tools (those are in the role prompts).
  */
-const TEAM_INSTRUCTIONS = `## Team Coordination (XML Fallback)
+const TEAM_INSTRUCTIONS = `## Team Coordination (MANDATORY — use these XML tags)
 
-The team_* MCP tools are NOT available in your current session.
-Use these XML tags instead to coordinate with your team:
+You MUST use these XML tags to coordinate with your team. Include them in your response text.
+These tags are parsed and executed automatically — they ARE your team tools.
 
-<send_message to="AgentName">message</send_message>
-<task_create subject="..." owner="..." description="..."/>
-<task_update task_id="..." status="completed"/>
-<spawn_agent name="AgentName" type="agent_type"/>
-<idle reason="available" summary="..." completed_task_id="..."/>
-<write_plan title="Plan Title"><step>Step 1</step><step>Step 2</step></write_plan>
-<reflect plan_id="..." score="0.8">Reflection text</reflect>
-<trigger_workflow id="workflow-uuid"/>`;
+<send_message to="AgentName">message content here</send_message>
+<task_create subject="Task title" owner="AgentName" description="Task details"/>
+<task_update task_id="TASK-001" status="in_progress"/>
+<spawn_agent name="AgentName" type="claude"/>
+<idle reason="available" summary="What I did" completed_task_id="TASK-001"/>
+
+CRITICAL RULES:
+- For EVERY user request, create tasks using <task_create/> tags BEFORE delegating
+- Assign each task to a teammate by name using the owner attribute
+- After creating tasks, send instructions using <send_message> tags
+- ALWAYS include at least one <task_create/> for every request
+- When done, use <idle reason="available" summary="..."/>
+
+Example — user says "build a login page":
+<task_create subject="Design login UI" owner="Frontend_Specialist" description="Build login form with email/password"/>
+<task_create subject="Create auth API" owner="Backend_Engineer" description="POST /api/auth/login endpoint"/>
+<send_message to="Frontend_Specialist">Please build the login page UI with email and password fields</send_message>
+<send_message to="Backend_Engineer">Please create the authentication API endpoint</send_message>`;
 
 /** Remove matched XML tag spans from a string and return the remaining text */
 function removeXmlSpans(text: string, spans: Array<[number, number]>): string {
@@ -183,10 +193,11 @@ export function createXmlFallbackAdapter(options?: { hasMcpTools?: boolean }): T
       });
       sections.push(rolePrompt);
 
-      // Only append XML fallback instructions when MCP tools are NOT available
-      if (!options?.hasMcpTools) {
-        sections.push(TEAM_INSTRUCTIONS);
-      }
+      // ALWAYS include XML coordination instructions — they work as a universal
+      // fallback for ALL providers. MCP tools may be injected but some backends
+      // (OpenCode, etc.) can't discover or call them. XML tags in text are
+      // parsed reliably regardless of backend.
+      sections.push(TEAM_INSTRUCTIONS);
 
       return { message: sections.join('\n\n') };
     },

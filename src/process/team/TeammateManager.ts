@@ -102,11 +102,16 @@ export class TeammateManager extends EventEmitter {
 
   setHasMcpTools(value: boolean): void {
     this.mcpServerStarted = value;
+    console.log(`[TeammateManager] MCP tools ${value ? 'ENABLED' : 'DISABLED'} for team ${this.teamId}`);
   }
 
   /** Check if a specific agent actually has MCP tools available */
   private agentHasMcpTools(agent: TeamAgent): boolean {
-    return this.mcpServerStarted && MCP_CAPABLE_TYPES.has(agent.conversationType);
+    const result = this.mcpServerStarted && MCP_CAPABLE_TYPES.has(agent.conversationType);
+    if (!result && this.mcpServerStarted) {
+      console.log(`[TeammateManager] agentHasMcpTools(${agent.agentName}): false — conversationType="${agent.conversationType}" not in MCP_CAPABLE_TYPES`);
+    }
+    return result;
   }
 
   /** Add a new agent to the team and notify renderer */
@@ -195,7 +200,9 @@ export class TeammateManager extends EventEmitter {
 
       this.setStatus(slotId, 'active');
 
-      const adapter = createPlatformAdapter(agent.conversationType, this.agentHasMcpTools(agent));
+      const hasMcp = this.agentHasMcpTools(agent);
+      console.log(`[TeammateManager] Building payload for ${agent.agentName}: hasMcpTools=${String(hasMcp)} mcpServerStarted=${String(this.mcpServerStarted)} conversationType=${agent.conversationType}`);
+      const adapter = createPlatformAdapter(agent.conversationType, hasMcp);
       const [mailboxMessages, tasks] = await Promise.all([
         this.mailbox.readUnread(this.teamId, slotId),
         this.taskManager.list(this.teamId),
