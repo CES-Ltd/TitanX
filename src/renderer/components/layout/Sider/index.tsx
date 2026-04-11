@@ -8,9 +8,10 @@ import { blurActiveElement } from '@renderer/utils/ui/focus';
 import { useThemeContext } from '@renderer/hooks/context/ThemeContext';
 import { useAllCronJobs } from '@renderer/pages/cron/useCronJobs';
 import { useTeamList } from '@renderer/pages/team/hooks/useTeamList';
-import { Brain, Peoples, Plus } from '@icon-park/react';
-import { Tag } from '@arco-design/web-react';
+import { Brain, Peoples, Plus, Delete } from '@icon-park/react';
+import { Tag, Popconfirm, Message } from '@arco-design/web-react';
 import { Tooltip } from '@arco-design/web-react';
+import { team as teamBridge } from '@/common/adapter/ipcBridge';
 import TeamCreateModal from '@renderer/pages/team/components/TeamCreateModal';
 import { ipcBridge } from '@/common';
 import SiderToolbar from './SiderToolbar';
@@ -291,7 +292,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
                       <div
                         key={team.id}
                         className={classNames(
-                          'flex items-center gap-8px px-12px py-6px mx-4px rd-6px cursor-pointer transition-colors',
+                          'group flex items-center gap-8px px-12px py-6px mx-4px rd-6px cursor-pointer transition-colors',
                           isActive ? 'bg-[rgba(var(--primary-6),0.12)] text-primary' : 'hover:bg-fill-3 text-t-primary'
                         )}
                         onClick={() => {
@@ -302,8 +303,29 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
                         }}
                       >
                         <Peoples theme='outline' size='16' fill={isActive ? 'rgb(var(--primary-6))' : 'currentColor'} />
-                        <span className='text-13px truncate'>{team.name}</span>
-                        <span className='text-10px text-t-quaternary ml-auto shrink-0'>{team.agents.length}</span>
+                        <span className='text-13px truncate flex-1'>{team.name}</span>
+                        <span className='text-10px text-t-quaternary shrink-0 mr-4px'>{team.agents.length}</span>
+                        <Popconfirm
+                          title={`Delete team "${team.name}"?`}
+                          content='This will remove the team and all its agents. This cannot be undone.'
+                          onOk={() => {
+                            void teamBridge.remove.invoke({ id: team.id }).then(() => {
+                              Message.success(`Team "${team.name}" deleted`);
+                              void refreshTeams();
+                              if (isActive) void navigate('/');
+                            }).catch((err: unknown) => Message.error(err instanceof Error ? err.message : 'Failed to delete team'));
+                          }}
+                          okText='Delete'
+                          okButtonProps={{ status: 'danger' }}
+                        >
+                          <button
+                            type='button'
+                            className='shrink-0 w-20px h-20px rd-4px flex items-center justify-center bg-transparent border-none cursor-pointer text-t-quaternary hover:text-[rgb(var(--red-6))] hover:bg-[rgba(var(--red-6),0.1)] transition-all opacity-0 group-hover:opacity-100'
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Delete theme='outline' size='12' />
+                          </button>
+                        </Popconfirm>
                       </div>
                     );
                   })}
