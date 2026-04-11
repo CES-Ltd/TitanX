@@ -8,6 +8,9 @@ import crypto from 'crypto';
 import type { ISqliteDriver } from '../database/drivers/ISqliteDriver';
 import { sanitizeRecord } from '@process/utils/redaction';
 
+/** Cached ipcBridge reference for live event emission (avoids require() on every log call) */
+let _ipcBridge: { liveEvents: { activity: { emit: (entry: unknown) => void } } } | null = null;
+
 export type ActivityLogEntry = {
   id: string;
   userId: string;
@@ -136,13 +139,15 @@ export function logActivity(db: ISqliteDriver, input: LogActivityInput): Activit
     details: input.details ? (sanitizeRecord(input.details) as Record<string, unknown>) : undefined,
   };
 
-  // Emit live event so real-time visualizers can pick it up immediately
-  try {
-    const { ipcBridge } = require('@/common');
-    ipcBridge.liveEvents.activity.emit(entry);
-  } catch {
-    // Live event emission is non-critical — may fail during early startup
-  }
+  // Emit live event async — don't block the audit log write
+  queueMicrotask(() => {
+    try {
+      if (!_ipcBridge) _ipcBridge = require('@/common').ipcBridge;
+      _ipcBridge.liveEvents.activity.emit(entry);
+    } catch {
+      // Live event emission is non-critical
+    }
+  });
 
   return entry;
 }

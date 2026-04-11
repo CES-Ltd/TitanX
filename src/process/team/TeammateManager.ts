@@ -18,6 +18,8 @@ import * as activityLogService from '@process/services/activityLog';
 import * as policyService from '@process/services/policyEnforcement';
 import { startSpan, getCounter } from '@process/services/telemetry';
 import * as agentMemoryService from '@process/services/agentMemory';
+import * as reasoningBank from '@process/services/reasoningBank';
+import { runHooks } from '@process/services/hooks';
 import * as agentPlanningService from '@process/services/agentPlanning';
 import * as tracingService from '@process/services/tracing';
 import * as securityFeaturesService from '@process/services/securityFeatures';
@@ -627,7 +629,7 @@ export class TeammateManager extends EventEmitter {
       try {
         // ─── Agent OS: PreToolUse Hook ──────────────────────────
         try {
-          const { runHooks } = await import('@process/services/hooks');
+          // Static import: runHooks
           const hookResult = await runHooks({
             event: 'PreToolUse',
             toolName: action.type,
@@ -645,7 +647,7 @@ export class TeammateManager extends EventEmitter {
 
         // ─── Agent OS: PostToolUse Hook ─────────────────────────
         try {
-          const { runHooks } = await import('@process/services/hooks');
+          // Static import: runHooks
           await runHooks({
             event: 'PostToolUse',
             toolName: action.type,
@@ -662,9 +664,9 @@ export class TeammateManager extends EventEmitter {
     // ─── Agent OS: ReasoningBank STORE trajectory ─────────────────
     if (serialActions.length > 0) {
       try {
-        const { getDatabase } = await import('@process/services/database');
-        const reasoningBank = await import('@process/services/reasoningBank');
-        const activityLog = await import('@process/services/activityLog');
+        // Static import: getDatabase
+        // Static import: reasoningBank
+        // Static import: activityLogService
         const db = await getDatabase();
         const driver = db.getDriver();
         const trajectoryId = reasoningBank.storeTrajectory(driver, {
@@ -677,7 +679,7 @@ export class TeammateManager extends EventEmitter {
           })),
           successScore: agent.status === 'completed' || agent.status === 'active' ? 0.8 : 0.5,
         });
-        activityLog.logActivity(driver, {
+        activityLogService.logActivity(driver, {
           userId: 'system_default_user',
           actorType: 'agent',
           actorId: agent.agentName,
@@ -707,10 +709,10 @@ export class TeammateManager extends EventEmitter {
         if (driftScore < 0.2 && goalWords.length >= 2) {
           console.log(`[Queen] Drift detected in ${agent.agentName}: output has ${String(Math.round(driftScore * 100))}% goal overlap`);
           try {
-            const { getDatabase } = await import('@process/services/database');
-            const activityLog = await import('@process/services/activityLog');
+            // Static import: getDatabase
+            // Static import: activityLogService
             const db = await getDatabase();
-            activityLog.logActivity(db.getDriver(), {
+            activityLogService.logActivity(db.getDriver(), {
               userId: 'system_default_user',
               actorType: 'agent',
               actorId: queen.agentName,
