@@ -41,7 +41,7 @@ const TECHNICAL: AgentTemplate[] = [
     capabilities: ['code', 'review', 'design'],
     avatarSpriteIdx: 0,
     maxBudgetCents: 5000,
-    allowedTools: ['edit_file', 'read_file', 'execute', 'web_search', 'grep', 'glob'],
+    allowedTools: ['Edit', 'Read', 'Bash', 'WebSearch', 'Grep', 'Glob'],
     instructionsMd: `# Senior Developer
 
 ## Role
@@ -60,6 +60,14 @@ You are a senior full-stack developer. You write clean, maintainable, and well-t
 - Always run tests before submitting work
 - Document non-obvious decisions with inline comments
 
+## Team Coordination (MCP Tools)
+When working in a team, use these tools:
+- **team_send_message**: Send messages to teammates by name
+- **team_task_create**: Create tasks on the sprint board with subject, description, owner
+- **team_task_update**: Update task status (todo, in_progress, review, done)
+- **team_task_list**: View all tasks and their status
+- **team_shutdown_agent**: Request a teammate to shut down (they can accept/reject)
+
 ## Constraints
 - Never commit directly to main — always use feature branches
 - Never skip tests or linting
@@ -73,10 +81,10 @@ You are a senior full-stack developer. You write clean, maintainable, and well-t
 - **Code Review**: Style, correctness, performance, security
 
 ## Tools Proficiency
-- edit_file: Create and modify source files
-- execute: Run tests, builds, linters
-- web_search: Research libraries, patterns, documentation
-- grep/glob: Navigate large codebases efficiently
+- Edit: Create and modify source files
+- Bash: Run tests, builds, linters
+- WebSearch: Research libraries, patterns, documentation
+- Grep/Glob: Navigate large codebases efficiently
 
 ## Domain Knowledge
 - REST/GraphQL API design
@@ -112,7 +120,7 @@ Check in every 5 minutes during active work.
     capabilities: ['test', 'review', 'security'],
     avatarSpriteIdx: 1,
     maxBudgetCents: 3000,
-    allowedTools: ['execute', 'read_file', 'write_file', 'web_search'],
+    allowedTools: ['Bash', 'Read', 'Write', 'WebSearch'],
     instructionsMd: `# QA Engineer
 
 ## Role
@@ -143,10 +151,10 @@ You are a quality assurance engineer. You write comprehensive test suites, find 
 - **Coverage Analysis**: Branch, line, and path coverage
 
 ## Tools Proficiency
-- execute: Run test suites and coverage reports
-- read_file: Inspect source code for testable behavior
-- write_file: Create test files
-- web_search: Research testing patterns`,
+- Bash: Run test suites and coverage reports
+- Read: Inspect source code for testable behavior
+- Write: Create test files
+- WebSearch: Research testing patterns`,
     heartbeatMd: `# Heartbeat Protocol
 
 ## Frequency
@@ -169,7 +177,7 @@ Run tests on every code change. Full suite every 15 minutes.
     capabilities: ['code', 'design'],
     avatarSpriteIdx: 2,
     maxBudgetCents: 4000,
-    allowedTools: ['edit_file', 'read_file', 'execute', 'web_search'],
+    allowedTools: ['Edit', 'Read', 'Bash', 'WebSearch'],
     instructionsMd: `# Frontend Specialist
 
 ## Role
@@ -210,7 +218,7 @@ Every 5 minutes during UI work. Run Lighthouse after major changes.
     capabilities: ['code', 'devops'],
     avatarSpriteIdx: 3,
     maxBudgetCents: 5000,
-    allowedTools: ['edit_file', 'read_file', 'execute', 'web_search'],
+    allowedTools: ['Edit', 'Read', 'Bash', 'WebSearch'],
     instructionsMd: `# Backend Engineer
 
 ## Role
@@ -251,7 +259,7 @@ Every 5 minutes. Monitor API response times and error rates.
     capabilities: ['devops', 'code', 'security'],
     avatarSpriteIdx: 4,
     maxBudgetCents: 4000,
-    allowedTools: ['execute', 'read_file', 'write_file'],
+    allowedTools: ['Bash', 'Read', 'Write'],
     instructionsMd: `# DevOps Engineer
 
 ## Role
@@ -292,7 +300,7 @@ Continuous monitoring. Report every 10 minutes.
     capabilities: ['security', 'review', 'code'],
     avatarSpriteIdx: 5,
     maxBudgetCents: 3000,
-    allowedTools: ['read_file', 'execute', 'web_search'],
+    allowedTools: ['Read', 'Bash', 'WebSearch'],
     instructionsMd: `# Security Auditor
 
 ## Role
@@ -333,7 +341,7 @@ Scan on every code change. Full audit daily.
     capabilities: ['code', 'devops'],
     avatarSpriteIdx: 0,
     maxBudgetCents: 4000,
-    allowedTools: ['execute', 'read_file', 'write_file', 'web_search'],
+    allowedTools: ['Bash', 'Read', 'Write', 'WebSearch'],
     instructionsMd: `# Data Engineer
 
 ## Role
@@ -374,7 +382,7 @@ Monitor slow queries every 5 minutes. Run health checks hourly.
     capabilities: ['docs', 'research'],
     avatarSpriteIdx: 1,
     maxBudgetCents: 2000,
-    allowedTools: ['read_file', 'write_file', 'web_search'],
+    allowedTools: ['Read', 'Write', 'WebSearch'],
     instructionsMd: `# Technical Writer
 
 ## Role
@@ -414,7 +422,7 @@ Check for undocumented changes every 15 minutes.
     capabilities: ['code', 'design'],
     avatarSpriteIdx: 2,
     maxBudgetCents: 4000,
-    allowedTools: ['edit_file', 'read_file', 'execute'],
+    allowedTools: ['Edit', 'Read', 'Bash'],
     instructionsMd: `# Mobile Developer
 
 ## Role
@@ -454,7 +462,7 @@ Every 5 minutes during active development.
     capabilities: ['code', 'research'],
     avatarSpriteIdx: 3,
     maxBudgetCents: 6000,
-    allowedTools: ['execute', 'read_file', 'write_file', 'web_search'],
+    allowedTools: ['Bash', 'Read', 'Write', 'WebSearch'],
     instructionsMd: `# ML/AI Engineer
 
 ## Role
@@ -500,7 +508,7 @@ const SALES: AgentTemplate[] = [
     capabilities: ['research'],
     avatarSpriteIdx: 4,
     maxBudgetCents: 2000,
-    allowedTools: ['web_search', 'write_file'],
+    allowedTools: ['WebSearch', 'Write'],
     instructionsMd: `# Lead Generator
 
 ## Role
@@ -541,7 +549,7 @@ Every 15 minutes during prospecting sessions.
     capabilities: ['research', 'docs'],
     avatarSpriteIdx: 5,
     maxBudgetCents: 2000,
-    allowedTools: ['web_search', 'write_file'],
+    allowedTools: ['WebSearch', 'Write'],
     instructionsMd: `# Sales Development Rep
 
 ## Role
@@ -581,7 +589,7 @@ Every 10 minutes during outreach campaigns.
     capabilities: ['research', 'docs'],
     avatarSpriteIdx: 0,
     maxBudgetCents: 5000,
-    allowedTools: ['web_search', 'read_file', 'write_file'],
+    allowedTools: ['WebSearch', 'Read', 'Write'],
     instructionsMd: `# Account Executive
 
 ## Role
@@ -593,6 +601,12 @@ You are a senior account executive managing the full sales cycle from discovery 
 - Create customized proposals and SOWs
 - Negotiate pricing and contract terms
 - Manage pipeline forecasting and deal reviews
+
+## Constraints
+## Team Coordination (MCP Tools)
+- **team_send_message**: Coordinate with SDRs, Solutions Architects, and CSMs
+- **team_task_create**: Create deal tasks and follow-ups
+- **team_task_update**: Update deal stage and status
 
 ## Constraints
 - Never discount beyond approved thresholds without approval
@@ -622,7 +636,7 @@ Daily pipeline review. Check-in every 30 minutes during active deals.
     capabilities: ['code', 'research', 'docs'],
     avatarSpriteIdx: 1,
     maxBudgetCents: 4000,
-    allowedTools: ['web_search', 'read_file'],
+    allowedTools: ['WebSearch', 'Read'],
     instructionsMd: `# Solutions Architect
 
 ## Role
@@ -663,7 +677,7 @@ Every 15 minutes during POC work. Daily for active deals.
     capabilities: ['research', 'docs'],
     avatarSpriteIdx: 2,
     maxBudgetCents: 2000,
-    allowedTools: ['web_search', 'write_file'],
+    allowedTools: ['WebSearch', 'Write'],
     instructionsMd: `# Customer Success Manager
 
 ## Role
@@ -709,7 +723,7 @@ const MARKETING: AgentTemplate[] = [
     capabilities: ['docs', 'research'],
     avatarSpriteIdx: 3,
     maxBudgetCents: 3000,
-    allowedTools: ['web_search', 'write_file'],
+    allowedTools: ['WebSearch', 'Write'],
     instructionsMd: `# Content Strategist
 
 ## Role
@@ -749,7 +763,7 @@ Weekly content review. Daily during launches.
     capabilities: ['research'],
     avatarSpriteIdx: 4,
     maxBudgetCents: 2000,
-    allowedTools: ['web_search', 'read_file', 'write_file'],
+    allowedTools: ['WebSearch', 'Read', 'Write'],
     instructionsMd: `# SEO Specialist
 
 ## Role
@@ -789,7 +803,7 @@ Weekly ranking reports. Daily during content launches.
     capabilities: ['docs'],
     avatarSpriteIdx: 5,
     maxBudgetCents: 2000,
-    allowedTools: ['web_search', 'write_file'],
+    allowedTools: ['WebSearch', 'Write'],
     instructionsMd: `# Social Media Manager
 
 ## Role
@@ -829,7 +843,7 @@ Every 30 minutes for engagement. Daily content planning.
     capabilities: ['research', 'code'],
     avatarSpriteIdx: 0,
     maxBudgetCents: 3000,
-    allowedTools: ['web_search', 'execute', 'write_file'],
+    allowedTools: ['WebSearch', 'Bash', 'Write'],
     instructionsMd: `# Growth Hacker
 
 ## Role
@@ -870,7 +884,7 @@ Daily experiment check-ins. Weekly growth reports.
     capabilities: ['docs'],
     avatarSpriteIdx: 1,
     maxBudgetCents: 2000,
-    allowedTools: ['web_search', 'write_file'],
+    allowedTools: ['WebSearch', 'Write'],
     instructionsMd: `# Brand Copywriter
 
 ## Role
@@ -915,7 +929,7 @@ const RESEARCH: AgentTemplate[] = [
     capabilities: ['research'],
     avatarSpriteIdx: 2,
     maxBudgetCents: 3000,
-    allowedTools: ['web_search', 'write_file'],
+    allowedTools: ['WebSearch', 'Write'],
     instructionsMd: `# Market Research Analyst
 
 ## Role
@@ -955,7 +969,7 @@ Every 10 minutes during active research.
     capabilities: ['research', 'code'],
     avatarSpriteIdx: 3,
     maxBudgetCents: 4000,
-    allowedTools: ['execute', 'read_file', 'web_search'],
+    allowedTools: ['Bash', 'Read', 'WebSearch'],
     instructionsMd: `# Data Analyst
 
 ## Role
@@ -996,7 +1010,7 @@ Every 10 minutes during analysis. Daily for dashboards.
     capabilities: ['research'],
     avatarSpriteIdx: 4,
     maxBudgetCents: 2000,
-    allowedTools: ['web_search', 'write_file'],
+    allowedTools: ['WebSearch', 'Write'],
     instructionsMd: `# Competitive Intelligence Analyst
 
 ## Role
@@ -1036,7 +1050,7 @@ Daily competitor scan. Weekly competitive briefing.
     capabilities: ['research', 'code'],
     avatarSpriteIdx: 5,
     maxBudgetCents: 4000,
-    allowedTools: ['execute', 'read_file', 'write_file'],
+    allowedTools: ['Bash', 'Read', 'Write'],
     instructionsMd: `# Business Intelligence Analyst
 
 ## Role
@@ -1081,7 +1095,7 @@ const PM: AgentTemplate[] = [
     capabilities: ['docs'],
     avatarSpriteIdx: 0,
     maxBudgetCents: 2000,
-    allowedTools: ['read_file', 'write_file'],
+    allowedTools: ['Read', 'Write'],
     instructionsMd: `# Scrum Master
 
 ## Role
@@ -1093,6 +1107,13 @@ You facilitate agile ceremonies and remove impediments for the development team.
 - Identify and remove team blockers
 - Coach team on agile best practices
 - Maintain the sprint board and backlog
+
+## Constraints
+## Team Coordination (MCP Tools)
+- **team_task_create**: Add tasks to sprint board
+- **team_task_update**: Update task status as work progresses
+- **team_task_list**: Review sprint backlog and progress
+- **team_send_message**: Communicate with team members
 
 ## Constraints
 - Never assign tasks — the team self-organizes
@@ -1122,7 +1143,7 @@ Daily standup check-in. Sprint metrics weekly.
     capabilities: ['research', 'docs'],
     avatarSpriteIdx: 1,
     maxBudgetCents: 5000,
-    allowedTools: ['web_search', 'read_file', 'write_file'],
+    allowedTools: ['WebSearch', 'Read', 'Write'],
     instructionsMd: `# Product Manager
 
 ## Role
@@ -1134,6 +1155,14 @@ You define what to build and why, bridging business goals with user needs.
 - Write user stories and acceptance criteria
 - Analyze usage data to inform decisions
 - Coordinate cross-functional launch activities
+
+## Constraints
+## Team Coordination (MCP Tools)
+- **team_task_create**: Create user stories and tasks on sprint board
+- **team_task_update**: Update priorities and status
+- **team_task_list**: Review backlog and sprint progress
+- **team_send_message**: Assign work and communicate with team
+- **team_spawn_agent**: Request lead to add specialists when needed
 
 ## Constraints
 - Every feature must have measurable success criteria
@@ -1162,7 +1191,7 @@ Daily backlog grooming. Weekly roadmap review.
     capabilities: ['docs', 'code'],
     avatarSpriteIdx: 2,
     maxBudgetCents: 3000,
-    allowedTools: ['read_file', 'write_file'],
+    allowedTools: ['Read', 'Write'],
     instructionsMd: `# Technical Program Manager
 
 ## Role
@@ -1203,7 +1232,7 @@ Daily status update. Weekly risk review.
     capabilities: ['devops', 'docs'],
     avatarSpriteIdx: 3,
     maxBudgetCents: 3000,
-    allowedTools: ['execute', 'read_file', 'write_file'],
+    allowedTools: ['Bash', 'Read', 'Write'],
     instructionsMd: `# Release Manager
 
 ## Role
@@ -1249,7 +1278,7 @@ const OPS: AgentTemplate[] = [
     capabilities: ['devops'],
     avatarSpriteIdx: 4,
     maxBudgetCents: 2000,
-    allowedTools: ['execute', 'read_file'],
+    allowedTools: ['Bash', 'Read'],
     instructionsMd: `# IT Support Specialist
 
 ## Role
@@ -1290,7 +1319,7 @@ Every 5 minutes during active incidents. Hourly otherwise.
     capabilities: ['code', 'devops'],
     avatarSpriteIdx: 5,
     maxBudgetCents: 3000,
-    allowedTools: ['execute', 'read_file', 'write_file'],
+    allowedTools: ['Bash', 'Read', 'Write'],
     instructionsMd: `# Process Automation Specialist
 
 ## Role
@@ -1330,7 +1359,7 @@ Monitor automation health every 10 minutes.
     capabilities: ['security', 'docs'],
     avatarSpriteIdx: 0,
     maxBudgetCents: 3000,
-    allowedTools: ['read_file', 'web_search'],
+    allowedTools: ['Read', 'WebSearch'],
     instructionsMd: `# Compliance Officer
 
 ## Role
@@ -1376,7 +1405,7 @@ const EXECUTIVE: AgentTemplate[] = [
     capabilities: ['research', 'docs'],
     avatarSpriteIdx: 1,
     maxBudgetCents: 5000,
-    allowedTools: ['web_search', 'read_file', 'write_file'],
+    allowedTools: ['WebSearch', 'Read', 'Write'],
     instructionsMd: `# Chief of Staff
 
 ## Role
@@ -1416,7 +1445,7 @@ Daily executive briefing. Real-time during board meetings.
     capabilities: ['research'],
     avatarSpriteIdx: 2,
     maxBudgetCents: 4000,
-    allowedTools: ['web_search', 'write_file'],
+    allowedTools: ['WebSearch', 'Write'],
     instructionsMd: `# Strategy Consultant
 
 ## Role
@@ -1456,7 +1485,7 @@ Weekly strategy updates. Daily during planning cycles.
     capabilities: ['research', 'code'],
     avatarSpriteIdx: 3,
     maxBudgetCents: 4000,
-    allowedTools: ['execute', 'read_file', 'web_search'],
+    allowedTools: ['Bash', 'Read', 'WebSearch'],
     instructionsMd: `# Financial Analyst
 
 ## Role

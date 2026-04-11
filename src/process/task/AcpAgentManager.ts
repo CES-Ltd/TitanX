@@ -698,6 +698,40 @@ class AcpAgentManager extends BaseAgentManager<AcpAgentManagerData, AcpPermissio
     cronBusyGuard.setProcessing(this.conversation_id, true);
     // Set status to running when message is being processed
     this.status = 'running';
+
+    // ─── Agent OS: ReasoningBank RETRIEVE ────────────────────────
+    try {
+      const { getDatabase } = await import('@process/services/database');
+      const reasoningBank = await import('@process/services/reasoningBank');
+      const db = await getDatabase();
+      const similar = reasoningBank.findSimilarTrajectories(db.getDriver(), data.content, 3);
+      for (const trajectory of similar) {
+        const relevance = reasoningBank.judgeRelevance(trajectory, data.content);
+        if (relevance > 0.7) {
+          const distilled = reasoningBank.distillTrajectory(trajectory);
+          console.log(`[ReasoningBank] Found relevant trajectory: ${trajectory.id} (relevance: ${String(Math.round(relevance * 100))}%, ${String(trajectory.steps.length)} steps)`);
+          // Inject trajectory hint as context for the agent
+          data.content = `${data.content}\n\n[System: A similar task was completed before. ${distilled}]`;
+          // Audit log
+          try {
+            const activityLog = await import('@process/services/activityLog');
+            activityLog.logActivity(db.getDriver(), {
+              userId: 'system_default_user',
+              actorType: 'system',
+              actorId: 'reasoning_bank',
+              action: 'reasoning_bank.trajectory_matched',
+              entityType: 'reasoning_bank',
+              entityId: trajectory.id,
+              details: { relevance: Math.round(relevance * 100), steps: trajectory.steps.length, conversationId: this.conversation_id },
+            });
+          } catch { /* non-critical */ }
+          break; // Use first best match
+        }
+      }
+    } catch {
+      // ReasoningBank is non-critical
+    }
+
     try {
       // Emit/persist user message immediately so UI can refresh without waiting
       // for ACP connection/auth/session initialization.

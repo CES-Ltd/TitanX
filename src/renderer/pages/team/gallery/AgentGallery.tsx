@@ -53,7 +53,10 @@ const AGENT_TYPES = [
   'remote',
 ];
 const CAPABILITY_OPTIONS = ['code', 'research', 'test', 'review', 'design', 'devops', 'security', 'docs'];
-const TOOL_OPTIONS = ['edit_file', 'read_file', 'write_file', 'execute', 'web_search', 'grep', 'glob'];
+const TOOL_OPTIONS = [
+  'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep', 'WebSearch', 'WebFetch',
+  'team_send_message', 'team_task_create', 'team_task_update', 'team_task_list', 'team_spawn_agent', 'team_shutdown_agent',
+];
 const SPRITE_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6'];
 
 const AgentGallery: React.FC = () => {

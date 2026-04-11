@@ -2082,6 +2082,57 @@ const migration_v52: IMigration = {
   },
 };
 
+// ── Phase 9: Fix seeded agent tool names to TitanX MCP-compatible names ───────
+
+const migration_v53: IMigration = {
+  version: 53,
+  name: 'Fix agent gallery tool names to TitanX MCP-compatible format',
+  up(db: ISqliteDriver) {
+    const toolRenames: Record<string, string> = {
+      edit_file: 'Edit',
+      read_file: 'Read',
+      write_file: 'Write',
+      execute: 'Bash',
+      web_search: 'WebSearch',
+      grep: 'Grep',
+      glob: 'Glob',
+    };
+
+    const agents = db.prepare('SELECT id, allowed_tools FROM agent_gallery').all() as Array<{ id: string; allowed_tools: string }>;
+    let updated = 0;
+
+    for (const agent of agents) {
+      try {
+        const tools = JSON.parse(agent.allowed_tools || '[]') as string[];
+        let changed = false;
+        const fixed = tools.map((t) => {
+          if (toolRenames[t]) {
+            changed = true;
+            return toolRenames[t]!;
+          }
+          return t;
+        });
+        if (changed) {
+          db.prepare('UPDATE agent_gallery SET allowed_tools = ?, updated_at = ? WHERE id = ?').run(
+            JSON.stringify(fixed),
+            Date.now(),
+            agent.id
+          );
+          updated++;
+        }
+      } catch {
+        // Skip malformed entries
+      }
+    }
+
+    console.log(`[Migration-v53] Fixed tool names for ${String(updated)} agents (${String(agents.length)} total)`);
+  },
+  down(_db: ISqliteDriver) {
+    // Reverse rename not needed — old names were wrong
+    void _db;
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -2093,7 +2144,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v30, migration_v31, migration_v32, migration_v33, migration_v34,
   migration_v35, migration_v36, migration_v37, migration_v38, migration_v39,
   migration_v40, migration_v41, migration_v42, migration_v43, migration_v44,
-  migration_v45, migration_v46, migration_v47, migration_v48, migration_v49, migration_v50, migration_v51, migration_v52,
+  migration_v45, migration_v46, migration_v47, migration_v48, migration_v49, migration_v50, migration_v51, migration_v52, migration_v53,
 ];
 
 /**

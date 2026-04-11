@@ -1177,15 +1177,29 @@ export class AcpAgent {
       );
     }
 
-    // 使用信号回调发送 end_turn 事件，不添加到消息列表
-    if (this.onSignalEvent) {
-      this.onSignalEvent({
-        type: 'finish',
-        conversation_id: this.id,
-        msg_id: uuid(),
-        data: null,
-      });
-    }
+    // Run Stop hook — can prevent agent from stopping
+    void (async () => {
+      try {
+        const { runHooks } = await import('@process/services/hooks');
+        const result = await runHooks({ event: 'Stop', conversationId: this.id, agentId: this.extra.backend as string });
+        if (!result.allow) {
+          console.log(`[Hooks] Stop prevented by hook: ${result.message ?? 'no reason'}`);
+          return; // Don't emit finish — agent continues
+        }
+      } catch {
+        // Hook failure = allow stop
+      }
+
+      // 使用信号回调发送 end_turn 事件，不添加到消息列表
+      if (this.onSignalEvent) {
+        this.onSignalEvent({
+          type: 'finish',
+          conversation_id: this.id,
+          msg_id: uuid(),
+          data: null,
+        });
+      }
+    })();
   }
 
   /**

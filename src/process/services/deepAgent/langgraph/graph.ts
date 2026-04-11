@@ -209,6 +209,22 @@ export function buildResearchGraph(
       dataSources: [],
     });
 
+    // ─── Agent OS: Micro-Compaction (first pass before summarization) ──
+    // Truncate stale tool results from earlier steps to save context
+    try {
+      const { microCompact } = await import('@process/services/hooks/microCompaction');
+      const messagesAsToolResults = state.researchNotes.map((note, i) => ({
+        role: i < state.currentStepIndex - 5 ? 'tool' : 'assistant',
+        content: note,
+      }));
+      const { truncatedCount, savedChars } = microCompact(messagesAsToolResults);
+      if (truncatedCount > 0) {
+        console.log(`[DeepAgent-MicroCompact] Truncated ${String(truncatedCount)} stale notes, saved ${String(savedChars)} chars`);
+      }
+    } catch {
+      // Micro-compaction is non-critical
+    }
+
     // ─── Auto-Summarization: compact old notes if context is too large ──
     let workingNotes = [...state.researchNotes];
     const totalChars = workingNotes.reduce((sum, n) => sum + n.length, 0);

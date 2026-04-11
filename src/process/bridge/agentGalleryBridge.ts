@@ -38,4 +38,27 @@ export function initAgentGalleryBridge(): void {
     const available = galleryService.isNameAvailable(db.getDriver(), userId, name);
     return { available };
   });
+
+  ipcBridge.agentGallery.loadFromFilesystem.provider(async ({ workspacePath }) => {
+    const { loadAgentDefinitions } = await import('@process/services/agentLoader');
+    const agents = loadAgentDefinitions(workspacePath);
+    console.log(`[AgentGallery] Loaded ${String(agents.length)} filesystem agent definitions`);
+    // Audit log
+    if (agents.length > 0) {
+      try {
+        const db = await getDatabase();
+        const activityLog = await import('@process/services/activityLog');
+        activityLog.logActivity(db.getDriver(), {
+          userId: 'system_default_user',
+          actorType: 'system',
+          actorId: 'agent_loader',
+          action: 'agent_loader.loaded',
+          entityType: 'agent',
+          entityId: 'filesystem',
+          details: { count: agents.length, sources: agents.map((a) => a.source) },
+        });
+      } catch { /* non-critical */ }
+    }
+    return agents;
+  });
 }

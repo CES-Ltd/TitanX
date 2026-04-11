@@ -14,6 +14,11 @@ const { Option } = Select;
 const ENTITY_TYPES = [
   'conversation',
   'agent',
+  'team',
+  'sprint_task',
+  'hook',
+  'reasoning_bank',
+  'setting',
   'secret',
   'budget_policy',
   'approval',
@@ -29,9 +34,29 @@ const ENTITY_TYPES = [
   'agent_snapshot',
   'iam_policy',
   'agent_policy_binding',
-  'sprint_task',
-  'team',
+  'workflow_definition',
 ];
+
+const ACTION_TYPES = [
+  'hook.fired',
+  'hook.blocked',
+  'reasoning_bank.trajectory_matched',
+  'reasoning_bank.trajectory_stored',
+  'queen.drift_detected',
+  'queen.correction_sent',
+  'agent_loader.loaded',
+  'context.micro_compacted',
+  'caveman.mode_changed',
+  'agent.token_usage',
+  'agent.recruitment_blocked',
+  'task.created',
+  'webui.password_changed',
+  'secret.created',
+  'workflow.completed',
+  'approval.approved',
+  'approval.rejected',
+];
+
 const PAGE_SIZE = 20;
 
 const ActivityLog: React.FC = () => {
@@ -41,6 +66,7 @@ const ActivityLog: React.FC = () => {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [entityFilter, setEntityFilter] = useState<string | undefined>(undefined);
+  const [actionFilter, setActionFilter] = useState<string | undefined>(undefined);
 
   const userId = 'system_default_user';
 
@@ -50,6 +76,7 @@ const ActivityLog: React.FC = () => {
       const result = await activityLog.list.invoke({
         userId,
         entityType: entityFilter,
+        action: actionFilter,
         limit: PAGE_SIZE,
         offset: (page - 1) * PAGE_SIZE,
       });
@@ -60,7 +87,7 @@ const ActivityLog: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [entityFilter, page]);
+  }, [entityFilter, actionFilter, page]);
 
   useEffect(() => {
     loadData();
@@ -106,6 +133,12 @@ const ActivityLog: React.FC = () => {
           val.includes('deleted')
         )
           color = 'red';
+        else if (val.includes('hook.fired') || val.includes('hook.blocked')) color = 'purple';
+        else if (val.includes('reasoning_bank')) color = 'magenta';
+        else if (val.includes('queen.drift') || val.includes('queen.correction')) color = 'orangered';
+        else if (val.includes('agent_loader')) color = 'lime';
+        else if (val.includes('micro_compacted')) color = 'cyan';
+        else if (val.includes('caveman')) color = 'gold';
         else if (val.includes('task') || val.includes('toggle') || val.includes('renamed')) color = 'orange';
         else if (val.includes('evaluated') || val.includes('completed') || val.includes('turn')) color = 'cyan';
         else if (val.includes('token') || val.includes('credential')) color = 'purple';
@@ -153,6 +186,17 @@ const ActivityLog: React.FC = () => {
         if (val.title) parts.push(`"${val.title}"`);
         if (val.lastMessage) parts.push(`${String(val.lastMessage).slice(0, 50)}`);
         if (val.name) parts.push(`${val.name}`);
+        // Agent OS detail fields
+        if (val.relevance !== undefined) parts.push(`Relevance: ${val.relevance}%`);
+        if (val.steps !== undefined) parts.push(`Steps: ${val.steps}`);
+        if (val.driftScore !== undefined) parts.push(`Drift: ${val.driftScore}%`);
+        if (val.worker) parts.push(`Worker: ${val.worker}`);
+        if (val.truncatedCount !== undefined) parts.push(`Truncated: ${val.truncatedCount}`);
+        if (val.savedChars !== undefined) parts.push(`Saved: ${val.savedChars} chars`);
+        if (val.previousMode) parts.push(`${val.previousMode} → ${val.newMode}`);
+        if (val.event) parts.push(`Event: ${val.event}`);
+        if (val.count !== undefined) parts.push(`Count: ${val.count}`);
+        if (val.agent) parts.push(`Agent: ${val.agent}`);
         return parts.length > 0 ? (
           <span className='text-12px text-t-secondary'>{parts.join(' · ')}</span>
         ) : (
@@ -175,6 +219,20 @@ const ActivityLog: React.FC = () => {
           {ENTITY_TYPES.map((type) => (
             <Option key={type} value={type}>
               {type}
+            </Option>
+          ))}
+        </Select>
+        <Select
+          placeholder='Filter by action'
+          allowClear
+          value={actionFilter}
+          onChange={setActionFilter}
+          style={{ width: 240 }}
+          showSearch
+        >
+          {ACTION_TYPES.map((action) => (
+            <Option key={action} value={action}>
+              {action}
             </Option>
           ))}
         </Select>

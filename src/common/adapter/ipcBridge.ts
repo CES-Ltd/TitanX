@@ -1579,6 +1579,10 @@ export const agentGallery = {
   update: bridge.buildProvider<void, { agentId: string; updates: Partial<IGalleryAgent> }>('gallery.update'),
   remove: bridge.buildProvider<boolean, { agentId: string }>('gallery.delete'),
   checkName: bridge.buildProvider<{ available: boolean }, { userId: string; name: string }>('gallery.check-name'),
+  loadFromFilesystem: bridge.buildProvider<
+    Array<{ name: string; description: string; model?: string; tools?: string[]; prompt: string; source: string }>,
+    { workspacePath?: string }
+  >('gallery.load-filesystem'),
 };
 
 // ─── Caveman Mode ──────────────────────────────────────────────────────────

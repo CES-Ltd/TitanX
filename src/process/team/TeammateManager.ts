@@ -326,8 +326,16 @@ export class TeammateManager extends EventEmitter {
     }
 
     // Accumulate text content for later parsing
-    const text = (msg.data as { text?: string } | null)?.text;
-    if (typeof text === 'string') {
+    // ACP agents send msg.data as plain string; some send { text: string }
+    let text: string | undefined;
+    if (typeof msg.data === 'string') {
+      text = msg.data;
+    } else if (msg.data && typeof (msg.data as { text?: string }).text === 'string') {
+      text = (msg.data as { text: string }).text;
+    } else if (msg.data && typeof (msg.data as { content?: string }).content === 'string') {
+      text = (msg.data as { content: string }).content;
+    }
+    if (typeof text === 'string' && text.length > 0 && msg.type === 'content') {
       const existing = this.responseBuffer.get(msg.conversation_id) ?? '';
       this.responseBuffer.set(msg.conversation_id, existing + text);
     }
@@ -390,10 +398,105 @@ export class TeammateManager extends EventEmitter {
 
     for (const action of serialActions) {
       try {
+        // ─── Agent OS: PreToolUse Hook ──────────────────────────
+        try {
+          const { runHooks } = await import('@process/services/hooks');
+          const hookResult = await runHooks({
+            event: 'PreToolUse',
+            toolName: action.type,
+            toolInput: action,
+            agentId: agent.slotId,
+            conversationId: agent.conversationId,
+          });
+          if (!hookResult.allow) {
+            console.log(`[Hooks] Action blocked: ${action.type} for ${agent.agentName} — ${hookResult.message ?? ''}`);
+            continue; // Skip this action
+          }
+        } catch { /* hook failure = allow */ }
+
         await this.executeAction(action, agent.slotId);
+
+        // ─── Agent OS: PostToolUse Hook ─────────────────────────
+        try {
+          const { runHooks } = await import('@process/services/hooks');
+          await runHooks({
+            event: 'PostToolUse',
+            toolName: action.type,
+            toolResult: 'completed',
+            agentId: agent.slotId,
+            conversationId: agent.conversationId,
+          });
+        } catch { /* non-critical */ }
       } catch {
         // continue executing remaining actions
       }
+    }
+
+    // ─── Agent OS: ReasoningBank STORE trajectory ─────────────────
+    if (serialActions.length > 0) {
+      try {
+        const { getDatabase } = await import('@process/services/database');
+        const reasoningBank = await import('@process/services/reasoningBank');
+        const activityLog = await import('@process/services/activityLog');
+        const db = await getDatabase();
+        const driver = db.getDriver();
+        const trajectoryId = reasoningBank.storeTrajectory(driver, {
+          taskDescription: `${agent.agentName}: ${accumulatedText.slice(0, 100)}`,
+          steps: serialActions.map((a) => ({
+            toolName: a.type,
+            args: { ...(a as Record<string, unknown>) },
+            result: accumulatedText.slice(0, 200),
+            durationMs: 0,
+          })),
+          successScore: agent.status === 'completed' || agent.status === 'active' ? 0.8 : 0.5,
+        });
+        activityLog.logActivity(driver, {
+          userId: 'system_default_user',
+          actorType: 'agent',
+          actorId: agent.agentName,
+          action: 'reasoning_bank.trajectory_stored',
+          entityType: 'reasoning_bank',
+          entityId: trajectoryId,
+          details: { steps: serialActions.length, agent: agent.agentName },
+        });
+      } catch {
+        // ReasoningBank storage is non-critical
+      }
+    }
+
+    // ─── Agent OS: Queen Drift Detection ──────────────────────────
+    try {
+      const queen = this.agents.find((a) => a.role === 'queen');
+      if (queen && agent.role === 'teammate' && accumulatedText.length > 50) {
+        // Simple heuristic: check if worker output relates to the team's original purpose
+        // Use lead agent name + queen name as proxy for team goal context
+        const leadAgent = this.agents.find((a) => a.role === 'lead');
+        const teamGoal = leadAgent?.agentName ?? queen.agentName ?? '';
+        const goalWords = teamGoal.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3);
+        const outputWords = new Set(accumulatedText.toLowerCase().split(/\s+/));
+        const overlap = goalWords.filter((w: string) => outputWords.has(w)).length;
+        const driftScore = goalWords.length > 0 ? overlap / goalWords.length : 1;
+
+        if (driftScore < 0.2 && goalWords.length >= 2) {
+          console.log(`[Queen] Drift detected in ${agent.agentName}: output has ${String(Math.round(driftScore * 100))}% goal overlap`);
+          try {
+            const { getDatabase } = await import('@process/services/database');
+            const activityLog = await import('@process/services/activityLog');
+            const db = await getDatabase();
+            activityLog.logActivity(db.getDriver(), {
+              userId: 'system_default_user',
+              actorType: 'agent',
+              actorId: queen.agentName,
+              action: 'queen.drift_detected',
+              entityType: 'team',
+              entityId: agent.slotId,
+              details: { worker: agent.agentName, driftScore: Math.round(driftScore * 100), goalWords: goalWords.length },
+            });
+          } catch { /* non-critical */ }
+        }
+      }
+    } catch {
+      // Queen drift detection is non-critical
     }
 
     // send_message: write in order (preserve message ordering), then wake all targets in parallel
