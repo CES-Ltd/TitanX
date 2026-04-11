@@ -27,7 +27,8 @@ import type { WorkflowDefinition } from '@process/services/workflows/types';
 type SpawnAgentFn = (agentName: string, agentType?: string) => Promise<TeamAgent>;
 
 /** Conversation types whose AgentManager supports MCP server injection via session/new */
-export const MCP_CAPABLE_TYPES = new Set(['acp']);
+// All ACP-compatible backends support MCP tool injection
+export const MCP_CAPABLE_TYPES = new Set(['acp', 'gemini']);
 
 type TeammateManagerParams = {
   teamId: string;
@@ -411,12 +412,137 @@ export class TeammateManager extends EventEmitter {
       this.responseBuffer.set(msg.conversation_id, existing + text);
     }
 
+    // ─── Intercept MCP tool calls for team_* tools ──────────────────
+    // This is the critical bridge: when ANY agent backend (Claude, OpenCode, Gemini, etc.)
+    // calls a team_* MCP tool via the ACP protocol, we intercept it here and route it
+    // through TeamMcpServer instead of ignoring it. Without this, MCP tool calls
+    // go to the UI but never reach the team coordination system.
+    if (msg.type === 'acp_tool_call') {
+      const toolData = msg.data as Record<string, unknown> | null;
+      const toolName = (toolData?.name as string) ?? (toolData?.toolName as string) ?? '';
+      const toolStatus = (toolData?.status as string) ?? '';
+
+      if (toolName.startsWith('team_') && toolStatus === 'completed') {
+        const toolResult = toolData?.result ?? toolData?.output ?? toolData?.content;
+        console.log(`[TeammateManager] ✓ MCP tool call intercepted: ${toolName} from ${agent.agentName}`);
+
+        // Parse the tool result and execute as a team action
+        void this.handleMcpToolCall(agent, toolName, toolData?.arguments as Record<string, unknown> ?? {}, toolResult).catch((err) => {
+          console.error(`[TeammateManager] MCP tool call handling failed for ${toolName}:`, err);
+        });
+      } else if (toolName.startsWith('team_') && toolStatus === 'running') {
+        console.log(`[TeammateManager] MCP tool call started: ${toolName} from ${agent.agentName}`);
+      }
+    }
+
     // Detect terminal stream messages and trigger turn completion.
     // The turnCompleted IPC event is never emitted by agent managers, so we
     // derive turn completion from the responseStream 'finish' message instead.
     if (msg.type === 'finish' || msg.type === 'error') {
       void this.finalizeTurn(msg.conversation_id);
     }
+  }
+
+  /**
+   * Handle an intercepted MCP tool call for team_* tools.
+   * Routes the tool call through the team coordination system (TaskManager, Mailbox, etc.)
+   * so it works with ANY provider backend, not just Claude.
+   */
+  private async handleMcpToolCall(
+    agent: TeamAgent,
+    toolName: string,
+    args: Record<string, unknown>,
+    _result: unknown
+  ): Promise<void> {
+    const db = await getDatabase();
+    const driver = db.getDriver();
+
+    switch (toolName) {
+      case 'team_task_create': {
+        const subject = String(args.subject ?? args.title ?? '');
+        const description = args.description ? String(args.description) : undefined;
+        const owner = args.owner ? String(args.owner) : undefined;
+        if (!subject) break;
+
+        console.log(`[TeammateManager] MCP team_task_create: "${subject}" owner=${owner ?? 'unassigned'} from=${agent.agentName}`);
+        const task = await this.taskManager.create({
+          teamId: this.teamId,
+          subject,
+          description,
+          owner,
+        });
+        console.log(`[TeammateManager] ✓ Sprint task created via MCP: ${task.id}`);
+
+        // Auto-wake the assigned agent
+        if (owner) {
+          const assignee = this.agents.find((a) => a.agentName.toLowerCase().includes(owner.toLowerCase()));
+          if (assignee) {
+            console.log(`[TeammateManager] Auto-waking ${assignee.agentName} for new task`);
+            void this.wake(assignee.slotId);
+          }
+        }
+        break;
+      }
+
+      case 'team_task_update': {
+        const taskId = String(args.task_id ?? args.taskId ?? '');
+        const status = String(args.status ?? '');
+        if (!taskId || !status) break;
+
+        console.log(`[TeammateManager] MCP team_task_update: ${taskId} → ${status}`);
+        try {
+          const sprintService = await import('@process/services/sprintTasks');
+          const existing = driver.prepare('SELECT id FROM sprint_tasks WHERE id = ?').get(taskId) as { id: string } | undefined;
+          if (existing) {
+            sprintService.updateTask(driver, taskId, { status: status as import('@process/services/sprintTasks').SprintTaskStatus });
+            console.log(`[TeammateManager] ✓ Sprint task updated via MCP: ${taskId} → ${status}`);
+          }
+        } catch (err) {
+          console.error(`[TeammateManager] Sprint task update failed:`, err);
+        }
+        break;
+      }
+
+      case 'team_send_message': {
+        const to = String(args.to ?? '');
+        const content = String(args.content ?? args.message ?? '');
+        if (!to || !content) break;
+
+        console.log(`[TeammateManager] MCP team_send_message: ${agent.agentName} → ${to}`);
+        const targetAgent = this.agents.find(
+          (a) => a.agentName.toLowerCase().includes(to.toLowerCase()) || to === '*'
+        );
+        if (targetAgent || to === '*') {
+          const targets = to === '*' ? this.agents.filter((a) => a.slotId !== agent.slotId) : [targetAgent!];
+          for (const target of targets) {
+            await this.mailbox.write({
+              teamId: this.teamId,
+              toAgentId: target.slotId,
+              fromAgentId: agent.slotId,
+              content,
+              type: 'message',
+            });
+            void this.wake(target.slotId);
+          }
+        }
+        break;
+      }
+
+      default:
+        console.log(`[TeammateManager] MCP tool call not handled: ${toolName}`);
+        break;
+    }
+
+    // Audit log
+    activityLogService.logActivity(driver, {
+      userId: 'system_default_user',
+      actorType: 'agent',
+      actorId: agent.agentName,
+      action: `mcp_tool.${toolName}`,
+      entityType: 'team',
+      entityId: this.teamId,
+      details: { toolName, args, agentSlotId: agent.slotId },
+    });
   }
 
   /**
