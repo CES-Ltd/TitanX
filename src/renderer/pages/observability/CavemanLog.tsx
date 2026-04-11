@@ -23,16 +23,19 @@ const MODE_DESC: Record<string, string> = {
 
 const MODE_EXAMPLES: Record<string, { before: string; after: string }> = {
   lite: {
-    before: "I think the issue is that the database connection is timing out because the connection pool is probably exhausted. Let me take a look at the configuration.",
-    after: "Database connection timing out — connection pool exhausted. Checking configuration.",
+    before:
+      'I think the issue is that the database connection is timing out because the connection pool is probably exhausted. Let me take a look at the configuration.',
+    after: 'Database connection timing out — connection pool exhausted. Checking configuration.',
   },
   full: {
-    before: "I'll analyze the error logs and look for any patterns that might indicate what's causing the memory leak in the application.",
-    after: "Analyze error logs. Look for patterns. Find memory leak cause.",
+    before:
+      "I'll analyze the error logs and look for any patterns that might indicate what's causing the memory leak in the application.",
+    after: 'Analyze error logs. Look for patterns. Find memory leak cause.',
   },
   ultra: {
-    before: "The authentication middleware needs to be updated to support the new OAuth2 flow with refresh tokens and proper error handling for expired sessions.",
-    after: "Auth middleware → OAuth2 + refresh tokens. Handle expired sessions. Update impl.",
+    before:
+      'The authentication middleware needs to be updated to support the new OAuth2 flow with refresh tokens and proper error handling for expired sessions.',
+    after: 'Auth middleware → OAuth2 + refresh tokens. Handle expired sessions. Update impl.',
   },
 };
 
@@ -154,9 +157,7 @@ const CavemanLog: React.FC = () => {
           <Tag color={currentMode === 'off' ? 'gray' : MODE_COLORS[currentMode]} size='medium'>
             {MODE_LABELS[currentMode] ?? currentMode}
           </Tag>
-          {currentMode !== 'off' && (
-            <span className='text-12px text-t-secondary'>{MODE_DESC[currentMode]}</span>
-          )}
+          {currentMode !== 'off' && <span className='text-12px text-t-secondary'>{MODE_DESC[currentMode]}</span>}
         </div>
       </Card>
 
@@ -229,10 +230,10 @@ const CavemanLog: React.FC = () => {
       {/* How it works */}
       <Card title='How It Works' className='mt-16px'>
         <Text className='text-13px text-t-secondary'>
-          Caveman Mode injects formatting rules into the LLM system prompt that enforce terse, token-efficient responses.
-          The rules reduce filler words, hedging, pleasantries, and unnecessary prose while preserving all technical accuracy
-          and code blocks. Token savings are estimated by comparing actual output against projected regular output using
-          mode-specific compression ratios (Lite: 30%, Full: 65%, Ultra: 75%).
+          Caveman Mode injects formatting rules into the LLM system prompt that enforce terse, token-efficient
+          responses. The rules reduce filler words, hedging, pleasantries, and unnecessary prose while preserving all
+          technical accuracy and code blocks. Token savings are estimated by comparing actual output against projected
+          regular output using mode-specific compression ratios (Lite: 30%, Full: 65%, Ultra: 75%).
         </Text>
       </Card>
     </div>

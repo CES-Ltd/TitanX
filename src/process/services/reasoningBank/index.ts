@@ -68,7 +68,9 @@ export function storeTrajectory(db: ISqliteDriver, input: TrajectoryInput): stri
      VALUES (?, ?, ?, ?, ?, 1, ?, ?)`
   ).run(id, hash, input.taskDescription, JSON.stringify(input.steps), input.successScore, Date.now(), Date.now());
 
-  console.log(`[ReasoningBank] Stored new trajectory ${id} (${String(input.steps.length)} steps, score: ${String(input.successScore)})`);
+  console.log(
+    `[ReasoningBank] Stored new trajectory ${id} (${String(input.steps.length)} steps, score: ${String(input.successScore)})`
+  );
   return id;
 }
 
@@ -76,11 +78,7 @@ export function storeTrajectory(db: ISqliteDriver, input: TrajectoryInput): stri
  * RETRIEVE: Find similar trajectories for a given task description.
  * Uses simple keyword matching (future: semantic search with HNSW).
  */
-export function findSimilarTrajectories(
-  db: ISqliteDriver,
-  taskDescription: string,
-  limit: number = 3
-): Trajectory[] {
+export function findSimilarTrajectories(db: ISqliteDriver, taskDescription: string, limit: number = 3): Trajectory[] {
   // Simple keyword matching — extract key terms and search
   const keywords = taskDescription
     .toLowerCase()
@@ -111,8 +109,18 @@ export function findSimilarTrajectories(
  * Returns 0-1 relevance score.
  */
 export function judgeRelevance(trajectory: Trajectory, currentTask: string): number {
-  const taskWords = new Set(currentTask.toLowerCase().split(/\s+/).filter((w) => w.length > 3));
-  const trajectoryWords = new Set(trajectory.taskDescription.toLowerCase().split(/\s+/).filter((w) => w.length > 3));
+  const taskWords = new Set(
+    currentTask
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((w) => w.length > 3)
+  );
+  const trajectoryWords = new Set(
+    trajectory.taskDescription
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((w) => w.length > 3)
+  );
 
   // Jaccard similarity
   const intersection = [...taskWords].filter((w) => trajectoryWords.has(w)).length;

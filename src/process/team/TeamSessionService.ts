@@ -606,7 +606,7 @@ export class TeamSessionService {
         role: 'teammate',
         agentType: agentType || 'claude',
         agentName,
-        status: 'pending',
+        status: 'idle', // Start as idle — session is already initialized
         conversationType: this.resolveConversationType(agentType || 'claude') as 'acp',
       });
       // Inject team MCP stdio config into the new agent's conversation (with agent identity)
@@ -640,6 +640,42 @@ export class TeamSessionService {
         }
       })
     );
+
+    // Transition all agents from 'pending' → 'idle' now that the session is fully initialized.
+    // Without this, agents stay 'pending' forever until the lead explicitly delegates to them,
+    // which confuses the UI and blocks heartbeat-driven wake cycles.
+    session.initializeAgentStatuses();
+
+    // Auto-resume: if there are incomplete tasks, wake the lead to re-check the board.
+    // This ensures teams resume work after app restart without user intervention.
+    const leadAgent = team.agents.find((a) => a.role === 'lead');
+    if (leadAgent) {
+      const taskMgr = session.getTaskManager();
+      const tasks = await taskMgr.list(teamId);
+      const hasIncompleteTasks = tasks.some((t) => t.status === 'in_progress' || t.status === 'pending');
+
+      if (hasIncompleteTasks) {
+        const mailbox = session.getMailbox();
+        await mailbox.write({
+          teamId,
+          toAgentId: leadAgent.slotId,
+          fromAgentId: 'system',
+          content:
+            '[SYSTEM] Session resumed after restart. Check the task board for incomplete tasks and re-delegate as needed. Review progress notes on in_progress tasks to understand where agents left off. Re-send context to agents that were working before the restart.',
+        });
+
+        // Delay wake slightly to ensure MCP server is fully ready
+        setTimeout(() => {
+          void session.wakeAgent(leadAgent.slotId).catch((err) => {
+            console.error('[TeamSessionService] Auto-wake lead on resume failed:', err);
+          });
+        }, 2000);
+
+        console.log(
+          `[TeamSessionService] Auto-wake scheduled for lead ${leadAgent.agentName} — ${tasks.filter((t) => t.status === 'in_progress' || t.status === 'pending').length} incomplete tasks`
+        );
+      }
+    }
 
     return session;
   }

@@ -57,7 +57,8 @@ const COLS = 4;
 
 function getActionColor(action: string): string {
   if (action.includes('created') || action.includes('enabled') || action.includes('approved')) return '#00B42A';
-  if (action.includes('denied') || action.includes('blocked') || action.includes('failed') || action.includes('error')) return '#F53F3F';
+  if (action.includes('denied') || action.includes('blocked') || action.includes('failed') || action.includes('error'))
+    return '#F53F3F';
   if (action.includes('token') || action.includes('cost')) return '#FF7D00';
   if (action.includes('changed') || action.includes('updated')) return '#3370FF';
   return '#86909C';
@@ -82,7 +83,7 @@ const LiveFlowVisualizer: React.FC = () => {
     void activityLog.list
       .invoke({ userId: 'system_default_user', limit: 80 })
       .then((result) => {
-        setEvents((result.data as LiveEvent[]).reverse());
+        setEvents((result.data as LiveEvent[]).toReversed());
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -113,8 +114,15 @@ const LiveFlowVisualizer: React.FC = () => {
         nodeMap.set(sourceId, {
           id: sourceId,
           label: event.actorId.slice(0, 18),
-          type: (['user', 'agent', 'system'].includes(event.actorType) ? event.actorType : 'system') as 'user' | 'agent' | 'system',
-          x: 0, y: 0, eventCount: 0, lastActive: 0, events: [],
+          type: (['user', 'agent', 'system'].includes(event.actorType) ? event.actorType : 'system') as
+            | 'user'
+            | 'agent'
+            | 'system',
+          x: 0,
+          y: 0,
+          eventCount: 0,
+          lastActive: 0,
+          events: [],
         });
       }
       const src = nodeMap.get(sourceId)!;
@@ -128,7 +136,11 @@ const LiveFlowVisualizer: React.FC = () => {
           id: targetId,
           label: (event.entityId ?? event.entityType).slice(0, 18),
           type: tType as 'user' | 'agent' | 'system',
-          x: 0, y: 0, eventCount: 0, lastActive: 0, events: [],
+          x: 0,
+          y: 0,
+          eventCount: 0,
+          lastActive: 0,
+          events: [],
         });
       }
       const tgt = nodeMap.get(targetId)!;
@@ -147,7 +159,7 @@ const LiveFlowVisualizer: React.FC = () => {
     }
 
     // Grid layout — sort by type then event count
-    const nodeArr = [...nodeMap.values()].sort((a, b) => {
+    const nodeArr = [...nodeMap.values()].toSorted((a, b) => {
       const typeOrder = { user: 0, agent: 1, system: 2 };
       const tDiff = (typeOrder[a.type] ?? 2) - (typeOrder[b.type] ?? 2);
       if (tDiff !== 0) return tDiff;
@@ -169,10 +181,17 @@ const LiveFlowVisualizer: React.FC = () => {
 
   // Recent actions
   const recentActions = useMemo(
-    () => [...filteredEvents].reverse().slice(0, 12).map((e) => ({
-      action: e.action, actor: e.actorId, target: e.entityId ?? e.entityType,
-      time: new Date(e.createdAt).toLocaleTimeString(), color: getActionColor(e.action),
-    })),
+    () =>
+      [...filteredEvents]
+        .toReversed()
+        .slice(0, 12)
+        .map((e) => ({
+          action: e.action,
+          actor: e.actorId,
+          target: e.entityId ?? e.entityType,
+          time: new Date(e.createdAt).toLocaleTimeString(),
+          color: getActionColor(e.action),
+        })),
     [filteredEvents]
   );
 
@@ -181,15 +200,29 @@ const LiveFlowVisualizer: React.FC = () => {
     e.preventDefault();
     setScale((s) => Math.min(3, Math.max(0.3, s * (e.deltaY > 0 ? 0.92 : 1.08))));
   }, []);
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (e.button !== 0) return;
-    dragRef.current = { dragging: true, startX: e.clientX, startY: e.clientY, startTx: translate.x, startTy: translate.y };
-  }, [translate]);
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.button !== 0) return;
+      dragRef.current = {
+        dragging: true,
+        startX: e.clientX,
+        startY: e.clientY,
+        startTx: translate.x,
+        startTy: translate.y,
+      };
+    },
+    [translate]
+  );
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (!dragRef.current.dragging) return;
-    setTranslate({ x: dragRef.current.startTx + e.clientX - dragRef.current.startX, y: dragRef.current.startTy + e.clientY - dragRef.current.startY });
+    setTranslate({
+      x: dragRef.current.startTx + e.clientX - dragRef.current.startX,
+      y: dragRef.current.startTy + e.clientY - dragRef.current.startY,
+    });
   }, []);
-  const handleMouseUp = useCallback(() => { dragRef.current.dragging = false; }, []);
+  const handleMouseUp = useCallback(() => {
+    dragRef.current.dragging = false;
+  }, []);
 
   // Build node position map for edges
   const nodePos = useMemo(() => {
@@ -198,7 +231,12 @@ const LiveFlowVisualizer: React.FC = () => {
     return map;
   }, [nodes]);
 
-  if (loading) return <div className='flex items-center justify-center py-20'><Spin size={32} /></div>;
+  if (loading)
+    return (
+      <div className='flex items-center justify-center py-20'>
+        <Spin size={32} />
+      </div>
+    );
 
   return (
     <div className='p-16px' style={{ height: 'calc(100vh - 160px)', display: 'flex', flexDirection: 'column' }}>
@@ -206,22 +244,42 @@ const LiveFlowVisualizer: React.FC = () => {
       <div className='flex items-center justify-between mb-12px'>
         <div className='flex items-center gap-12px'>
           <span className='text-14px font-semibold'>Live Agent Flow</span>
-          <Tag color='green' size='small'>{String(filteredEvents.length)} events</Tag>
+          <Tag color='green' size='small'>
+            {String(filteredEvents.length)} events
+          </Tag>
           <Tag size='small'>{String(nodes.length)} nodes</Tag>
           <Select value={selectedTeam} onChange={setSelectedTeam} style={{ width: 200 }} size='small'>
             <Option value='all'>All Teams</Option>
-            {teams.map((t) => <Option key={t.id} value={t.id}>{t.name}</Option>)}
+            {teams.map((t) => (
+              <Option key={t.id} value={t.id}>
+                {t.name}
+              </Option>
+            ))}
           </Select>
         </div>
         <Space size={12}>
           {Object.entries(TYPE_STYLES).map(([key, s]) => (
             <div key={key} className='flex items-center gap-4px'>
               <div className='w-12px h-12px rd-full' style={{ backgroundColor: s.bg }} />
-              <span className='text-11px text-t-secondary'>{s.icon} {key}</span>
+              <span className='text-11px text-t-secondary'>
+                {s.icon} {key}
+              </span>
             </div>
           ))}
-          <Tag size='small' color='gray'>{String(Math.round(scale * 100))}%</Tag>
-          <Button size='mini' type='secondary' icon={<Redo theme='outline' size='12' />} onClick={() => { setScale(1); setTranslate({ x: 0, y: 0 }); }}>Reset</Button>
+          <Tag size='small' color='gray'>
+            {String(Math.round(scale * 100))}%
+          </Tag>
+          <Button
+            size='mini'
+            type='secondary'
+            icon={<Redo theme='outline' size='12' />}
+            onClick={() => {
+              setScale(1);
+              setTranslate({ x: 0, y: 0 });
+            }}
+          >
+            Reset
+          </Button>
         </Space>
       </div>
 
@@ -246,7 +304,10 @@ const LiveFlowVisualizer: React.FC = () => {
               width='100%'
               height='100%'
               viewBox={`0 0 ${String(svgWidth)} ${String(svgHeight)}`}
-              style={{ transform: `translate(${String(translate.x)}px, ${String(translate.y)}px) scale(${String(scale)})`, transformOrigin: '0 0' }}
+              style={{
+                transform: `translate(${String(translate.x)}px, ${String(translate.y)}px) scale(${String(scale)})`,
+                transformOrigin: '0 0',
+              }}
             >
               {/* Grid pattern */}
               <defs>
@@ -278,8 +339,16 @@ const LiveFlowVisualizer: React.FC = () => {
                       strokeDasharray={isRecent ? 'none' : '4 4'}
                       markerEnd='url(#arrow)'
                     />
-                    <text x={mx} y={my - 6} textAnchor='middle' fontSize='10' fill={color} opacity={isRecent ? 0.9 : 0.4}>
-                      {edge.action}{edge.count > 1 ? ` (${String(edge.count)})` : ''}
+                    <text
+                      x={mx}
+                      y={my - 6}
+                      textAnchor='middle'
+                      fontSize='10'
+                      fill={color}
+                      opacity={isRecent ? 0.9 : 0.4}
+                    >
+                      {edge.action}
+                      {edge.count > 1 ? ` (${String(edge.count)})` : ''}
                     </text>
                   </g>
                 );
@@ -287,7 +356,15 @@ const LiveFlowVisualizer: React.FC = () => {
 
               {/* Arrow marker */}
               <defs>
-                <marker id='arrow' viewBox='0 0 10 10' refX='10' refY='5' markerWidth='6' markerHeight='6' orient='auto-start-reverse'>
+                <marker
+                  id='arrow'
+                  viewBox='0 0 10 10'
+                  refX='10'
+                  refY='5'
+                  markerWidth='6'
+                  markerHeight='6'
+                  orient='auto-start-reverse'
+                >
                   <path d='M 0 0 L 10 5 L 0 10 z' fill='#86909C' />
                 </marker>
               </defs>
@@ -308,24 +385,34 @@ const LiveFlowVisualizer: React.FC = () => {
                     {/* Glow for recent activity */}
                     {isRecent && (
                       <rect
-                        x={node.x - 4} y={node.y - 4}
-                        width={NODE_W + 8} height={NODE_H + 8}
-                        rx={14} fill='none' stroke={s.stroke} strokeWidth={2} opacity={0.3}
+                        x={node.x - 4}
+                        y={node.y - 4}
+                        width={NODE_W + 8}
+                        height={NODE_H + 8}
+                        rx={14}
+                        fill='none'
+                        stroke={s.stroke}
+                        strokeWidth={2}
+                        opacity={0.3}
                       >
                         <animate attributeName='opacity' values='0.3;0.6;0.3' dur='2s' repeatCount='indefinite' />
                       </rect>
                     )}
                     {/* Node rect */}
                     <rect
-                      x={node.x} y={node.y}
-                      width={NODE_W} height={NODE_H}
+                      x={node.x}
+                      y={node.y}
+                      width={NODE_W}
+                      height={NODE_H}
                       rx={10}
                       fill={isHovered ? s.stroke + '18' : s.fill}
                       stroke={s.stroke}
                       strokeWidth={isHovered ? 2.5 : 1.5}
                     />
                     {/* Icon */}
-                    <text x={node.x + 14} y={node.y + NODE_H / 2 + 5} fontSize='18'>{s.icon}</text>
+                    <text x={node.x + 14} y={node.y + NODE_H / 2 + 5} fontSize='18'>
+                      {s.icon}
+                    </text>
                     {/* Label */}
                     <text x={node.x + 34} y={node.y + 22} fontSize='12' fontWeight='600' fill={s.text}>
                       {node.label}
@@ -338,7 +425,14 @@ const LiveFlowVisualizer: React.FC = () => {
                     {node.eventCount > 5 && (
                       <g>
                         <circle cx={node.x + NODE_W - 12} cy={node.y + 12} r={10} fill={s.stroke} />
-                        <text x={node.x + NODE_W - 12} y={node.y + 16} textAnchor='middle' fontSize='9' fontWeight='700' fill='#fff'>
+                        <text
+                          x={node.x + NODE_W - 12}
+                          y={node.y + 16}
+                          textAnchor='middle'
+                          fontSize='9'
+                          fontWeight='700'
+                          fill='#fff'
+                        >
                           {String(node.eventCount)}
                         </text>
                       </g>
@@ -362,7 +456,10 @@ const LiveFlowVisualizer: React.FC = () => {
                   className='flex flex-col p-8px rd-6px bg-fill-1 hover:bg-fill-2 transition-colors cursor-default'
                 >
                   <div className='flex items-center justify-between mb-2px'>
-                    <Tag size='small' style={{ backgroundColor: `${a.color}15`, color: a.color, border: `1px solid ${a.color}30` }}>
+                    <Tag
+                      size='small'
+                      style={{ backgroundColor: `${a.color}15`, color: a.color, border: `1px solid ${a.color}30` }}
+                    >
                       {a.action}
                     </Tag>
                     <span className='text-10px text-t-quaternary'>{a.time}</span>
@@ -381,7 +478,9 @@ const LiveFlowVisualizer: React.FC = () => {
 
       {/* Node Detail Drawer */}
       <Drawer
-        title={selectedNode ? `${(TYPE_STYLES[selectedNode.type] ?? TYPE_STYLES.system!).icon} ${selectedNode.label}` : ''}
+        title={
+          selectedNode ? `${(TYPE_STYLES[selectedNode.type] ?? TYPE_STYLES.system!).icon} ${selectedNode.label}` : ''
+        }
         visible={!!selectedNode}
         onCancel={() => setSelectedNode(null)}
         width={420}
@@ -390,27 +489,49 @@ const LiveFlowVisualizer: React.FC = () => {
         {selectedNode && (
           <>
             <div className='flex flex-col gap-8px mb-16px p-12px rd-8px bg-fill-1'>
-              <div className='flex justify-between'><span className='text-12px text-t-tertiary'>ID</span><span className='text-12px font-medium'>{selectedNode.id}</span></div>
-              <div className='flex justify-between'><span className='text-12px text-t-tertiary'>Type</span><Tag color={TYPE_STYLES[selectedNode.type]?.bg} size='small'>{selectedNode.type}</Tag></div>
-              <div className='flex justify-between'><span className='text-12px text-t-tertiary'>Total Events</span><span className='text-12px font-medium'>{String(selectedNode.eventCount)}</span></div>
-              <div className='flex justify-between'><span className='text-12px text-t-tertiary'>Last Active</span><span className='text-12px'>{new Date(selectedNode.lastActive).toLocaleString()}</span></div>
+              <div className='flex justify-between'>
+                <span className='text-12px text-t-tertiary'>ID</span>
+                <span className='text-12px font-medium'>{selectedNode.id}</span>
+              </div>
+              <div className='flex justify-between'>
+                <span className='text-12px text-t-tertiary'>Type</span>
+                <Tag color={TYPE_STYLES[selectedNode.type]?.bg} size='small'>
+                  {selectedNode.type}
+                </Tag>
+              </div>
+              <div className='flex justify-between'>
+                <span className='text-12px text-t-tertiary'>Total Events</span>
+                <span className='text-12px font-medium'>{String(selectedNode.eventCount)}</span>
+              </div>
+              <div className='flex justify-between'>
+                <span className='text-12px text-t-tertiary'>Last Active</span>
+                <span className='text-12px'>{new Date(selectedNode.lastActive).toLocaleString()}</span>
+              </div>
             </div>
             <div className='text-13px font-semibold mb-8px'>Event History ({String(selectedNode.events.length)})</div>
             <div className='flex flex-col gap-4px' style={{ maxHeight: 400, overflow: 'auto' }}>
-              {selectedNode.events.slice(-20).reverse().map((e) => (
-                <div key={e.id} className='p-8px rd-6px bg-fill-1'>
-                  <div className='flex items-center justify-between mb-2px'>
-                    <Tag size='small' style={{ color: getActionColor(e.action) }}>{e.action}</Tag>
-                    <span className='text-10px text-t-quaternary'>{new Date(e.createdAt).toLocaleTimeString()}</span>
-                  </div>
-                  {e.entityId && <div className='text-11px text-t-secondary'>Target: {e.entityId.slice(0, 20)}</div>}
-                  {e.details && Object.keys(e.details).length > 0 && (
-                    <div className='text-10px text-t-quaternary mt-2px'>
-                      {Object.entries(e.details).slice(0, 3).map(([k, v]) => `${k}: ${String(v)}`).join(' · ')}
+              {selectedNode.events
+                .slice(-20)
+                .toReversed()
+                .map((e) => (
+                  <div key={e.id} className='p-8px rd-6px bg-fill-1'>
+                    <div className='flex items-center justify-between mb-2px'>
+                      <Tag size='small' style={{ color: getActionColor(e.action) }}>
+                        {e.action}
+                      </Tag>
+                      <span className='text-10px text-t-quaternary'>{new Date(e.createdAt).toLocaleTimeString()}</span>
                     </div>
-                  )}
-                </div>
-              ))}
+                    {e.entityId && <div className='text-11px text-t-secondary'>Target: {e.entityId.slice(0, 20)}</div>}
+                    {e.details && Object.keys(e.details).length > 0 && (
+                      <div className='text-10px text-t-quaternary mt-2px'>
+                        {Object.entries(e.details)
+                          .slice(0, 3)
+                          .map(([k, v]) => `${k}: ${String(v)}`)
+                          .join(' · ')}
+                      </div>
+                    )}
+                  </div>
+                ))}
             </div>
           </>
         )}

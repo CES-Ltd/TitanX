@@ -75,7 +75,9 @@ export async function runHooks(input: HookInput): Promise<HookResult> {
   for (const hook of matching) {
     try {
       const result = await executeHook(hook, input);
-      console.log(`[Hooks] ${hook.id} (${hook.event}): allow=${String(result.allow)} ${result.message ? `msg="${result.message}"` : ''}`);
+      console.log(
+        `[Hooks] ${hook.id} (${hook.event}): allow=${String(result.allow)} ${result.message ? `msg="${result.message}"` : ''}`
+      );
 
       if (!result.allow) {
         allow = false;

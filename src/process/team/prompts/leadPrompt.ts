@@ -13,7 +13,13 @@ export type LeadPromptParams = {
 function formatTasks(tasks: TeamTask[]): string {
   if (tasks.length === 0) return 'No tasks yet.';
   return tasks
-    .map((t) => `- [${t.id.slice(0, 8)}] ${t.subject} (${t.status}${t.owner ? `, owner: ${t.owner}` : ''})`)
+    .map((t) => {
+      let line = `- [${t.id.slice(0, 8)}] ${t.subject} (${t.status}${t.owner ? `, owner: ${t.owner}` : ''})`;
+      if (t.progressNotes) {
+        line += `\n  Progress: ${t.progressNotes}`;
+      }
+      return line;
+    })
     .join('\n');
 }
 
@@ -107,10 +113,12 @@ Do NOT use platform built-in tools (SendMessage, TaskCreate, Agent) — those br
 ## Heartbeat Protocol
 Every time you are woken up:
 1. Check team_task_list for task status
-2. Check unread messages for teammate reports
-3. Update completed tasks via team_task_update(status: "done")
-4. If blocked tasks exist, reassign or escalate
-5. If all tasks done, synthesize and report to user
+2. Review progress notes on in_progress tasks to understand where agents left off
+3. Check unread messages for teammate reports
+4. Update completed tasks via team_task_update(status: "done")
+5. If blocked tasks exist, reassign or escalate
+6. After a restart, re-send context to agents that were working on in_progress tasks
+7. If all tasks done, synthesize and report to user
 
 ## Bug Fix Priority
 When fixing bugs: **locate the problem → fix the problem → types/code style last**.

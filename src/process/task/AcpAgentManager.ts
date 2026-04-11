@@ -709,7 +709,9 @@ class AcpAgentManager extends BaseAgentManager<AcpAgentManagerData, AcpPermissio
         const relevance = reasoningBank.judgeRelevance(trajectory, data.content);
         if (relevance > 0.7) {
           const distilled = reasoningBank.distillTrajectory(trajectory);
-          console.log(`[ReasoningBank] Found relevant trajectory: ${trajectory.id} (relevance: ${String(Math.round(relevance * 100))}%, ${String(trajectory.steps.length)} steps)`);
+          console.log(
+            `[ReasoningBank] Found relevant trajectory: ${trajectory.id} (relevance: ${String(Math.round(relevance * 100))}%, ${String(trajectory.steps.length)} steps)`
+          );
           // Inject trajectory hint as context for the agent
           data.content = `${data.content}\n\n[System: A similar task was completed before. ${distilled}]`;
           // Audit log
@@ -722,9 +724,15 @@ class AcpAgentManager extends BaseAgentManager<AcpAgentManagerData, AcpPermissio
               action: 'reasoning_bank.trajectory_matched',
               entityType: 'reasoning_bank',
               entityId: trajectory.id,
-              details: { relevance: Math.round(relevance * 100), steps: trajectory.steps.length, conversationId: this.conversation_id },
+              details: {
+                relevance: Math.round(relevance * 100),
+                steps: trajectory.steps.length,
+                conversationId: this.conversation_id,
+              },
             });
-          } catch { /* non-critical */ }
+          } catch {
+            /* non-critical */
+          }
           break; // Use first best match
         }
       }

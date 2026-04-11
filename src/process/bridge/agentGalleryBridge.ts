@@ -57,7 +57,9 @@ export function initAgentGalleryBridge(): void {
           entityId: 'filesystem',
           details: { count: agents.length, sources: agents.map((a) => a.source) },
         });
-      } catch { /* non-critical */ }
+      } catch {
+        /* non-critical */
+      }
     }
     return agents;
   });

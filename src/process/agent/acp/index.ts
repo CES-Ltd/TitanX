@@ -1181,7 +1181,11 @@ export class AcpAgent {
     void (async () => {
       try {
         const { runHooks } = await import('@process/services/hooks');
-        const result = await runHooks({ event: 'Stop', conversationId: this.id, agentId: this.extra.backend as string });
+        const result = await runHooks({
+          event: 'Stop',
+          conversationId: this.id,
+          agentId: this.extra.backend as string,
+        });
         if (!result.allow) {
           console.log(`[Hooks] Stop prevented by hook: ${result.message ?? 'no reason'}`);
           return; // Don't emit finish — agent continues

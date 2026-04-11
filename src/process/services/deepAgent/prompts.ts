@@ -260,7 +260,7 @@ export async function loadAgentMemory(workspacePath?: string): Promise<string> {
   memorySources.push(
     path.join(workspacePath, 'AGENTS.md'),
     path.join(workspacePath, '.deepagents', 'AGENTS.md'),
-    path.join(workspacePath, '.claude', 'AGENTS.md'),
+    path.join(workspacePath, '.claude', 'AGENTS.md')
   );
 
   const memoryBlocks: string[] = [];

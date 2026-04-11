@@ -14,6 +14,7 @@ import { networkInterfaces } from 'os';
 import { AuthMiddleware } from '@process/webserver/auth/middleware/AuthMiddleware';
 import { errorHandler } from './middleware/errorHandler';
 import { attachCsrfToken } from './middleware/security';
+import { contentTypeGate } from './middleware/contentTypeGate';
 
 /**
  * 获取所有非内部 IPv4 地址（LAN、VPN、Tailscale 等）
@@ -93,6 +94,9 @@ export function setupBasicMiddleware(app: Express): void {
     )
   );
   app.use(attachCsrfToken); // Attach token to response headers
+
+  // Content-Type CSRF gate — forces CORS preflight on cross-origin mutations
+  app.use(contentTypeGate);
 
   // 安全中间件
   // Security middleware

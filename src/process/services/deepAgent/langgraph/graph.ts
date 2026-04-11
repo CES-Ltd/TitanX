@@ -219,7 +219,9 @@ export function buildResearchGraph(
       }));
       const { truncatedCount, savedChars } = microCompact(messagesAsToolResults);
       if (truncatedCount > 0) {
-        console.log(`[DeepAgent-MicroCompact] Truncated ${String(truncatedCount)} stale notes, saved ${String(savedChars)} chars`);
+        console.log(
+          `[DeepAgent-MicroCompact] Truncated ${String(truncatedCount)} stale notes, saved ${String(savedChars)} chars`
+        );
       }
     } catch {
       // Micro-compaction is non-critical

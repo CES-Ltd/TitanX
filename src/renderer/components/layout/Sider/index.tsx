@@ -309,11 +309,16 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
                           title={`Delete team "${team.name}"?`}
                           content='This will remove the team and all its agents. This cannot be undone.'
                           onOk={() => {
-                            void teamBridge.remove.invoke({ id: team.id }).then(() => {
-                              Message.success(`Team "${team.name}" deleted`);
-                              void refreshTeams();
-                              if (isActive) void navigate('/');
-                            }).catch((err: unknown) => Message.error(err instanceof Error ? err.message : 'Failed to delete team'));
+                            void teamBridge.remove
+                              .invoke({ id: team.id })
+                              .then(() => {
+                                Message.success(`Team "${team.name}" deleted`);
+                                void refreshTeams();
+                                if (isActive) void navigate('/');
+                              })
+                              .catch((err: unknown) =>
+                                Message.error(err instanceof Error ? err.message : 'Failed to delete team')
+                              );
                           }}
                           okText='Delete'
                           okButtonProps={{ status: 'danger' }}

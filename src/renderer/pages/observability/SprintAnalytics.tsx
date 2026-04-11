@@ -122,7 +122,11 @@ const SprintAnalytics: React.FC = () => {
   }, [tasks]);
 
   if (loading) {
-    return <div className='flex items-center justify-center py-20'><Spin size={32} /></div>;
+    return (
+      <div className='flex items-center justify-center py-20'>
+        <Spin size={32} />
+      </div>
+    );
   }
 
   if (teams.length === 0) {
@@ -136,18 +140,45 @@ const SprintAnalytics: React.FC = () => {
         <span className='text-13px font-semibold'>Team:</span>
         <Select value={selectedTeamId} onChange={setSelectedTeamId} style={{ width: 240 }}>
           {teams.map((t) => (
-            <Option key={t.id} value={t.id}>{t.name} ({t.agents.length} agents)</Option>
+            <Option key={t.id} value={t.id}>
+              {t.name} ({t.agents.length} agents)
+            </Option>
           ))}
         </Select>
       </div>
 
       {/* KPI Strip */}
       <Row gutter={16} className='mb-16px'>
-        <Col span={5}><Card><Statistic title='Total Tasks' value={kpis.total} /></Card></Col>
-        <Col span={5}><Card><Statistic title='Done' value={kpis.done} styleValue={{ color: 'rgb(var(--green-6))' }} /></Card></Col>
-        <Col span={5}><Card><Statistic title='In Progress' value={kpis.inProgress} styleValue={{ color: 'rgb(var(--warning-6))' }} /></Card></Col>
-        <Col span={5}><Card><Statistic title='Backlog' value={kpis.blocked} /></Card></Col>
-        <Col span={4}><Card><Statistic title='Completion' value={kpis.completion} suffix='%' styleValue={{ color: 'rgb(var(--primary-6))' }} /></Card></Col>
+        <Col span={5}>
+          <Card>
+            <Statistic title='Total Tasks' value={kpis.total} />
+          </Card>
+        </Col>
+        <Col span={5}>
+          <Card>
+            <Statistic title='Done' value={kpis.done} styleValue={{ color: 'rgb(var(--green-6))' }} />
+          </Card>
+        </Col>
+        <Col span={5}>
+          <Card>
+            <Statistic title='In Progress' value={kpis.inProgress} styleValue={{ color: 'rgb(var(--warning-6))' }} />
+          </Card>
+        </Col>
+        <Col span={5}>
+          <Card>
+            <Statistic title='Backlog' value={kpis.blocked} />
+          </Card>
+        </Col>
+        <Col span={4}>
+          <Card>
+            <Statistic
+              title='Completion'
+              value={kpis.completion}
+              suffix='%'
+              styleValue={{ color: 'rgb(var(--primary-6))' }}
+            />
+          </Card>
+        </Col>
       </Row>
 
       {tasks.length === 0 ? (
@@ -165,7 +196,15 @@ const SprintAnalytics: React.FC = () => {
           <Col span={12}>
             <Card title='Agent Task Utilization'>
               {utilizationConfig && (
-                <ChartJsVisual config={{ ...utilizationConfig, options: { scales: { x: { stacked: true }, y: { stacked: true } } } } as Record<string, unknown>} height={300} />
+                <ChartJsVisual
+                  config={
+                    {
+                      ...utilizationConfig,
+                      options: { scales: { x: { stacked: true }, y: { stacked: true } } },
+                    } as Record<string, unknown>
+                  }
+                  height={300}
+                />
               )}
             </Card>
           </Col>

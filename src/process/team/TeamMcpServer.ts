@@ -359,6 +359,55 @@ export class TeamMcpServer {
       }
     }
 
+    // ── Agent Impersonation Defense ─────────────────────────────────────────
+    // Cross-validate agent identity on task mutations: the caller must own the
+    // task it is updating, or be the team lead. Prevents agent A from modifying
+    // agent B's tasks.
+    if (fromSlotId && toolName === 'team_task_update' && args.task_id) {
+      try {
+        const allTasks = await this.params.taskManager.list(this.params.teamId);
+        const task = allTasks.find((t) => t.id === String(args.task_id));
+        if (task?.owner) {
+          const caller = this.params.getAgents().find((a) => a.slotId === fromSlotId);
+          // Match ownership by both slotId (legacy) and agentName (canonical)
+          const isOwner = task.owner === fromSlotId || task.owner === caller?.agentName;
+          const isLead = caller?.role === 'lead' || caller?.role === 'queen';
+          if (!isOwner && !isLead) {
+            console.error(
+              `[TeamMcpServer] IMPERSONATION BLOCKED: agent ${fromSlotId} tried to update task owned by ${task.owner}`
+            );
+            try {
+              const db = await getDatabase();
+              activityLogService.logActivity(db.getDriver(), {
+                userId: 'system_default_user',
+                actorType: 'system',
+                actorId: 'impersonation_defense',
+                action: 'agent_impersonation_blocked',
+                entityType: 'team_task',
+                entityId: String(args.task_id),
+                agentId: fromSlotId,
+                details: {
+                  callerSlotId: fromSlotId,
+                  taskOwner: task.owner,
+                  teamId: this.params.teamId,
+                },
+                severity: 'warning',
+              });
+            } catch {
+              /* audit is non-critical */
+            }
+            throw new Error(
+              `Agent impersonation blocked: you (${fromSlotId}) do not own task ${String(args.task_id).slice(0, 8)}. Only the task owner or team lead can update it.`
+            );
+          }
+        }
+      } catch (err) {
+        // If the error is from impersonation check, re-throw; otherwise continue
+        if (err instanceof Error && err.message.startsWith('Agent impersonation blocked:')) throw err;
+        // Task lookup failure is non-critical — allow the update to proceed
+      }
+    }
+
     switch (toolName) {
       case 'team_send_message':
         return this.handleSendMessage(args, fromSlotId);
@@ -524,8 +573,10 @@ export class TeamMcpServer {
 
     // taskManager.create() handles both team_tasks AND sprint_tasks creation
     // with proper teamTaskId linking and audit logging — no duplicate needed here.
-    const task = await taskManager.create({ teamId, subject, description, owner });
-    console.log(`[TeamMcpServer] team_task_create: "${subject}" → task ${task.id} + sprint task created via TaskManager`);
+    const task = await taskManager.create({ teamId, subject, description, owner, agents: this.params.getAgents() });
+    console.log(
+      `[TeamMcpServer] team_task_create: "${subject}" → task ${task.id} + sprint task created via TaskManager`
+    );
 
     // Auto-wake the assigned agent so they discover the new task immediately (no polling)
     if (owner) {
@@ -545,6 +596,7 @@ export class TeamMcpServer {
     const taskId = String(args.task_id ?? '');
     const rawStatus = args.status ? String(args.status) : undefined;
     const owner = args.owner ? String(args.owner) : undefined;
+    const notes = args.notes ? String(args.notes) : undefined;
 
     const VALID_STATUSES = new Set(['pending', 'in_progress', 'completed', 'deleted']);
     const status =
@@ -555,14 +607,23 @@ export class TeamMcpServer {
       throw new Error(`Invalid task status "${rawStatus}". Must be one of: ${[...VALID_STATUSES].join(', ')}`);
     }
 
-    await taskManager.update(taskId, { status, owner });
+    await taskManager.update(taskId, {
+      status,
+      owner,
+      progressNotes: notes,
+      agents: this.params.getAgents(),
+    });
     if (status === 'completed') {
       await taskManager.checkUnblocks(taskId);
     }
 
     // Sprint sync + audit logging handled centrally by TaskManager.update()
 
-    return `Task ${taskId.slice(0, 8)} updated.${status ? ` Status: ${status}.` : ''}${owner ? ` Owner: ${owner}.` : ''}`;
+    const parts = [`Task ${taskId.slice(0, 8)} updated.`];
+    if (status) parts.push(`Status: ${status}.`);
+    if (owner) parts.push(`Owner: ${owner}.`);
+    if (notes) parts.push(`Notes saved.`);
+    return parts.join(' ');
   }
 
   private async handleTaskList(): Promise<string> {
