@@ -89,6 +89,19 @@ const MessageText: React.FC<{ message: IMessageText }> = ({ message }) => {
       if (hasSkillSuggest(content)) {
         content = stripSkillSuggest(content);
       }
+      // Strip team coordination XML tags from chat display
+      // These are parsed by the team system — no need to show raw XML to user
+      content = content
+        .replace(/<send_message\s+to="[^"]*">[\s\S]*?<\/send_message>/g, '')
+        .replace(/<task_create\s+[^>]*\/>/g, '')
+        .replace(/<task_update\s+[^>]*\/>/g, '')
+        .replace(/<spawn_agent\s+[^>]*\/>/g, '')
+        .replace(/<idle\s+[^>]*\/>/g, '')
+        .replace(/<write_plan[\s\S]*?<\/write_plan>/g, '')
+        .replace(/<reflect[\s\S]*?<\/reflect>/g, '')
+        .replace(/<trigger_workflow\s+[^>]*\/>/g, '')
+        .replace(/\n{3,}/g, '\n\n') // Clean up leftover blank lines
+        .trim();
       return content;
     }
     return content;
