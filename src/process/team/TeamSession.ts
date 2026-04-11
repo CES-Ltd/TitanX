@@ -210,6 +210,18 @@ export class TeamSession extends EventEmitter {
     return this.teammateManager.getAgents();
   }
 
+  /**
+   * Transition all 'pending' agents to 'idle'.
+   * Called after session initialization so agents don't stay stuck in pending state.
+   */
+  initializeAgentStatuses(): void {
+    for (const agent of this.teammateManager.getAgents()) {
+      if (agent.status === 'pending') {
+        this.teammateManager.setStatus(agent.slotId, 'idle');
+      }
+    }
+  }
+
   /** Clean up all IPC listeners, MCP server, and EventEmitter handlers */
   async dispose(): Promise<void> {
     // Stop token cleanup scheduler

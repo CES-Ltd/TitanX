@@ -606,7 +606,7 @@ export class TeamSessionService {
         role: 'teammate',
         agentType: agentType || 'claude',
         agentName,
-        status: 'pending',
+        status: 'idle', // Start as idle — session is already initialized
         conversationType: this.resolveConversationType(agentType || 'claude') as 'acp',
       });
       // Inject team MCP stdio config into the new agent's conversation (with agent identity)
@@ -640,6 +640,11 @@ export class TeamSessionService {
         }
       })
     );
+
+    // Transition all agents from 'pending' → 'idle' now that the session is fully initialized.
+    // Without this, agents stay 'pending' forever until the lead explicitly delegates to them,
+    // which confuses the UI and blocks heartbeat-driven wake cycles.
+    session.initializeAgentStatuses();
 
     return session;
   }
