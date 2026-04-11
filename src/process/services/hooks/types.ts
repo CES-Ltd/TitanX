@@ -4,12 +4,12 @@
  */
 
 export type HookEvent =
-  | 'PreToolUse'       // Before tool execution — can block
-  | 'PostToolUse'      // After tool execution — can modify result
-  | 'PreToolUseFailure'// Tool validation failed
-  | 'PostToolUseFailure'// Tool execution failed
-  | 'Stop'             // Agent about to stop — can prevent
-  | 'Notification';    // Fire-and-forget system notification
+  | 'PreToolUse' // Before tool execution — can block
+  | 'PostToolUse' // After tool execution — can modify result
+  | 'PreToolUseFailure' // Tool validation failed
+  | 'PostToolUseFailure' // Tool execution failed
+  | 'Stop' // Agent about to stop — can prevent
+  | 'Notification'; // Fire-and-forget system notification
 
 export type HookType = 'command' | 'http' | 'function';
 

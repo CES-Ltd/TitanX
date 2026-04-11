@@ -178,7 +178,9 @@ export function initWebuiBridge(): void {
           entityId: 'webui.password',
           details: { timestamp: Date.now() },
         });
-      } catch { /* audit non-critical */ }
+      } catch {
+        /* audit non-critical */
+      }
       return { success: true };
     }, 'Change password');
   });

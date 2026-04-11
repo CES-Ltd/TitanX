@@ -174,8 +174,20 @@ const CostProjections: React.FC = () => {
                   type: 'line',
                   labels: dailyCosts.map((d) => d.date.slice(5)),
                   datasets: [
-                    { label: 'Input Tokens', data: dailyCosts.map((d) => d.inputTokens), borderColor: '#3370FF', fill: true, tension: 0.3 },
-                    { label: 'Output Tokens', data: dailyCosts.map((d) => d.outputTokens), borderColor: '#00B42A', fill: true, tension: 0.3 },
+                    {
+                      label: 'Input Tokens',
+                      data: dailyCosts.map((d) => d.inputTokens),
+                      borderColor: '#3370FF',
+                      fill: true,
+                      tension: 0.3,
+                    },
+                    {
+                      label: 'Output Tokens',
+                      data: dailyCosts.map((d) => d.outputTokens),
+                      borderColor: '#00B42A',
+                      fill: true,
+                      tension: 0.3,
+                    },
                   ],
                 }}
                 height={280}
@@ -194,8 +206,16 @@ const CostProjections: React.FC = () => {
                 type: 'bar',
                 labels: pricingData.map((p) => p.model),
                 datasets: [
-                  { label: 'Regular Cost ($)', data: pricingData.map((p) => Number(p.regularCost.toFixed(4))), backgroundColor: '#86909C' },
-                  { label: 'Caveman Cost ($)', data: pricingData.map((p) => Number(p.actualCost.toFixed(4))), backgroundColor: '#00B42A' },
+                  {
+                    label: 'Regular Cost ($)',
+                    data: pricingData.map((p) => Number(p.regularCost.toFixed(4))),
+                    backgroundColor: '#86909C',
+                  },
+                  {
+                    label: 'Caveman Cost ($)',
+                    data: pricingData.map((p) => Number(p.actualCost.toFixed(4))),
+                    backgroundColor: '#00B42A',
+                  },
                 ],
               }}
               height={280}

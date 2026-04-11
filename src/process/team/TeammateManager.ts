@@ -111,7 +111,9 @@ export class TeammateManager extends EventEmitter {
   private agentHasMcpTools(agent: TeamAgent): boolean {
     const result = this.mcpServerStarted && MCP_CAPABLE_TYPES.has(agent.conversationType);
     if (!result && this.mcpServerStarted) {
-      console.log(`[TeammateManager] agentHasMcpTools(${agent.agentName}): false — conversationType="${agent.conversationType}" not in MCP_CAPABLE_TYPES`);
+      console.log(
+        `[TeammateManager] agentHasMcpTools(${agent.agentName}): false — conversationType="${agent.conversationType}" not in MCP_CAPABLE_TYPES`
+      );
     }
     return result;
   }
@@ -166,7 +168,9 @@ export class TeammateManager extends EventEmitter {
               entityId: slotId,
               details: { reason: 'agent_busy', teamId: this.teamId },
             });
-          } catch { /* non-critical */ }
+          } catch {
+            /* non-critical */
+          }
         })();
       }
       return;
@@ -190,7 +194,9 @@ export class TeammateManager extends EventEmitter {
           entityId: agent.slotId,
           details: { agentName: agent.agentName, previousStatus: agent.status, teamId: this.teamId },
         });
-      } catch { /* non-critical */ }
+      } catch {
+        /* non-critical */
+      }
     })();
 
     this.activeWakes.add(slotId);
@@ -203,7 +209,9 @@ export class TeammateManager extends EventEmitter {
       this.setStatus(slotId, 'active');
 
       const hasMcp = this.agentHasMcpTools(agent);
-      console.log(`[TeammateManager] Building payload for ${agent.agentName}: hasMcpTools=${String(hasMcp)} mcpServerStarted=${String(this.mcpServerStarted)} conversationType=${agent.conversationType}`);
+      console.log(
+        `[TeammateManager] Building payload for ${agent.agentName}: hasMcpTools=${String(hasMcp)} mcpServerStarted=${String(this.mcpServerStarted)} conversationType=${agent.conversationType}`
+      );
       const adapter = createPlatformAdapter(agent.conversationType, hasMcp);
       const [mailboxMessages, tasks] = await Promise.all([
         this.mailbox.readUnread(this.teamId, slotId),
@@ -309,7 +317,9 @@ export class TeammateManager extends EventEmitter {
               entityId: slotId,
               details: { agentName: agent.agentName, retryDelayMs: 3000, teamId: this.teamId },
             });
-          } catch { /* non-critical */ }
+          } catch {
+            /* non-critical */
+          }
         })();
         setTimeout(() => {
           this.pendingWakes.delete(retryKey);
@@ -436,7 +446,12 @@ export class TeammateManager extends EventEmitter {
         console.log(`[TeammateManager] ✓ MCP tool call intercepted: ${toolName} from ${agent.agentName}`);
 
         // Parse the tool result and execute as a team action
-        void this.handleMcpToolCall(agent, toolName, toolData?.arguments as Record<string, unknown> ?? {}, toolResult).catch((err) => {
+        void this.handleMcpToolCall(
+          agent,
+          toolName,
+          (toolData?.arguments as Record<string, unknown>) ?? {},
+          toolResult
+        ).catch((err) => {
           console.error(`[TeammateManager] MCP tool call handling failed for ${toolName}:`, err);
         });
       } else if (toolName.startsWith('team_') && toolStatus === 'running') {
@@ -473,7 +488,9 @@ export class TeammateManager extends EventEmitter {
         const owner = args.owner ? String(args.owner) : undefined;
         if (!subject) break;
 
-        console.log(`[TeammateManager] MCP team_task_create: "${subject}" owner=${owner ?? 'unassigned'} from=${agent.agentName}`);
+        console.log(
+          `[TeammateManager] MCP team_task_create: "${subject}" owner=${owner ?? 'unassigned'} from=${agent.agentName}`
+        );
         const task = await this.taskManager.create({
           teamId: this.teamId,
           subject,
@@ -501,9 +518,13 @@ export class TeammateManager extends EventEmitter {
         console.log(`[TeammateManager] MCP team_task_update: ${taskId} → ${status}`);
         try {
           const sprintService = await import('@process/services/sprintTasks');
-          const existing = driver.prepare('SELECT id FROM sprint_tasks WHERE id = ?').get(taskId) as { id: string } | undefined;
+          const existing = driver.prepare('SELECT id FROM sprint_tasks WHERE id = ?').get(taskId) as
+            | { id: string }
+            | undefined;
           if (existing) {
-            sprintService.updateTask(driver, taskId, { status: status as import('@process/services/sprintTasks').SprintTaskStatus });
+            sprintService.updateTask(driver, taskId, {
+              status: status as import('@process/services/sprintTasks').SprintTaskStatus,
+            });
             console.log(`[TeammateManager] ✓ Sprint task updated via MCP: ${taskId} → ${status}`);
           }
         } catch (err) {
@@ -518,9 +539,7 @@ export class TeammateManager extends EventEmitter {
         if (!to || !content) break;
 
         console.log(`[TeammateManager] MCP team_send_message: ${agent.agentName} → ${to}`);
-        const targetAgent = this.agents.find(
-          (a) => a.agentName.toLowerCase().includes(to.toLowerCase()) || to === '*'
-        );
+        const targetAgent = this.agents.find((a) => a.agentName.toLowerCase().includes(to.toLowerCase()) || to === '*');
         if (targetAgent || to === '*') {
           const targets = to === '*' ? this.agents.filter((a) => a.slotId !== agent.slotId) : [targetAgent!];
           for (const target of targets) {
@@ -597,7 +616,9 @@ export class TeammateManager extends EventEmitter {
             entityId: agent.slotId,
             details: { agentName: agent.agentName, teamId: this.teamId },
           });
-        } catch { /* non-critical */ }
+        } catch {
+          /* non-critical */
+        }
       })();
       // Defer slightly to let current turn fully complete
       setTimeout(() => void this.wake(agent.slotId), 500);
@@ -641,7 +662,9 @@ export class TeammateManager extends EventEmitter {
             console.log(`[Hooks] Action blocked: ${action.type} for ${agent.agentName} — ${hookResult.message ?? ''}`);
             continue; // Skip this action
           }
-        } catch { /* hook failure = allow */ }
+        } catch {
+          /* hook failure = allow */
+        }
 
         await this.executeAction(action, agent.slotId);
 
@@ -655,7 +678,9 @@ export class TeammateManager extends EventEmitter {
             agentId: agent.slotId,
             conversationId: agent.conversationId,
           });
-        } catch { /* non-critical */ }
+        } catch {
+          /* non-critical */
+        }
       } catch {
         // continue executing remaining actions
       }
@@ -701,13 +726,18 @@ export class TeammateManager extends EventEmitter {
         // Use lead agent name + queen name as proxy for team goal context
         const leadAgent = this.agents.find((a) => a.role === 'lead');
         const teamGoal = leadAgent?.agentName ?? queen.agentName ?? '';
-        const goalWords = teamGoal.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3);
+        const goalWords = teamGoal
+          .toLowerCase()
+          .split(/\s+/)
+          .filter((w: string) => w.length > 3);
         const outputWords = new Set(accumulatedText.toLowerCase().split(/\s+/));
         const overlap = goalWords.filter((w: string) => outputWords.has(w)).length;
         const driftScore = goalWords.length > 0 ? overlap / goalWords.length : 1;
 
         if (driftScore < 0.2 && goalWords.length >= 2) {
-          console.log(`[Queen] Drift detected in ${agent.agentName}: output has ${String(Math.round(driftScore * 100))}% goal overlap`);
+          console.log(
+            `[Queen] Drift detected in ${agent.agentName}: output has ${String(Math.round(driftScore * 100))}% goal overlap`
+          );
           try {
             // Static import: getDatabase
             // Static import: activityLogService
@@ -719,9 +749,15 @@ export class TeammateManager extends EventEmitter {
               action: 'queen.drift_detected',
               entityType: 'team',
               entityId: agent.slotId,
-              details: { worker: agent.agentName, driftScore: Math.round(driftScore * 100), goalWords: goalWords.length },
+              details: {
+                worker: agent.agentName,
+                driftScore: Math.round(driftScore * 100),
+                goalWords: goalWords.length,
+              },
             });
-          } catch { /* non-critical */ }
+          } catch {
+            /* non-critical */
+          }
         }
       }
     } catch {

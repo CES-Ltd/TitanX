@@ -140,14 +140,24 @@ function installOfficecli(): boolean {
 
     if (process.platform === 'win32') {
       const tmpScript = path.join(os.tmpdir(), `officecli_install_${Date.now()}.ps1`);
-      execSync(`powershell -Command "Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/iOfficeAI/OfficeCli/main/install.ps1' -OutFile '${tmpScript}'"`, { stdio: 'pipe', timeout: 30000 });
+      execSync(
+        `powershell -Command "Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/iOfficeAI/OfficeCli/main/install.ps1' -OutFile '${tmpScript}'"`,
+        { stdio: 'pipe', timeout: 30000 }
+      );
       execSync(`powershell -ExecutionPolicy Bypass -File "${tmpScript}"`, { stdio: 'inherit', timeout: 60000 });
-      try { require('fs').unlinkSync(tmpScript); } catch {}
+      try {
+        require('fs').unlinkSync(tmpScript);
+      } catch {}
     } else {
       const tmpScript = path.join(os.tmpdir(), `officecli_install_${Date.now()}.sh`);
-      execSync(`curl -fsSL -o "${tmpScript}" https://raw.githubusercontent.com/iOfficeAI/OfficeCli/main/install.sh`, { stdio: 'pipe', timeout: 30000 });
+      execSync(`curl -fsSL -o "${tmpScript}" https://raw.githubusercontent.com/iOfficeAI/OfficeCli/main/install.sh`, {
+        stdio: 'pipe',
+        timeout: 30000,
+      });
       execSync(`chmod +x "${tmpScript}" && bash "${tmpScript}"`, { stdio: 'inherit', timeout: 60000 });
-      try { require('fs').unlinkSync(tmpScript); } catch {}
+      try {
+        require('fs').unlinkSync(tmpScript);
+      } catch {}
       try {
         execSync('xattr -cr ~/.local/bin/officecli && codesign -s - --force ~/.local/bin/officecli', { stdio: 'pipe' });
       } catch {}
