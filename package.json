@@ -1,6 +1,6 @@
 {
   "name": "TitanX",
-  "version": "1.9.14",
+  "version": "1.9.15",
   "description": "Enterprise AI Agent Orchestration Platform — multi-agent teams with IAM policies, n8n workflows, LangChain memory, LangSmith traces, NemoClaw security, OpenTelemetry, and 20+ LLM providers.",
   "keywords": [
     "agent-orchestration",

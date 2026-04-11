@@ -5,6 +5,9 @@
  */
 
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 import type { ISqliteDriver } from '../database/drivers/ISqliteDriver';
 import { sanitizeRecord } from '@process/utils/redaction';
 import { signAuditEntry as deviceSignAuditEntry } from '@process/services/deviceIdentity';
@@ -60,8 +63,7 @@ function getHmacKey(): string {
 
   // Priority 2: Derive from a per-install random key file
   try {
-    const fs = require('fs');
-    const path = require('path');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { app } = require('electron');
     const keyPath = path.join(app.getPath('userData'), '.audit-hmac-key');
     if (fs.existsSync(keyPath)) {
@@ -74,10 +76,7 @@ function getHmacKey(): string {
     }
   } catch {
     // Fallback: derive from process ID + hostname (still unique per install)
-    _hmacKey = crypto
-      .createHash('sha256')
-      .update(`titanx-${process.pid}-${require('os').hostname()}-${Date.now()}`)
-      .digest('hex');
+    _hmacKey = crypto.createHash('sha256').update(`titanx-${process.pid}-${os.hostname()}-${Date.now()}`).digest('hex');
     console.warn('[AuditLog] Using fallback HMAC key — audit signatures are session-scoped');
   }
 

@@ -517,7 +517,6 @@ export class TeammateManager extends EventEmitter {
 
         console.log(`[TeammateManager] MCP team_task_update: ${taskId} → ${status}`);
         try {
-          const sprintService = await import('@process/services/sprintTasks');
           const existing = driver.prepare('SELECT id FROM sprint_tasks WHERE id = ?').get(taskId) as
             | { id: string }
             | undefined;

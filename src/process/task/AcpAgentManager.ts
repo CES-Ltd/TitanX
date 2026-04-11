@@ -19,6 +19,8 @@ import type {
 import { ACP_BACKENDS_ALL } from '@/common/types/acpTypes';
 import { ExtensionRegistry } from '@process/extensions';
 import { getDatabase } from '@process/services/database';
+import * as reasoningBank from '@process/services/reasoningBank';
+import * as activityLogService from '@process/services/activityLog';
 import { ProcessConfig } from '@process/utils/initStorage';
 import { addMessage, addOrUpdateMessage, nextTickToLocalFinish } from '@process/utils/message';
 import { handlePreviewOpenEvent } from '@process/utils/previewUtils';
@@ -701,8 +703,6 @@ class AcpAgentManager extends BaseAgentManager<AcpAgentManagerData, AcpPermissio
 
     // ─── Agent OS: ReasoningBank RETRIEVE ────────────────────────
     try {
-      const { getDatabase } = await import('@process/services/database');
-      const reasoningBank = await import('@process/services/reasoningBank');
       const db = await getDatabase();
       const similar = reasoningBank.findSimilarTrajectories(db.getDriver(), data.content, 3);
       for (const trajectory of similar) {
@@ -716,8 +716,7 @@ class AcpAgentManager extends BaseAgentManager<AcpAgentManagerData, AcpPermissio
           data.content = `${data.content}\n\n[System: A similar task was completed before. ${distilled}]`;
           // Audit log
           try {
-            const activityLog = await import('@process/services/activityLog');
-            activityLog.logActivity(db.getDriver(), {
+            activityLogService.logActivity(db.getDriver(), {
               userId: 'system_default_user',
               actorType: 'system',
               actorId: 'reasoning_bank',
