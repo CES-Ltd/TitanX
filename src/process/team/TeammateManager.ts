@@ -57,6 +57,8 @@ export class TeammateManager extends EventEmitter {
   private readonly responseBuffer = new Map<string, string>();
   /** Tracks which slotIds currently have an in-progress wake to avoid loops */
   private readonly activeWakes = new Set<string>();
+  /** Pending wake queue — wakes that arrived while agent was busy, processed after current turn */
+  private readonly pendingWakes = new Set<string>();
   /** Timeout handles for active wakes, keyed by slotId */
   private readonly wakeTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
   /** O(1) lookup set of conversationIds owned by this team, for fast IPC event filtering */
@@ -139,7 +141,11 @@ export class TeammateManager extends EventEmitter {
    */
   async wake(slotId: string): Promise<void> {
     if (this.activeWakes.has(slotId)) {
-      console.log(`[TeammateManager] wake(${slotId}): SKIPPED (activeWakes)`);
+      // Queue the wake instead of dropping it — will be processed after current turn
+      if (!this.pendingWakes.has(slotId)) {
+        this.pendingWakes.add(slotId);
+        console.log(`[TeammateManager] wake(${slotId}): QUEUED (agent busy, will retry after current turn)`);
+      }
       return;
     }
 
@@ -242,8 +248,27 @@ export class TeammateManager extends EventEmitter {
       }, TeammateManager.WAKE_TIMEOUT_MS);
       this.wakeTimeouts.set(slotId, timeoutHandle);
     } catch (error) {
-      this.setStatus(slotId, 'failed');
       this.activeWakes.delete(slotId);
+
+      // Retry with backoff: if wake fails, try again after 3 seconds (once)
+      const retryKey = `retry_${slotId}`;
+      if (!this.pendingWakes.has(retryKey)) {
+        this.pendingWakes.add(retryKey);
+        console.log(`[TeammateManager] wake(${agent.agentName}): FAILED, scheduling retry in 3s`);
+        setTimeout(() => {
+          this.pendingWakes.delete(retryKey);
+          this.setStatus(slotId, 'idle');
+          void this.wake(slotId).catch(() => {
+            console.error(`[TeammateManager] wake retry failed for ${agent.agentName}, giving up`);
+            this.setStatus(slotId, 'failed');
+          });
+        }, 3000);
+      } else {
+        // Already retried once — give up
+        this.setStatus(slotId, 'failed');
+        this.pendingWakes.delete(retryKey);
+        console.error(`[TeammateManager] wake(${agent.agentName}): retry also failed, setting status=failed`);
+      }
       throw error;
     }
     // activeWakes entry is removed when turnCompleted fires (or by timeout)
@@ -373,6 +398,14 @@ export class TeammateManager extends EventEmitter {
     const accumulatedText = this.responseBuffer.get(conversationId) ?? '';
     this.responseBuffer.delete(conversationId);
     this.activeWakes.delete(agent.slotId);
+
+    // Process pending wake queue — if someone tried to wake this agent while it was busy
+    if (this.pendingWakes.has(agent.slotId)) {
+      this.pendingWakes.delete(agent.slotId);
+      console.log(`[TeammateManager] Processing queued wake for ${agent.agentName} (was busy during previous request)`);
+      // Defer slightly to let current turn fully complete
+      setTimeout(() => void this.wake(agent.slotId), 500);
+    }
 
     // Clear the wake timeout since the turn completed normally
     const timeoutHandle = this.wakeTimeouts.get(agent.slotId);

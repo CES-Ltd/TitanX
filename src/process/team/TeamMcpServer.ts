@@ -527,6 +527,16 @@ export class TeamMcpServer {
     const task = await taskManager.create({ teamId, subject, description, owner });
     console.log(`[TeamMcpServer] team_task_create: "${subject}" → task ${task.id} + sprint task created via TaskManager`);
 
+    // Auto-wake the assigned agent so they discover the new task immediately (no polling)
+    if (owner) {
+      const agents = this.params.getAgents();
+      const assignee = agents.find((a) => a.agentName.toLowerCase() === owner.toLowerCase());
+      if (assignee) {
+        console.log(`[TeamMcpServer] Auto-waking ${assignee.agentName} for new task: "${subject}"`);
+        void this.params.wakeAgent(assignee.slotId);
+      }
+    }
+
     return `Task created: [${task.id.slice(0, 8)}] "${subject}"${owner ? ` (assigned to ${owner})` : ''}`;
   }
 
