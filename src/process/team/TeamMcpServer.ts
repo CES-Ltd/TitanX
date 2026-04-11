@@ -359,6 +359,53 @@ export class TeamMcpServer {
       }
     }
 
+    // ── Agent Impersonation Defense ─────────────────────────────────────────
+    // Cross-validate agent identity on task mutations: the caller must own the
+    // task it is updating, or be the team lead. Prevents agent A from modifying
+    // agent B's tasks.
+    if (fromSlotId && toolName === 'team_task_update' && args.task_id) {
+      try {
+        const allTasks = await this.params.taskManager.list(this.params.teamId);
+        const task = allTasks.find((t) => t.id === String(args.task_id));
+        if (task?.owner && task.owner !== fromSlotId) {
+          const caller = this.params.getAgents().find((a) => a.slotId === fromSlotId);
+          const isLead = caller?.role === 'lead' || caller?.role === 'queen';
+          if (!isLead) {
+            console.error(
+              `[TeamMcpServer] IMPERSONATION BLOCKED: agent ${fromSlotId} tried to update task owned by ${task.owner}`
+            );
+            try {
+              const db = await getDatabase();
+              activityLogService.logActivity(db.getDriver(), {
+                userId: 'system_default_user',
+                actorType: 'system',
+                actorId: 'impersonation_defense',
+                action: 'agent_impersonation_blocked',
+                entityType: 'team_task',
+                entityId: String(args.task_id),
+                agentId: fromSlotId,
+                details: {
+                  callerSlotId: fromSlotId,
+                  taskOwner: task.owner,
+                  teamId: this.params.teamId,
+                },
+                severity: 'warning',
+              });
+            } catch {
+              /* audit is non-critical */
+            }
+            throw new Error(
+              `Agent impersonation blocked: you (${fromSlotId}) do not own task ${String(args.task_id).slice(0, 8)}. Only the task owner or team lead can update it.`
+            );
+          }
+        }
+      } catch (err) {
+        // If the error is from impersonation check, re-throw; otherwise continue
+        if (err instanceof Error && err.message.startsWith('Agent impersonation blocked:')) throw err;
+        // Task lookup failure is non-critical — allow the update to proceed
+      }
+    }
+
     switch (toolName) {
       case 'team_send_message':
         return this.handleSendMessage(args, fromSlotId);
@@ -525,7 +572,9 @@ export class TeamMcpServer {
     // taskManager.create() handles both team_tasks AND sprint_tasks creation
     // with proper teamTaskId linking and audit logging — no duplicate needed here.
     const task = await taskManager.create({ teamId, subject, description, owner });
-    console.log(`[TeamMcpServer] team_task_create: "${subject}" → task ${task.id} + sprint task created via TaskManager`);
+    console.log(
+      `[TeamMcpServer] team_task_create: "${subject}" → task ${task.id} + sprint task created via TaskManager`
+    );
 
     // Auto-wake the assigned agent so they discover the new task immediately (no polling)
     if (owner) {

@@ -8,6 +8,21 @@ import crypto from 'crypto';
 import type { ISqliteDriver } from '../database/drivers/ISqliteDriver';
 import { sanitizeRecord } from '@process/utils/redaction';
 
+/** Lazy-loaded device identity module (non-critical — audit still works without it) */
+let _deviceIdentity: {
+  signAuditEntry: (id: string, action: string, actorId: string, ts: number) => { signature: string; deviceId: string };
+} | null = null;
+
+function getDeviceIdentityModule() {
+  if (_deviceIdentity) return _deviceIdentity;
+  try {
+    _deviceIdentity = require('../deviceIdentity') as typeof _deviceIdentity;
+  } catch {
+    // Device identity not available — non-critical
+  }
+  return _deviceIdentity;
+}
+
 /** Cached ipcBridge reference for live event emission (avoids require() on every log call) */
 let _ipcBridge: { liveEvents: { activity: { emit: (entry: unknown) => void } } } | null = null;
 
@@ -22,6 +37,10 @@ export type ActivityLogEntry = {
   agentId?: string;
   details?: Record<string, unknown>;
   signature?: string;
+  /** Device Ed25519 signature for non-repudiation (added by device identity module) */
+  deviceSignature?: string;
+  /** Device ID fingerprint that produced this entry */
+  deviceId?: string;
   severity?: string;
   createdAt: number;
 };
@@ -112,9 +131,23 @@ export function logActivity(db: ISqliteDriver, input: LogActivityInput): Activit
     input.severity ?? (input.action.includes('denied') || input.action.includes('blocked') ? 'warning' : 'info');
   const signature = signLogEntry(id, input.action, input.actorId, createdAt);
 
+  // Device identity signing — non-repudiable proof of which device produced this entry
+  let deviceSignature: string | null = null;
+  let deviceId: string | null = null;
+  try {
+    const deviceMod = getDeviceIdentityModule();
+    if (deviceMod) {
+      const signed = deviceMod.signAuditEntry(id, input.action, input.actorId, createdAt);
+      deviceSignature = signed.signature;
+      deviceId = signed.deviceId;
+    }
+  } catch {
+    // Device signing is non-critical — HMAC signature is the primary integrity check
+  }
+
   db.prepare(
-    `INSERT INTO activity_log (id, user_id, actor_type, actor_id, action, entity_type, entity_id, agent_id, details, signature, severity, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO activity_log (id, user_id, actor_type, actor_id, action, entity_type, entity_id, agent_id, details, signature, device_signature, device_id, severity, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.userId,
@@ -126,6 +159,8 @@ export function logActivity(db: ISqliteDriver, input: LogActivityInput): Activit
     input.agentId ?? null,
     sanitizedDetails,
     signature,
+    deviceSignature,
+    deviceId,
     severity,
     createdAt
   );
@@ -135,6 +170,8 @@ export function logActivity(db: ISqliteDriver, input: LogActivityInput): Activit
     id,
     createdAt,
     signature,
+    deviceSignature: deviceSignature ?? undefined,
+    deviceId: deviceId ?? undefined,
     severity,
     details: input.details ? (sanitizeRecord(input.details) as Record<string, unknown>) : undefined,
   };
@@ -211,6 +248,8 @@ function rowToActivityEntry(row: Record<string, unknown>): ActivityLogEntry {
     agentId: (row.agent_id as string) ?? undefined,
     details: row.details ? JSON.parse(row.details as string) : undefined,
     signature: (row.signature as string) ?? undefined,
+    deviceSignature: (row.device_signature as string) ?? undefined,
+    deviceId: (row.device_id as string) ?? undefined,
     severity: (row.severity as string) ?? undefined,
     createdAt: row.created_at as number,
   };

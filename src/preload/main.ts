@@ -7,11 +7,50 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { ADAPTER_BRIDGE_EVENT_KEY } from '../common/adapter/constant';
 
+// ── IPC Channel Whitelist ──────────────────────────────────────────────────
+// Security: Only whitelisted IPC channels are allowed through the preload bridge.
+// Prevents renderer-side exploits from calling arbitrary main process functions.
+// Inspired by ClawX's IPC channel whitelist enforcement.
+const ALLOWED_DIRECT_CHANNELS = new Set([
+  ADAPTER_BRIDGE_EVENT_KEY,
+  'webui-direct-reset-password',
+  'webui-direct-get-status',
+  'webui-direct-change-password',
+  'webui-direct-change-username',
+  'webui-direct-generate-qr-token',
+  'weixin:login:start',
+  'show-open-request',
+]);
+
+const ALLOWED_LISTEN_CHANNELS = new Set([
+  ADAPTER_BRIDGE_EVENT_KEY,
+  'weixin:login:qr',
+  'weixin:login:scanned',
+  'weixin:login:done',
+  'tray:navigate-to-guid',
+  'tray:navigate-to-conversation',
+  'tray:open-about',
+  'tray:pause-all-tasks',
+  'tray:check-update',
+]);
+
+/**
+ * Validate that an IPC channel is whitelisted before invoking or listening.
+ */
+function assertAllowedChannel(channel: string, allowedSet: Set<string>): void {
+  if (!allowedSet.has(channel)) {
+    console.warn(`[Security] Blocked IPC channel: ${channel}`);
+    throw new Error(`IPC channel not allowed: ${channel}`);
+  }
+}
+
 /**
  * @description 注入到renderer进程中, 用于与main进程通信
  * */
 contextBridge.exposeInMainWorld('electronAPI', {
   emit: (name: string, data: any) => {
+    // All bridge messages go through the single adapter channel — validated at registration
+    assertAllowedChannel(ADAPTER_BRIDGE_EVENT_KEY, ALLOWED_DIRECT_CHANNELS);
     return ipcRenderer
       .invoke(
         ADAPTER_BRIDGE_EVENT_KEY,
@@ -26,6 +65,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       });
   },
   on: (callback: any) => {
+    assertAllowedChannel(ADAPTER_BRIDGE_EVENT_KEY, ALLOWED_LISTEN_CHANNELS);
     const handler = (event: any, value: any) => {
       callback({ event, value });
     };

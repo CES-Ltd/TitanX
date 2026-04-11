@@ -2098,7 +2098,10 @@ const migration_v53: IMigration = {
       glob: 'Glob',
     };
 
-    const agents = db.prepare('SELECT id, allowed_tools FROM agent_gallery').all() as Array<{ id: string; allowed_tools: string }>;
+    const agents = db.prepare('SELECT id, allowed_tools FROM agent_gallery').all() as Array<{
+      id: string;
+      allowed_tools: string;
+    }>;
     let updated = 0;
 
     for (const agent of agents) {
@@ -2133,6 +2136,85 @@ const migration_v53: IMigration = {
   },
 };
 
+// ── Phase 10: Workspace isolation tables ────────────────────────────────────
+
+const migration_v54: IMigration = {
+  version: 54,
+  name: 'Create workspace isolation tables and add device identity columns to activity_log',
+  up(db: ISqliteDriver) {
+    // Workspaces table — multi-tenant isolation boundary
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS workspaces (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        owner_id TEXT NOT NULL,
+        slug TEXT NOT NULL,
+        isolation_mode TEXT NOT NULL DEFAULT 'strict',
+        metadata TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_workspaces_slug ON workspaces(slug)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_workspaces_owner ON workspaces(owner_id)');
+
+    // Workspace members table
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS workspace_members (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'member',
+        joined_at INTEGER NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+    db.exec(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_members_unique ON workspace_members(workspace_id, user_id)'
+    );
+    db.exec('CREATE INDEX IF NOT EXISTS idx_workspace_members_user ON workspace_members(user_id)');
+
+    // Add device identity columns to activity_log for non-repudiable audit trails
+    db.exec('ALTER TABLE activity_log ADD COLUMN device_signature TEXT');
+    db.exec('ALTER TABLE activity_log ADD COLUMN device_id TEXT');
+
+    // Add workspace_id to teams table for workspace scoping
+    db.exec('ALTER TABLE teams ADD COLUMN workspace_id TEXT');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_teams_workspace ON teams(workspace_id)');
+
+    console.log('[Migration-v54] Created workspace tables and added device identity columns');
+  },
+  down(db: ISqliteDriver) {
+    db.exec('DROP TABLE IF EXISTS workspace_members');
+    db.exec('DROP TABLE IF EXISTS workspaces');
+    // SQLite doesn't support DROP COLUMN — columns will remain but be unused
+    console.warn('[Migration-v54] Rollback: dropped workspace tables. device_* columns remain (SQLite limitation).');
+  },
+};
+
+// ── Phase 11: Task lifecycle state_history column ───────────────────────────
+
+const migration_v55: IMigration = {
+  version: 55,
+  name: 'Add state_history column to team_tasks for lifecycle audit trail',
+  up(db: ISqliteDriver) {
+    // JSON array of StateTransition records for full audit trail
+    db.exec(`ALTER TABLE team_tasks ADD COLUMN state_history TEXT NOT NULL DEFAULT '[]'`);
+    // Add lifecycle_state for the formal state machine (separate from sprint board 'status')
+    db.exec(`ALTER TABLE team_tasks ADD COLUMN lifecycle_state TEXT NOT NULL DEFAULT 'queued'`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_lifecycle ON team_tasks(team_id, lifecycle_state)');
+
+    console.log('[Migration-v55] Added state_history and lifecycle_state to team_tasks');
+  },
+  down(_db: ISqliteDriver) {
+    // SQLite doesn't support DROP COLUMN
+    console.warn('[Migration-v55] Rollback: columns remain (SQLite limitation).');
+    void _db;
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -2145,6 +2227,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v35, migration_v36, migration_v37, migration_v38, migration_v39,
   migration_v40, migration_v41, migration_v42, migration_v43, migration_v44,
   migration_v45, migration_v46, migration_v47, migration_v48, migration_v49, migration_v50, migration_v51, migration_v52, migration_v53,
+  migration_v54, migration_v55,
 ];
 
 /**
