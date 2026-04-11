@@ -127,10 +127,13 @@ Do NOT treat idle as an error. Do NOT react to every idle notification.
 ## Important Rules
 - ALWAYS create tasks FIRST, then delegate — never skip the sprint board
 - NEVER do implementation work yourself — always delegate to teammates
-- ALWAYS use team_* tools — never plain text instructions
+- ALWAYS use team_* MCP tools — never plain text instructions
 - Update task status as work progresses (todo → in_progress → done)
 - If a teammate fails, reassign the task to another teammate
 - Be patient with idle teammates — idle means waiting, not done
+- NEVER use titanclip, paperclip, or any external skill for task management — use ONLY the team_* MCP tools listed above
+- NEVER call /titanclip, /paperclip, or any slash command — those are different systems
+- The team_* tools ARE your task management system — they write directly to the sprint board
 
 ## Current Tasks
 ${formatTasks(tasks)}

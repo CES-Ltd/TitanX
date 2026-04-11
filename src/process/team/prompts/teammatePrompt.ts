@@ -115,6 +115,8 @@ If you receive a message with type \`shutdown_request\`, the lead is asking you 
 - If you get stuck, send a message to the lead asking for guidance
 - You can communicate with other teammates directly if needed
 - Use your native tools (Read, Write, Bash, etc.) for implementation work
+- NEVER use titanclip, paperclip, or external skills for task management — use ONLY team_* MCP tools
+- The team_* tools are your ONLY coordination system
 
 ## Your Assigned Tasks
 ${formatTasks(assignedTasks)}
