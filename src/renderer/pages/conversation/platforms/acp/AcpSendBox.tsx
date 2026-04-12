@@ -1,4 +1,5 @@
 import { ipcBridge } from '@/common';
+import type { ITeamAgentStatusEvent } from '@/common/types/teamTypes';
 import type { AcpBackend } from '@/common/types/acpTypes';
 import { isSideQuestionSupported } from '@/common/chat/sideQuestion';
 import { uuid } from '@/common/utils';
@@ -124,6 +125,22 @@ const AcpSendBox: React.FC<{
     setAtPath,
     setUploadFile,
   });
+  // Track if any team agent is active (for showing spinner above sendbox in team mode)
+  const [teamAgentActive, setTeamAgentActive] = React.useState(false);
+  React.useEffect(() => {
+    if (!teamId) return;
+    const unsub = ipcBridge.team.agentStatusChanged.on((event: ITeamAgentStatusEvent) => {
+      if (event.teamId !== teamId) return;
+      if (event.status === 'active') {
+        setTeamAgentActive(true);
+      } else {
+        // Check if ANY agent is still active — defer to avoid race with batch updates
+        setTimeout(() => setTeamAgentActive(false), 500);
+      }
+    });
+    return unsub;
+  }, [teamId]);
+
   const isBusy = running || aiProcessing;
 
   // Register handler for adding text from preview panel to sendbox
@@ -320,7 +337,7 @@ Please check your local CLI tool authentication status`,
         onRemove={remove}
         onClear={clear}
       />
-      <ThoughtDisplay running={aiProcessing && !hasThinkingMessage} onStop={handleStop} />
+      <ThoughtDisplay running={(aiProcessing && !hasThinkingMessage) || teamAgentActive} onStop={handleStop} />
 
       <SendBox
         value={content}
