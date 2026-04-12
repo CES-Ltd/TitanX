@@ -78,7 +78,6 @@ const useFormatContent = (content: string) => {
 
 const MessageText: React.FC<{ message: IMessageText }> = ({ message }) => {
   // Filter think tags from content before rendering
-  // 在渲染前过滤 think 标签
   const contentToRender = useMemo(() => {
     let content = message.content.content;
     if (typeof content === 'string') {
@@ -92,7 +91,8 @@ const MessageText: React.FC<{ message: IMessageText }> = ({ message }) => {
       // Strip team coordination XML tags from chat display.
       // Must handle well-formed, malformed, partial, and streaming-chunked tags.
       // Pattern: any tag starting with a known coordination prefix, greedy to closing > or />
-      const COORD_TAG_NAMES = 'send_message|task_create|task_update|task_progress|spawn_agent|idle|write_plan|reflect|trigger_workflow';
+      const COORD_TAG_NAMES =
+        'send_message|task_create|task_update|task_progress|spawn_agent|idle|write_plan|reflect|trigger_workflow';
       // Self-closing or opening tags (including malformed/partial): <tag_name ... /> or <tag_name ...>
       const selfClosingRe = new RegExp(`<(?:${COORD_TAG_NAMES})[^>]*\\/?>`, 'gi');
       // Paired tags: <tag_name ...>...</tag_name>

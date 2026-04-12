@@ -4,13 +4,14 @@
  * Displays lead → teammate tree with sprite avatars, live status, and click-to-view.
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Tag, Empty, Popconfirm, Message } from '@arco-design/web-react';
+import { Tag, Empty, Popconfirm, Message, Spin } from '@arco-design/web-react';
 import { Delete } from '@icon-park/react';
 import type { TeamAgent, TeammateStatus } from '@/common/types/teamTypes';
 import { team as teamBridge } from '@/common/adapter/ipcBridge';
 import { getAgentLogo } from '@/renderer/utils/model/agentLogo';
+import { getThinkingPhrase } from '@/renderer/utils/thinkingSpinner';
 
 const STATUS_DOTS: Record<TeammateStatus, { color: string; label: string }> = {
   active: { color: '#00b42a', label: 'Active' },
@@ -28,6 +29,16 @@ type WorkforcePanelProps = {
   activeDetailSlotId: string | null;
   teamId: string;
   onAgentRemoved?: () => void;
+};
+
+/** Rotating funny phrase shown for active agents */
+const AgentSpinner: React.FC = () => {
+  const [phrase, setPhrase] = useState(() => getThinkingPhrase(false));
+  useEffect(() => {
+    const interval = setInterval(() => setPhrase(getThinkingPhrase(false)), 3000);
+    return () => clearInterval(interval);
+  }, []);
+  return <span className='text-10px text-t-tertiary italic truncate animate-pulse'>{phrase}...</span>;
 };
 
 const WorkforcePanel: React.FC<WorkforcePanelProps> = ({
@@ -63,7 +74,7 @@ const WorkforcePanel: React.FC<WorkforcePanelProps> = ({
 
   const renderAgent = (agent: TeamAgent, isLead: boolean, indent: number) => {
     const liveStatus = statusMap.get(agent.slotId);
-    const status = liveStatus?.status ?? agent.status;
+    const status: TeammateStatus = liveStatus?.status ?? agent.status;
     const dot = STATUS_DOTS[status] ?? STATUS_DOTS.pending;
     const isSelected = activeDetailSlotId === agent.slotId;
     const logo = getAgentLogo(agent.agentType);
@@ -99,18 +110,20 @@ const WorkforcePanel: React.FC<WorkforcePanelProps> = ({
             )}
           </div>
           <div className='flex items-center gap-4px mt-2px'>
-            {/* Status dot */}
-            <span
-              className='w-6px h-6px rd-full shrink-0 inline-block'
-              style={{
-                backgroundColor: dot.color,
-                boxShadow: status === 'active' ? `0 0 6px ${dot.color}` : 'none',
-              }}
-            />
-            <span className='text-11px text-t-secondary truncate'>
-              {dot.label}
-              {liveStatus?.lastMessage ? ` · ${liveStatus.lastMessage.slice(0, 30)}` : ''}
-            </span>
+            {/* Status dot — pulse for active */}
+            {status === 'active' ? (
+              <Spin size={10} className='shrink-0' />
+            ) : (
+              <span className='w-6px h-6px rd-full shrink-0 inline-block' style={{ backgroundColor: dot.color }} />
+            )}
+            {status === 'active' ? (
+              <AgentSpinner />
+            ) : (
+              <span className='text-11px text-t-secondary truncate'>
+                {dot.label}
+                {liveStatus?.lastMessage ? ` · ${liveStatus.lastMessage.slice(0, 30)}` : ''}
+              </span>
+            )}
           </div>
         </div>
 
