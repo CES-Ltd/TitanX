@@ -103,12 +103,55 @@ const MessageText: React.FC<{ message: IMessageText }> = ({ message }) => {
         .replace(pairedRe, '')
         .replace(selfClosingRe, '')
         .replace(danglingRe, '')
+        // Catch orphaned XML attribute fragments like: sometext."/>  or  value"/>
+        .replace(/\w*[."]\s*\/>/g, '')
+        // Catch any remaining orphaned /> on its own line
+        .replace(/^\s*\/>\s*$/gm, '')
         .replace(/\n{3,}/g, '\n\n')
         .trim();
 
-      // De-stutter: remove obvious repeated phrases (LLM output artifact).
-      // Matches when a 20+ char phrase is immediately repeated (with optional whitespace).
-      content = content.replace(/(.{20,?})\s*\1/g, '$1');
+      // De-stutter: remove repeated phrases caused by LLM streaming artifacts.
+      // 1. Clean formatting glitches: "SprintStatus**:" → "Sprint Status:"
+      content = content.replace(/\w+\*\*:?/g, (m) => m.replace(/\*\*/g, ''));
+      // 2. Word-level stutter: "ready ready" → "ready"
+      content = content.replace(/\b(\w{4,})\s+\1\b/gi, '$1');
+      // 3. Exact repeated blocks of 20+ chars (including across newlines)
+      content = content.replace(/([\s\S]{20,?})\s*\1/g, '$1');
+      // 4. Repeated sentences: split by sentence boundaries, deduplicate adjacent.
+      //    Uses suffix matching: if the core content of a sentence already appeared, skip it.
+      const sentences = content.split(/(?<=[.!?])\s+/);
+      if (sentences.length > 1) {
+        const deduped: string[] = [sentences[0]];
+        const seen = new Set<string>();
+        // Normalize: lowercase, strip leading label/prefix before colon, trim
+        const norm = (s: string) =>
+          s
+            .replace(/^[^:]*:\s*/, '')
+            .toLowerCase()
+            .trim();
+        seen.add(norm(sentences[0]));
+        for (let i = 1; i < sentences.length; i++) {
+          const curr = sentences[i];
+          const currNorm = norm(curr);
+          if (currNorm.length < 10) {
+            deduped.push(curr); // Keep short fragments
+            continue;
+          }
+          if (seen.has(currNorm)) continue; // Exact normalized duplicate
+          // Fuzzy: skip if any previous sentence contains this one's core (or vice versa)
+          let isDup = false;
+          for (const s of seen) {
+            if (s.includes(currNorm) || currNorm.includes(s)) {
+              isDup = true;
+              break;
+            }
+          }
+          if (isDup) continue;
+          seen.add(currNorm);
+          deduped.push(curr);
+        }
+        content = deduped.join(' ');
+      }
 
       return content;
     }
