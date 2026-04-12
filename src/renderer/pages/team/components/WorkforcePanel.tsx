@@ -38,7 +38,7 @@ const AgentSpinner: React.FC = () => {
     const interval = setInterval(() => setPhrase(getThinkingPhrase(false)), 3000);
     return () => clearInterval(interval);
   }, []);
-  return <span className='text-10px text-t-tertiary italic truncate animate-pulse'>{phrase}...</span>;
+  return <span className='text-10px italic truncate animate-pulse' style={{ color: '#00b42a' }}>{phrase}...</span>;
 };
 
 const WorkforcePanel: React.FC<WorkforcePanelProps> = ({
