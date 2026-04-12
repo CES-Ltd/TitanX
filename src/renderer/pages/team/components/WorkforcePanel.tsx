@@ -110,12 +110,14 @@ const WorkforcePanel: React.FC<WorkforcePanelProps> = ({
             )}
           </div>
           <div className='flex items-center gap-4px mt-2px'>
-            {/* Status dot — pulse for active */}
-            {status === 'active' ? (
-              <Spin size={10} className='shrink-0' />
-            ) : (
-              <span className='w-6px h-6px rd-full shrink-0 inline-block' style={{ backgroundColor: dot.color }} />
-            )}
+            {/* Status dot — green glow pulse for active */}
+            <span
+              className={`w-6px h-6px rd-full shrink-0 inline-block${status === 'active' ? ' animate-pulse' : ''}`}
+              style={{
+                backgroundColor: dot.color,
+                boxShadow: status === 'active' ? `0 0 8px ${dot.color}` : 'none',
+              }}
+            />
             {status === 'active' ? (
               <AgentSpinner />
             ) : (
