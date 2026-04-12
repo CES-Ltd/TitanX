@@ -1,0 +1,85 @@
+%%{init: {'theme': 'dark', 'themeVariables': {'primaryColor': '#7c3aed', 'primaryTextColor': '#fff', 'primaryBorderColor': '#a78bfa', 'lineColor': '#94a3b8', 'secondaryColor': '#1e293b', 'tertiaryColor': '#0f172a', 'fontSize': '14px'}}}%%
+graph TB
+    subgraph USER["👤 User Layer"]
+        U[User / Browser]
+    end
+
+    subgraph RENDERER["🖥 Renderer Process"]
+        direction LR
+        Chat[Chat UI]
+        Sprint[Sprint Board]
+        Gallery[Agent Gallery<br/>34 Templates]
+        Observe[Observability<br/>Live Flow · Caveman · Cost]
+    end
+
+    subgraph IPC["🔌 IPC Bridge — 66 Channels"]
+        direction LR
+        Whitelist[Channel Whitelist]
+        Bridge[Preload Bridge]
+    end
+
+    subgraph MAIN["⚙️ Main Process"]
+        direction TB
+        subgraph TEAM["Team Orchestration"]
+            Lead[Lead Agent<br/>Auto-Resume]
+            TM[TeammateManager<br/>Wake · Heartbeat · Queue]
+            MCP[Team MCP Server<br/>TCP + Stdio Bridge]
+            TaskMgr[TaskManager<br/>Progress Notes]
+        end
+
+        subgraph AGENTOS["🧠 Agent OS"]
+            Hooks[Hook Engine<br/>Pre/Post Tool Events]
+            RBank[ReasoningBank<br/>Trajectory Replay]
+            Queen[Queen Mode<br/>Drift Detection]
+            Caveman[Caveman Mode<br/>Token Saving 30-75%]
+            Lifecycle[Task Lifecycle<br/>State Machine]
+        end
+
+        subgraph SECURITY["🔒 Enterprise Security"]
+            IAM[IAM Policies<br/>Deny-by-Default]
+            Audit[Audit Log<br/>HMAC + Device Signing]
+            DeviceID[Device Identity<br/>Ed25519 Keys]
+            Workspace[Workspace Isolation<br/>Multi-Tenant]
+            CSRF[CSRF Gate<br/>Content-Type Enforce]
+            Impersonation[Agent Impersonation<br/>Defense]
+        end
+
+        subgraph DATA["💾 Data Layer"]
+            SQLite[SQLite · WAL Mode<br/>57 Migrations]
+            SprintDB[Sprint Tasks<br/>+ Comments]
+            ActivityDB[Activity Log<br/>+ Device Signatures]
+        end
+    end
+
+    subgraph EXTERNAL["🌐 External APIs"]
+        direction LR
+        Claude[Claude]
+        Gemini[Gemini]
+        OpenCode[OpenCode]
+        DeepAgent[DeepAgents<br/>LangGraph]
+        MCPExt[MCP Servers]
+    end
+
+    U --> RENDERER
+    RENDERER --> IPC
+    IPC --> MAIN
+    Lead --> TM
+    TM --> MCP
+    MCP --> TaskMgr
+    TaskMgr --> Lifecycle
+    TM --> Hooks
+    TM --> RBank
+    Hooks --> IAM
+    Audit --> DeviceID
+    TaskMgr --> SprintDB
+    Audit --> ActivityDB
+    MAIN --> EXTERNAL
+
+    classDef userLayer fill:#7c3aed,stroke:#a78bfa,color:#fff
+    classDef rendererLayer fill:#1e40af,stroke:#3b82f6,color:#fff
+    classDef ipcLayer fill:#b45309,stroke:#f59e0b,color:#fff
+    classDef teamLayer fill:#065f46,stroke:#10b981,color:#fff
+    classDef agentosLayer fill:#7c2d12,stroke:#f97316,color:#fff
+    classDef securityLayer fill:#991b1b,stroke:#ef4444,color:#fff
+    classDef dataLayer fill:#1e293b,stroke:#64748b,color:#fff
+    classDef externalLayer fill:#4c1d95,stroke:#8b5cf6,color:#fff
