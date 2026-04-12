@@ -89,19 +89,27 @@ const MessageText: React.FC<{ message: IMessageText }> = ({ message }) => {
       if (hasSkillSuggest(content)) {
         content = stripSkillSuggest(content);
       }
-      // Strip team coordination XML tags from chat display
-      // These are parsed by the team system — no need to show raw XML to user
+      // Strip team coordination XML tags from chat display.
+      // Must handle well-formed, malformed, partial, and streaming-chunked tags.
+      // Pattern: any tag starting with a known coordination prefix, greedy to closing > or />
+      const COORD_TAG_NAMES = 'send_message|task_create|task_update|task_progress|spawn_agent|idle|write_plan|reflect|trigger_workflow';
+      // Self-closing or opening tags (including malformed/partial): <tag_name ... /> or <tag_name ...>
+      const selfClosingRe = new RegExp(`<(?:${COORD_TAG_NAMES})[^>]*\\/?>`, 'gi');
+      // Paired tags: <tag_name ...>...</tag_name>
+      const pairedRe = new RegExp(`<(${COORD_TAG_NAMES})\\b[^>]*>[\\s\\S]*?<\\/\\1>`, 'gi');
+      // Partial/dangling tags at end of streaming chunk: <tag_name (no closing >)
+      const danglingRe = new RegExp(`<(?:${COORD_TAG_NAMES})[^>]*$`, 'gi');
       content = content
-        .replace(/<send_message\s+to="[^"]*">[\s\S]*?<\/send_message>/g, '')
-        .replace(/<task_create\s+[^>]*\/>/g, '')
-        .replace(/<task_update\s+[^>]*\/>/g, '')
-        .replace(/<spawn_agent\s+[^>]*\/>/g, '')
-        .replace(/<idle\s+[^>]*\/>/g, '')
-        .replace(/<write_plan[\s\S]*?<\/write_plan>/g, '')
-        .replace(/<reflect[\s\S]*?<\/reflect>/g, '')
-        .replace(/<trigger_workflow\s+[^>]*\/>/g, '')
-        .replace(/\n{3,}/g, '\n\n') // Clean up leftover blank lines
+        .replace(pairedRe, '')
+        .replace(selfClosingRe, '')
+        .replace(danglingRe, '')
+        .replace(/\n{3,}/g, '\n\n')
         .trim();
+
+      // De-stutter: remove obvious repeated phrases (LLM output artifact).
+      // Matches when a 20+ char phrase is immediately repeated (with optional whitespace).
+      content = content.replace(/(.{20,?})\s*\1/g, '$1');
+
       return content;
     }
     return content;
