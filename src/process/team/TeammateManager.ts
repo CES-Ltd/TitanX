@@ -952,6 +952,29 @@ export class TeammateManager extends EventEmitter {
       this.setStatus(agent.slotId, 'idle');
     }
 
+    // Auto-re-wake: if this agent still has in_progress tasks, re-wake after a short delay
+    // so it continues working without waiting for the lead to re-delegate.
+    if (agent.role !== 'lead') {
+      try {
+        const myTasks = await this.taskManager.list(this.teamId);
+        const hasInProgressTasks = myTasks.some(
+          (t) =>
+            (t.status === 'in_progress' || t.status === 'pending') &&
+            (t.owner === agent.agentName || t.owner === agent.slotId)
+        );
+        if (hasInProgressTasks) {
+          console.log(`[TeammateManager] ${agent.agentName} still has in_progress tasks — auto-re-waking in 2s`);
+          setTimeout(() => {
+            void this.wake(agent.slotId).catch(() => {
+              /* non-critical — leader will re-delegate if needed */
+            });
+          }, 2000);
+        }
+      } catch {
+        /* non-critical — task check failure doesn't block turn completion */
+      }
+    }
+
     // Auto-send idle notification to leader if agent didn't explicitly output one.
     // Must run AFTER setStatus(idle) so maybeWakeLeaderWhenAllIdle sees the updated state.
     const hasExplicitIdle = actions.some((a) => a.type === 'idle_notification');

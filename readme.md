@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./resources/titanx-logo.png" alt="TitanX — Enterprise AI Agent Orchestration Platform" width="200">
+  <img src="./docs/screenshots/titanx-logo-sm.png" alt="TitanX — Enterprise AI Agent Orchestration Platform" width="200">
 </p>
 
 <h1 align="center">TitanX</h1>
@@ -64,8 +64,8 @@ https://github.com/CES-Ltd/TitanX/raw/main/docs/screenshots/demo-security.mp4
 ## 🏗 Architecture
 
 <p align="center">
-  <img src="./docs/screenshots/titanx-architecture-v2.png" alt="TitanX Architecture — 7-layer enterprise Agent OS" width="800">
-  <br/><em>Architecture — User → Renderer (Chat, Sprint Board, Gallery, Observability) → IPC Bridge (66 channels + whitelist) → Main Process: Team Orchestration (Lead Auto-Resume, TeammateManager, MCP Server, TaskManager with Progress Notes) · Agent OS (Hook Engine, ReasoningBank, Queen Mode, Caveman, Task Lifecycle State Machine) · Enterprise Security (IAM, Audit Log + Device Signing, Workspace Isolation, CSRF Gate, Impersonation Defense) · Data Layer (SQLite WAL, 57 migrations) → External APIs (Claude, Gemini, OpenCode, DeepAgents/LangGraph, MCP Servers)</em>
+  <img src="./docs/screenshots/titanx-architecture-v2.gif" alt="TitanX Architecture — Animated 7-layer enterprise Agent OS" width="800">
+  <br/><em>Animated architecture — User → Renderer (Chat, Sprint Board, Agent Gallery, Observability) → IPC Bridge (66 channels + whitelist) → Team Orchestration (Lead Auto-Resume, TeammateManager, MCP Server, TaskManager + Progress Notes) → Agent OS (Hook Engine, ReasoningBank, Queen Mode, Caveman, Task Lifecycle State Machine) → Enterprise Security (IAM, Audit Log + Device Signing, Workspace Isolation, CSRF Gate, Impersonation Defense) → External APIs (Claude, Gemini, OpenCode, DeepAgents, MCP Servers) · SQLite WAL · 57 Migrations</em>
 </p>
 
 ---
