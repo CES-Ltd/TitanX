@@ -8,12 +8,13 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Tabs, Message } from '@arco-design/web-react';
-import { FolderOpen, Peoples } from '@icon-park/react';
+import { FolderOpen, Peoples, ChartLine } from '@icon-park/react';
 import type { TChatConversation } from '@/common/config/storage';
 import type { TeamAgent, TeammateStatus } from '@/common/types/teamTypes';
 import ChatSider from '@renderer/pages/conversation/components/ChatSider';
 import ChatWorkspace from '@renderer/pages/conversation/Workspace';
 import WorkforcePanel from './WorkforcePanel';
+import MissionControl from './MissionControl';
 
 const { TabPane } = Tabs;
 
@@ -100,6 +101,19 @@ const TeamSider: React.FC<TeamSiderProps> = ({
             activeDetailSlotId={null}
             teamId={teamId}
           />
+        </div>
+      </TabPane>
+      <TabPane
+        key='mission'
+        title={
+          <span className='flex items-center gap-4px text-12px'>
+            <ChartLine size={14} />
+            {t('team.sider.mission', 'Mission')}
+          </span>
+        }
+      >
+        <div style={{ height: 'calc(100vh - 140px)', overflow: 'hidden' }}>
+          <MissionControl teamId={teamId} agents={agents} statusMap={statusMap} />
         </div>
       </TabPane>
       <TabPane
