@@ -64,8 +64,8 @@ https://github.com/CES-Ltd/TitanX/raw/main/docs/screenshots/demo-security.mp4
 ## 🏗 Architecture
 
 <p align="center">
-  <img src="./docs/screenshots/titanx-architecture.gif" alt="TitanX Architecture — Animated data flow across 7 layers" width="800">
-  <br/><em>Animated architecture — User → Renderer → IPC Bridge (66 channels) → Main Process (Hook Engine, LangGraph, Team MCP) → Agent OS (ReasoningBank, Caveman, Queen Mode, Live Flow, 34 Agent Gallery) → Security (IAM/Audit/SSRF) → External APIs (Claude/Gemini/DeepAgents/MCP)</em>
+  <img src="./docs/screenshots/titanx-architecture-v2.png" alt="TitanX Architecture — 7-layer enterprise Agent OS" width="800">
+  <br/><em>Architecture — User → Renderer (Chat, Sprint Board, Gallery, Observability) → IPC Bridge (66 channels + whitelist) → Main Process: Team Orchestration (Lead Auto-Resume, TeammateManager, MCP Server, TaskManager with Progress Notes) · Agent OS (Hook Engine, ReasoningBank, Queen Mode, Caveman, Task Lifecycle State Machine) · Enterprise Security (IAM, Audit Log + Device Signing, Workspace Isolation, CSRF Gate, Impersonation Defense) · Data Layer (SQLite WAL, 57 migrations) → External APIs (Claude, Gemini, OpenCode, DeepAgents/LangGraph, MCP Servers)</em>
 </p>
 
 ---
