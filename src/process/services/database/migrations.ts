@@ -2260,6 +2260,46 @@ const migration_v56: IMigration = {
   },
 };
 
+// ── Phase 13: Fix persisted agent status from 'pending' to 'idle' ────────────
+
+const migration_v57: IMigration = {
+  version: 57,
+  name: 'Fix persisted agent status: pending → idle in teams.agents JSON',
+  up(db: ISqliteDriver) {
+    const teams = db.prepare('SELECT id, agents FROM teams').all() as Array<{ id: string; agents: string }>;
+    let fixed = 0;
+
+    for (const team of teams) {
+      try {
+        const agents = JSON.parse(team.agents) as Array<{ status: string; agentName?: string }>;
+        let changed = false;
+        for (const agent of agents) {
+          if (agent.status === 'pending') {
+            agent.status = 'idle';
+            changed = true;
+          }
+        }
+        if (changed) {
+          db.prepare('UPDATE teams SET agents = ?, updated_at = ? WHERE id = ?').run(
+            JSON.stringify(agents),
+            Date.now(),
+            team.id
+          );
+          fixed++;
+        }
+      } catch {
+        // Skip malformed agents JSON
+      }
+    }
+
+    console.log(`[Migration-v57] Fixed agent status pending→idle in ${String(fixed)} of ${String(teams.length)} teams`);
+  },
+  down(_db: ISqliteDriver) {
+    // Status change is harmless — no rollback needed
+    void _db;
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -2272,7 +2312,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v35, migration_v36, migration_v37, migration_v38, migration_v39,
   migration_v40, migration_v41, migration_v42, migration_v43, migration_v44,
   migration_v45, migration_v46, migration_v47, migration_v48, migration_v49, migration_v50, migration_v51, migration_v52, migration_v53,
-  migration_v54, migration_v55, migration_v56,
+  migration_v54, migration_v55, migration_v56, migration_v57,
 ];
 
 /**

@@ -646,6 +646,16 @@ export class TeamSessionService {
     // which confuses the UI and blocks heartbeat-driven wake cycles.
     session.initializeAgentStatuses();
 
+    // Persist the idle status to DB so agents don't revert to 'pending' on next restart.
+    const updatedAgents = session.getAgents();
+    const hasPendingFixed = updatedAgents.some(
+      (a, i) => team.agents[i] && team.agents[i].status === 'pending' && a.status === 'idle'
+    );
+    if (hasPendingFixed) {
+      await this.repo.update(teamId, { agents: updatedAgents, updatedAt: Date.now() });
+      console.log(`[TeamSessionService] Persisted agent idle status to DB for team ${teamId}`);
+    }
+
     // Auto-resume: if there are incomplete tasks, wake the lead to re-check the board.
     // This ensures teams resume work after app restart without user intervention.
     const leadAgent = team.agents.find((a) => a.role === 'lead');
