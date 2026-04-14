@@ -7,6 +7,7 @@
 // configureChromium sets app name (dev isolation) and Chromium flags — must run before
 // ANY module that calls app.getPath('userData'), because Electron caches the path on first call.
 import './process/utils/configureChromium';
+
 import * as Sentry from '@sentry/electron/main';
 
 Sentry.init({
@@ -536,6 +537,28 @@ const handleAppReady = async (): Promise<void> => {
       .then(() => mark('initializeDeferred'))
       .catch((error) => console.error('[Process] Deferred initialization failed:', error));
 
+    // Start database pruning scheduler + periodic GC for long-running stability
+    setTimeout(async () => {
+      try {
+        const { getDatabase } = await import('@process/services/database');
+        const { startPruningScheduler } = await import('@process/services/database/pruning');
+        const db = await getDatabase();
+        startPruningScheduler(db.getDriver());
+      } catch (err) {
+        console.error('[App] Failed to start pruning scheduler:', err);
+      }
+      // Periodic manual GC every 30 minutes (if --expose-gc is active)
+      if (typeof global.gc === 'function') {
+        setInterval(
+          () => {
+            (global as { gc?: () => void }).gc!();
+            console.log('[GC] Manual garbage collection triggered');
+          },
+          30 * 60 * 1000
+        );
+      }
+    }, 10_000); // Delay 10s after deferred init
+
     // Initialize desktop pet (delayed to not block main window)
     setTimeout(() => {
       void (async () => {
@@ -734,6 +757,17 @@ app.on('before-quit', async () => {
 
   // Stop all active team sessions (TCP servers + child processes)
   await disposeAllTeamSessions().catch((err) => console.error('[App] Failed to dispose team sessions:', err));
+
+  // Close database connection and stop pruning scheduler
+  try {
+    const { stopPruningScheduler } = await import('@process/services/database/pruning');
+    stopPruningScheduler();
+    const { closeDatabase } = await import('@process/services/database');
+    closeDatabase();
+    console.log('[App] Database closed');
+  } catch (err) {
+    console.error('[App] Failed to close database:', err);
+  }
 
   // Shutdown Channel subsystem
   try {

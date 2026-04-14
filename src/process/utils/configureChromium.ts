@@ -25,6 +25,9 @@ if (!app.isPackaged) {
   app.setPath('userData', path.join(appSupportDir, devAppName));
 }
 
+// Memory management: expose GC for periodic manual collection + cap heap at 4GB
+app.commandLine.appendSwitch('js-flags', '--expose-gc --max-old-space-size=4096');
+
 // Configure Chromium command-line flags for WebUI and CLI modes
 // 为 WebUI 和 CLI 模式配置 Chromium 命令行参数
 

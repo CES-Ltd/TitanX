@@ -51,11 +51,21 @@ function writeTcpMessage(socket: net.Socket, data: unknown): void {
   socket.write(Buffer.concat([header, body]));
 }
 
+/** Max buffer size (10MB) — reset if exceeded to prevent memory exhaustion */
+const MAX_TCP_BUFFER_SIZE = 10 * 1024 * 1024;
+
 function createTcpMessageReader(onMessage: (msg: unknown) => void): (chunk: Buffer) => void {
   let buffer = Buffer.alloc(0);
 
   return (chunk: Buffer) => {
     buffer = Buffer.concat([buffer, chunk]);
+
+    // Safety: if buffer exceeds 10MB, a client is misbehaving — reset
+    if (buffer.length > MAX_TCP_BUFFER_SIZE) {
+      console.warn(`[TeamMcpServer] TCP buffer exceeded ${MAX_TCP_BUFFER_SIZE} bytes — resetting`);
+      buffer = Buffer.alloc(0);
+      return;
+    }
 
     while (buffer.length >= 4) {
       const bodyLen = buffer.readUInt32BE(0);
@@ -195,6 +205,11 @@ export class TeamMcpServer {
   // ── TCP connection handler ──────────────────────────────────────────────────
 
   private handleTcpConnection(socket: net.Socket): void {
+    // Kill idle sockets after 30s to prevent connection leaks
+    socket.setTimeout(30_000, () => {
+      socket.destroy();
+    });
+
     const reader = createTcpMessageReader(async (msg) => {
       const request = msg as {
         tool?: string;
@@ -206,7 +221,7 @@ export class TeamMcpServer {
       // Reject requests that do not carry the correct auth token
       if (request.auth_token !== this.authToken) {
         writeTcpMessage(socket, { error: 'Unauthorized' });
-        socket.end();
+        socket.destroy();
         return;
       }
 
@@ -238,6 +253,15 @@ export class TeamMcpServer {
 
   private checkRateLimit(slotId: string): void {
     const now = Date.now();
+
+    // Sweep stale entries to prevent unbounded map growth on long runs
+    if (this.rateLimitMap.size > 50) {
+      const expiry = now - 2 * TeamMcpServer.RATE_LIMIT_WINDOW_MS;
+      for (const [key, val] of this.rateLimitMap) {
+        if (val.windowStart < expiry) this.rateLimitMap.delete(key);
+      }
+    }
+
     const entry = this.rateLimitMap.get(slotId);
 
     if (!entry || now - entry.windowStart > TeamMcpServer.RATE_LIMIT_WINDOW_MS) {

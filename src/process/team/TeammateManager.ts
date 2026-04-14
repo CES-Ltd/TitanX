@@ -70,6 +70,8 @@ export class TeammateManager extends EventEmitter {
   private readonly finalizedTurns = new Set<string>();
   /** Maps slotId → original name before rename, for "formerly: X" hints in prompts */
   private readonly renamedAgents = new Map<string, string>();
+  /** Periodic memory sweep interval handle */
+  private readonly memorySweepInterval: ReturnType<typeof setInterval>;
 
   /** Maximum time (ms) to wait for a turnCompleted event before force-releasing a wake */
   private static readonly WAKE_TIMEOUT_MS = 60 * 1000;
@@ -95,6 +97,40 @@ export class TeammateManager extends EventEmitter {
     const boundHandler = (msg: IResponseMessage) => this.handleResponseStream(msg);
     teamEventBus.on('responseStream', boundHandler);
     this.unsubResponseStream = () => teamEventBus.removeListener('responseStream', boundHandler);
+
+    // Memory sweeper — clears leaked buffers, stale sets, and orphaned timeouts every 60s
+    this.memorySweepInterval = setInterval(() => this.sweepMemory(), 60_000);
+  }
+
+  /** Sweep leaked in-memory state to prevent unbounded growth on long runs. */
+  private sweepMemory(): void {
+    // 1. responseBuffer: clear entries for conversations not actively being woken
+    for (const convId of this.responseBuffer.keys()) {
+      const agent = this.agents.find((a) => a.conversationId === convId);
+      if (!agent || !this.activeWakes.has(agent.slotId)) {
+        this.responseBuffer.delete(convId);
+      }
+    }
+
+    // 2. finalizedTurns: force-clear (entries should auto-expire after 5s; any remaining are leaked)
+    if (this.finalizedTurns.size > 0) {
+      this.finalizedTurns.clear();
+    }
+
+    // 3. pendingWakes: remove stale retry_ keys (retries should complete within 10s)
+    for (const key of this.pendingWakes) {
+      if (key.startsWith('retry_')) {
+        this.pendingWakes.delete(key);
+      }
+    }
+
+    // 4. wakeTimeouts: cancel orphaned timeouts for agents not in activeWakes
+    for (const [slotId, handle] of this.wakeTimeouts) {
+      if (!this.activeWakes.has(slotId)) {
+        clearTimeout(handle);
+        this.wakeTimeouts.delete(slotId);
+      }
+    }
   }
 
   /** Get the current agents list */
@@ -382,12 +418,16 @@ export class TeammateManager extends EventEmitter {
 
   /** Clean up all IPC listeners, timers, and EventEmitter handlers */
   dispose(): void {
+    clearInterval(this.memorySweepInterval);
     this.unsubResponseStream();
     for (const handle of this.wakeTimeouts.values()) {
       clearTimeout(handle);
     }
     this.wakeTimeouts.clear();
     this.activeWakes.clear();
+    this.responseBuffer.clear();
+    this.finalizedTurns.clear();
+    this.pendingWakes.clear();
     this.removeAllListeners();
   }
 

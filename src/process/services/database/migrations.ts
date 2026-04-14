@@ -2300,6 +2300,42 @@ const migration_v57: IMigration = {
   },
 };
 
+// ── Phase 14: Allow pruning of old activity_log entries ──────────────────────
+
+const migration_v58: IMigration = {
+  version: 58,
+  name: 'Replace immutable activity_log trigger with retention-aware trigger',
+  up(db: ISqliteDriver) {
+    // Drop the blanket immutable trigger that blocks ALL deletes
+    db.exec('DROP TRIGGER IF EXISTS prevent_activity_log_delete');
+
+    // Re-create with a 7-day safety window: only block deletes of entries < 7 days old.
+    // The pruning service deletes entries > 30 days — this trigger protects recent data
+    // from accidental deletion while allowing old data to be pruned.
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS prevent_activity_log_delete_recent
+      BEFORE DELETE ON activity_log
+      WHEN OLD.created_at > (strftime('%s', 'now') * 1000 - 7 * 24 * 60 * 60 * 1000)
+      BEGIN
+        SELECT RAISE(ABORT, 'activity_log: cannot delete entries less than 7 days old');
+      END
+    `);
+
+    console.log('[Migration-v58] Replaced immutable trigger with 7-day retention trigger');
+  },
+  down(db: ISqliteDriver) {
+    db.exec('DROP TRIGGER IF EXISTS prevent_activity_log_delete_recent');
+    // Restore blanket immutable trigger
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS prevent_activity_log_delete
+      BEFORE DELETE ON activity_log
+      BEGIN
+        SELECT RAISE(ABORT, 'activity_log is immutable: deletes are not allowed');
+      END
+    `);
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -2312,7 +2348,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v35, migration_v36, migration_v37, migration_v38, migration_v39,
   migration_v40, migration_v41, migration_v42, migration_v43, migration_v44,
   migration_v45, migration_v46, migration_v47, migration_v48, migration_v49, migration_v50, migration_v51, migration_v52, migration_v53,
-  migration_v54, migration_v55, migration_v56, migration_v57,
+  migration_v54, migration_v55, migration_v56, migration_v57, migration_v58,
 ];
 
 /**
