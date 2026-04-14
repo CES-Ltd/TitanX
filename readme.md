@@ -23,7 +23,7 @@
   &nbsp;
   <img src="https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript">
   &nbsp;
-  <img src="https://img.shields.io/badge/SQLite-47%20migrations-003B57?style=flat-square&logo=sqlite&logoColor=white" alt="SQLite">
+  <img src="https://img.shields.io/badge/SQLite-58%20migrations-003B57?style=flat-square&logo=sqlite&logoColor=white" alt="SQLite">
   &nbsp;
   <img src="https://img.shields.io/badge/OpenTelemetry-enabled-7B68EE?style=flat-square&logo=opentelemetry&logoColor=white" alt="OpenTelemetry">
 </p>
@@ -65,7 +65,7 @@ https://github.com/CES-Ltd/TitanX/raw/main/docs/screenshots/demo-security.mp4
 
 <p align="center">
   <img src="./docs/screenshots/titanx-architecture-v2.gif" alt="TitanX Architecture — Animated 7-layer enterprise Agent OS" width="800">
-  <br/><em>Animated architecture — User → Renderer (Chat, Sprint Board, Agent Gallery, Observability) → IPC Bridge (66 channels + whitelist) → Team Orchestration (Lead Auto-Resume, TeammateManager, MCP Server, TaskManager + Progress Notes) → Agent OS (Hook Engine, ReasoningBank, Queen Mode, Caveman, Task Lifecycle State Machine) → Enterprise Security (IAM, Audit Log + Device Signing, Workspace Isolation, CSRF Gate, Impersonation Defense) → External APIs (Claude, Gemini, OpenCode, DeepAgents, MCP Servers) · SQLite WAL · 57 Migrations</em>
+  <br/><em>Animated architecture — User → Renderer (Chat, Sprint Board, Agent Gallery, Mission Control, Observability) → IPC Bridge (66 channels + whitelist) → Team Orchestration (Lead Auto-Resume, TeammateManager, MCP Server, TaskManager + Progress Notes) → Agent OS (Hook Engine, ReasoningBank, Queen Mode, Caveman, Task Lifecycle State Machine) → Enterprise Security (IAM, Audit Log + Device Signing, Workspace Isolation, CSRF Gate, Impersonation Defense) → External APIs (Claude, Gemini, OpenCode, DeepAgents, MCP Servers) · SQLite WAL · 58 Migrations</em>
 </p>
 
 ---
@@ -113,11 +113,16 @@ https://github.com/CES-Ltd/TitanX/raw/main/docs/screenshots/demo-security.mp4
 
 ### 🏢 Multi-Agent Team Orchestration
 
-- **Lead agent architecture** — lead agent coordinates teammates via mailbox + task board
+- **Lead agent architecture** — lead agent coordinates teammates via mailbox + task board with auto-resume on restart
 - **Dynamic agent spawning** — lead can recruit specialists at runtime
-- **MCP tool server** — 9 built-in team coordination tools with rate limiting (30/min)
+- **MCP tool server** — 9 built-in team coordination tools with rate limiting (30/min) and impersonation defense
 - **Multi-provider support** — Claude, GPT, Gemini, Codex, OpenCode, Hermes, Ollama, and 20+ LLM providers
-- **Agent Gallery** — 8 pre-seeded templates (Developer, QA, Research, DevOps, Security, Writer, Frontend, Data)
+- **Agent Gallery** — 34 pre-built agent templates across 7 departments (Engineering, Product, QA, DevOps, Security, Data, Operations)
+- **Stable agent identity** — task ownership by agent name (not volatile slotId), survives restarts without confusion
+- **Progress notes** — agents save what was done and what remains on every task update, enabling seamless resume after restart
+- **Auto-re-wake** — agents with in_progress tasks automatically continue working after each turn (no manual re-delegation needed)
+- **Mission Control** — real-time task timeline with blinking status indicators, team health KPIs, agent utilization bars, and live activity feed in the side pane
+- **Live agent status** — green glowing dots with rotating funny phrases ("Yak-shaving...", "Neuromancing...") for active agents in the Workforce panel
 - **Pixel-art office** — animated visualization of agent activity with BFS pathfinding
 
 ### 🔄 Workflow Engine (n8n-Inspired)
@@ -161,6 +166,7 @@ https://github.com/CES-Ltd/TitanX/raw/main/docs/screenshots/demo-security.mp4
 
 - **Agent Hook System** — 6 event types (PreToolUse, PostToolUse, Stop, etc.) with command/http/function hooks for extensible tool execution
 - **ReasoningBank** — Store and replay successful execution trajectories (RETRIEVE → JUDGE → DISTILL pattern, ~32% token savings)
+- **Task Lifecycle State Machine** — Enforced state transitions (queued → claimed → dispatched → running → completed/failed/cancelled) with full audit trail
 - **Micro-Compaction** — Selective truncation of stale tool results to prevent context overflow without full conversation compaction
 - **Queen Mode** — Hierarchical swarm coordinator role with drift detection and checkpoint gates
 - **Custom Agent Definitions** — Load agent specs from `.claude/agents/` (JSON/Markdown with YAML frontmatter)
@@ -169,6 +175,8 @@ https://github.com/CES-Ltd/TitanX/raw/main/docs/screenshots/demo-security.mp4
 - **Live Flow Visualizer** — Real-time interactive SVG graph of agent execution events with zoom/pan/click-to-inspect
 - **Sprint Analytics** — Burndown charts, agent utilization, velocity tracking
 - **Cost Projections** — Token usage over time, multi-provider cost estimates, caveman savings comparison
+- **Chat De-Stutter** — Automatic removal of repeated phrases, malformed XML tags, and streaming artifacts from agent output
+- **Database Auto-Pruning** — Periodic cleanup of stale data (activity log >30d, messages >14d inactive, done tasks >7d, unused trajectories >14d) for long-running stability
 
 ### 📊 Trace System (LangSmith-Compatible)
 
@@ -237,10 +245,27 @@ https://github.com/CES-Ltd/TitanX/raw/main/docs/screenshots/demo-security.mp4
 ### Comprehensive Audit Logging
 
 - **HMAC-SHA256 signed** — every log entry tamper-detectable
+- **Device Identity Signing** — Ed25519 hardware-bound key pairs for non-repudiable audit trails (per-install device fingerprint)
 - **100+ action types** — security toggles, policy changes, agent lifecycle, tool calls, workflow executions
 - **Real-time UI** — audit log auto-refreshes on new entries
 - **Entity type filtering** — 19 entity types for precise querying
 - **Color-coded actions** — green for enabled/created, red for denied/deleted, blue for disabled
+- **Retention-aware pruning** — entries older than 30 days auto-pruned, recent 7 days immutable via trigger
+
+### Workspace Isolation (Multi-Tenant)
+
+- **Strict mode** — database-level row isolation with scoped queries
+- **Soft mode** — application-level filtering for backward compatibility
+- **Cross-workspace blocked** — queries crossing workspace boundaries are rejected and logged
+- **Member management** — owner, admin, member, viewer roles with RBAC
+
+### Additional Security Hardening
+
+- **Agent Impersonation Defense** — cross-validates agent identity on task mutations (only task owner or lead can modify)
+- **IPC Channel Whitelist** — preload bridge validates all IPC channels, rejects unknown channels
+- **CSRF Content-Type Gate** — requires `application/json` for all mutation requests, forces CORS preflight
+- **TCP Socket Hardening** — 30s idle timeout, 10MB buffer cap, socket.destroy() on timeout
+- **Heap Management** — 4GB max heap, periodic manual GC every 30 minutes
 
 ---
 
@@ -302,9 +327,9 @@ https://github.com/CES-Ltd/TitanX/raw/main/docs/screenshots/demo-security.mp4
 | ---------------------- | --------------------------------------------------------------------------------- |
 | **Desktop**            | Electron 37                                                                       |
 | **Frontend**           | React 19, TypeScript (strict), Arco Design, UnoCSS                                |
-| **Database**           | SQLite (better-sqlite3) with WAL mode, **47 migrations**                          |
-| **IPC**                | Custom bridge pattern (`@office-ai/platform`) — 60+ IPC channels                  |
-| **Security**           | AES-256-GCM, SHA-256 tokens, HMAC-SHA256 audit signatures, timing-safe comparison |
+| **Database**           | SQLite (better-sqlite3) with WAL mode, **58 migrations**, auto-pruning            |
+| **IPC**                | Custom bridge pattern (`@office-ai/platform`) — 66 IPC channels + whitelist       |
+| **Security**           | AES-256-GCM, SHA-256 tokens, HMAC-SHA256 + Ed25519 device signatures, workspace isolation, CSRF gate |
 | **Observability**      | OpenTelemetry (OTLP/Console), LangSmith-compatible traces                         |
 | **AI Providers**       | 20+ LLM providers (Claude, GPT, Gemini, Codex, OpenCode, Hermes, Ollama, etc.)    |
 | **Workflow Engine**    | n8n-inspired DAG execution with topological sort, retry, error routing            |
@@ -358,14 +383,21 @@ TitanX/
 │   │   │   ├── networkPolicy/      # Deny-by-default egress + 11 presets
 │   │   │   ├── ssrfProtection/     # IP/DNS/scheme validation
 │   │   │   ├── blueprints/         # Declarative security profiles
+│   │   │   ├── workspace/          # Multi-tenant workspace isolation
+│   │   │   ├── deviceIdentity/     # Ed25519 hardware-bound key pairs
+│   │   │   ├── taskLifecycle/      # Task state machine + transitions
 │   │   │   ├── agentMemory/        # LangChain-inspired memory
 │   │   │   ├── agentPlanning/      # DeepAgents-inspired planning
-│   │   │   ├── deepAgent/         # LangGraph research graph + AG-UI protocol
+│   │   │   ├── reasoningBank/      # Trajectory storage + replay
+│   │   │   ├── hooks/              # Agent hook system (Pre/PostToolUse)
+│   │   │   ├── caveman/            # Token-saving Caveman Mode
+│   │   │   ├── deepAgent/          # LangGraph research graph + AG-UI protocol
 │   │   │   ├── tracing/            # LangSmith-compatible traces
 │   │   │   ├── workflows/          # n8n-inspired DAG engine
 │   │   │   ├── telemetry/          # OpenTelemetry SDK
 │   │   │   ├── secrets/            # AES-256-GCM vault
-│   │   │   └── activityLog/        # HMAC-signed audit trail
+│   │   │   ├── activityLog/        # HMAC + Ed25519 signed audit trail
+│   │   │   └── database/pruning    # Auto-pruning for long-running stability
 │   │   ├── bridge/             # 30+ IPC handler files
 │   │   └── team/               # Team orchestration engine
 │   └── common/                 # Shared types, IPC bridge definitions
@@ -377,22 +409,23 @@ TitanX/
 
 ## Database Schema
 
-TitanX adds **30+ tables** via **47 migrations** on top of AionUI's base schema:
+TitanX adds **35+ tables** via **58 migrations** on top of AionUI's base schema:
 
 | Category         | Tables                                                                                                                                                                  |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Security**     | iam_policies, agent_policy_bindings, credential_access_tokens, agent_session_tokens, network_policies, network_policy_rules, security_feature_toggles, agent_blueprints |
+| **Multi-Tenant** | workspaces, workspace_members                                                                                                                                           |
 | **Workflows**    | workflow_definitions, workflow_executions, workflow_node_executions                                                                                                     |
-| **Intelligence** | agent_memory, agent_plans                                                                                                                                               |
+| **Intelligence** | agent_memory, agent_plans, reasoning_bank, caveman_savings                                                                                                              |
 | **Traces**       | trace_runs, trace_feedback                                                                                                                                              |
-| **Operations**   | activity_log, secrets, secret_versions, cost_events, budget_policies, budget_incidents, agent_runs, approvals, workflow_rules                                           |
-| **Teams**        | teams, sprint_tasks, sprint_counters, agent_gallery, agent_snapshots, inference_routing_rules, project_plans                                                            |
+| **Operations**   | activity_log (HMAC + device signed), secrets, secret_versions, cost_events, budget_policies, budget_incidents, agent_runs, approvals, workflow_rules                    |
+| **Teams**        | teams, team_tasks (with progress_notes + lifecycle_state), sprint_tasks, sprint_counters, agent_gallery, agent_snapshots, inference_routing_rules, project_plans        |
 
 ---
 
 ## 🔑 Keywords
 
-`ai-agents` `multi-agent-orchestration` `enterprise-security` `iam` `rbac` `audit-logging` `opentelemetry` `langchain` `langsmith` `n8n-workflows` `nemoclaw` `electron-app` `react` `typescript` `sqlite` `desktop-app` `ai-governance` `llm-orchestration` `agent-memory` `agent-planning` `network-policies` `ssrf-protection` `workflow-automation` `sprint-board` `cost-tracking`
+`ai-agents` `multi-agent-orchestration` `enterprise-security` `agent-os` `iam` `rbac` `audit-logging` `device-identity` `workspace-isolation` `opentelemetry` `langchain` `langsmith` `n8n-workflows` `nemoclaw` `electron-app` `react` `typescript` `sqlite` `desktop-app` `ai-governance` `llm-orchestration` `agent-memory` `agent-planning` `reasoning-bank` `caveman-mode` `network-policies` `ssrf-protection` `workflow-automation` `sprint-board` `cost-tracking` `mission-control` `auto-pruning`
 
 ---
 
