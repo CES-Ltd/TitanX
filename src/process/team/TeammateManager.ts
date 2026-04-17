@@ -851,6 +851,13 @@ export class TeammateManager extends EventEmitter {
     const { oldName, newName: trimmed } = this.registry.rename(slotId, newName);
     console.log(`[TeammateManager] Agent ${slotId} renamed: "${oldName}" → "${trimmed}"`);
     this.events.emit('team.agent-renamed', { teamId: this.teamId, slotId, oldName, newName: trimmed });
+
+    // Reassign every task whose owner was the old name so the rename
+    // propagates through the sprint board. Runs fire-and-forget so a
+    // DB hiccup can't undo the in-memory rename; failures logged.
+    void this.taskManager.reassignOwner(this.teamId, oldName, trimmed).catch((e: unknown) => {
+      logNonCritical('team.rename.task-reassign', e);
+    });
     // Audit log: agent renamed
     void (async () => {
       try {

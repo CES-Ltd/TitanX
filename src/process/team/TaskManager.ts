@@ -241,6 +241,60 @@ export class TaskManager {
   }
 
   /**
+   * Reassign every task owned by `oldName` to `newName` for a team.
+   * Called after an agent rename so existing work items stay attached to
+   * the (now-renamed) owner. Without this, WakeRunner's assignedTasks
+   * filter would drop them silently because owner lookups go via
+   * `t.owner === agent.agentName` and the owner string is now stale.
+   *
+   * Returns the number of tasks updated. Also re-emits the team.task-updated
+   * event per task so the sprint board refreshes.
+   */
+  async reassignOwner(teamId: string, oldName: string, newName: string): Promise<number> {
+    if (oldName === newName) return 0;
+    const tasks = await this.repo.findTasksByTeam(teamId);
+    const owned = tasks.filter((t) => t.owner === oldName);
+    if (owned.length === 0) return 0;
+
+    const now = Date.now();
+    await Promise.all(
+      owned.map((t) =>
+        this.repo.updateTask(t.id, {
+          owner: newName,
+          updatedAt: now,
+        })
+      )
+    );
+
+    // Mirror to sprint_tasks so the board's assignee column stays consistent.
+    // Best-effort: any DB hiccup is logged and does not undo the team_tasks
+    // write (eventual consistency on the sprint board is acceptable).
+    try {
+      const db = await getDatabase();
+      const driver = db.getDriver();
+      for (const t of owned) {
+        const sprintTask = sprintService.findByTeamTaskId(driver, t.id);
+        if (sprintTask && sprintTask.assigneeSlotId === oldName) {
+          sprintService.updateTask(driver, sprintTask.id, { assigneeSlotId: newName });
+        }
+      }
+      activityLogService.logActivity(driver, {
+        userId: 'system_default_user',
+        actorType: 'system',
+        actorId: 'task_manager',
+        action: 'task.owner_reassigned',
+        entityType: 'team',
+        entityId: teamId,
+        details: { oldName, newName, taskCount: owned.length },
+      });
+    } catch (e) {
+      logNonCritical('team.task.reassign-owner-sync', e);
+    }
+
+    return owned.length;
+  }
+
+  /**
    * Check if completing a task unblocks other tasks.
    * Removes the given taskId from the `blockedBy` array of every task that
    * depends on it. Returns only those tasks whose `blockedBy` became empty

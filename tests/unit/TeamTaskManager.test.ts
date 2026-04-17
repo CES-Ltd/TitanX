@@ -214,4 +214,143 @@ describe('TaskManager', () => {
       expect(args[1].progressNotes).toBe('Implemented form layout. Remaining: validation.');
     });
   });
+
+  describe('reassignOwner() — rename-invalidates-task-owner fix', () => {
+    function taskWithOwner(id: string, owner: string, teamId = 'team-1'): TeamTask {
+      return {
+        id,
+        teamId,
+        subject: `Task ${id}`,
+        status: 'pending',
+        owner,
+        blockedBy: [],
+        blocks: [],
+        metadata: {},
+        createdAt: 0,
+        updatedAt: 0,
+      } as TeamTask;
+    }
+
+    it('no-ops when oldName === newName (prevents stray DB traffic on idempotent rename)', async () => {
+      const result = await taskManager.reassignOwner('team-1', 'Alice', 'Alice');
+      expect(result).toBe(0);
+      expect(repo.findTasksByTeam).not.toHaveBeenCalled();
+      expect(repo.updateTask).not.toHaveBeenCalled();
+    });
+
+    it('returns 0 and skips writes when no tasks match the old owner', async () => {
+      repo = makeRepoStub({
+        findTasksByTeam: vi.fn(async () => [taskWithOwner('t1', 'Bob')]),
+      });
+      taskManager = new TaskManager(repo);
+
+      const result = await taskManager.reassignOwner('team-1', 'Alice', 'Alicia');
+      expect(result).toBe(0);
+      expect(repo.updateTask).not.toHaveBeenCalled();
+    });
+
+    it('updates every task owned by oldName to newName with a fresh updatedAt', async () => {
+      repo = makeRepoStub({
+        findTasksByTeam: vi.fn(async () => [
+          taskWithOwner('t1', 'Alice'),
+          taskWithOwner('t2', 'Alice'),
+          taskWithOwner('t3', 'Bob'), // unrelated — must stay
+          taskWithOwner('t4', 'Alice'),
+        ]),
+      });
+      taskManager = new TaskManager(repo);
+
+      const before = Date.now();
+      const count = await taskManager.reassignOwner('team-1', 'Alice', 'Alicia');
+      const after = Date.now();
+
+      expect(count).toBe(3);
+      expect(repo.updateTask).toHaveBeenCalledTimes(3);
+      const calls = (repo.updateTask as ReturnType<typeof vi.fn>).mock.calls;
+      for (const [taskId, updates] of calls) {
+        expect(['t1', 't2', 't4']).toContain(taskId);
+        expect(updates.owner).toBe('Alicia');
+        expect(updates.updatedAt).toBeGreaterThanOrEqual(before);
+        expect(updates.updatedAt).toBeLessThanOrEqual(after);
+      }
+      // Bob's task was not touched
+      expect(calls.find((c) => c[0] === 't3')).toBeUndefined();
+    });
+
+    it('writes an audit log entry noting the rename and task count', async () => {
+      repo = makeRepoStub({
+        findTasksByTeam: vi.fn(async () => [taskWithOwner('t1', 'Alice'), taskWithOwner('t2', 'Alice')]),
+      });
+      taskManager = new TaskManager(repo);
+
+      await taskManager.reassignOwner('team-1', 'Alice', 'Alicia');
+
+      expect(mockLogActivity).toHaveBeenCalledTimes(1);
+      const [, entry] = mockLogActivity.mock.calls[0] as [
+        unknown,
+        { action: string; details: Record<string, unknown> },
+      ];
+      expect(entry.action).toBe('task.owner_reassigned');
+      expect(entry.details).toMatchObject({ oldName: 'Alice', newName: 'Alicia', taskCount: 2 });
+    });
+
+    it('updates sprint board assignee when the sprint row was keyed by the old name', async () => {
+      repo = makeRepoStub({
+        findTasksByTeam: vi.fn(async () => [taskWithOwner('t1', 'Alice')]),
+      });
+      taskManager = new TaskManager(repo);
+      mockFindByTeamTaskId.mockReturnValueOnce({
+        id: 'sprint-1',
+        assigneeSlotId: 'Alice',
+      } as ReturnType<typeof mockFindByTeamTaskId>);
+
+      await taskManager.reassignOwner('team-1', 'Alice', 'Alicia');
+
+      expect(mockSprintUpdate).toHaveBeenCalledWith(mockDriver, 'sprint-1', { assigneeSlotId: 'Alicia' });
+    });
+
+    it('does not touch sprint board when the assignee was already a slotId (not the old name)', async () => {
+      repo = makeRepoStub({
+        findTasksByTeam: vi.fn(async () => [taskWithOwner('t1', 'Alice')]),
+      });
+      taskManager = new TaskManager(repo);
+      mockFindByTeamTaskId.mockReturnValueOnce({
+        id: 'sprint-1',
+        assigneeSlotId: 'slot-alice', // already resolved
+      } as ReturnType<typeof mockFindByTeamTaskId>);
+
+      await taskManager.reassignOwner('team-1', 'Alice', 'Alicia');
+
+      // Sprint row updateTask should NOT be called because assignee isn't the stale name
+      expect(mockSprintUpdate).not.toHaveBeenCalled();
+    });
+
+    it('continues when the sprint-board sync throws (team_tasks write is not rolled back)', async () => {
+      repo = makeRepoStub({
+        findTasksByTeam: vi.fn(async () => [taskWithOwner('t1', 'Alice')]),
+      });
+      taskManager = new TaskManager(repo);
+      mockFindByTeamTaskId.mockImplementationOnce(() => {
+        throw new Error('sprint board unavailable');
+      });
+
+      const count = await taskManager.reassignOwner('team-1', 'Alice', 'Alicia');
+      // Task reassignment still reported as successful
+      expect(count).toBe(1);
+      expect(repo.updateTask).toHaveBeenCalledTimes(1);
+    });
+
+    it('handles renames for team-scoped data only (does not touch other teams)', async () => {
+      repo = makeRepoStub({
+        findTasksByTeam: vi.fn(async (teamId: string) => (teamId === 'team-1' ? [taskWithOwner('t1', 'Alice')] : [])),
+      });
+      taskManager = new TaskManager(repo);
+
+      const count = await taskManager.reassignOwner('team-1', 'Alice', 'Alicia');
+      expect(count).toBe(1);
+      expect(repo.findTasksByTeam).toHaveBeenCalledWith('team-1');
+      // Only team-1 was queried
+      expect(repo.findTasksByTeam).toHaveBeenCalledTimes(1);
+    });
+  });
 });
