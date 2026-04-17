@@ -27,6 +27,7 @@ import * as agentPlanningService from '@process/services/agentPlanning';
 import * as tracingService from '@process/services/tracing';
 import * as securityFeaturesService from '@process/services/securityFeatures';
 import { logNonCritical } from '@process/utils/logNonCritical';
+import { costProviderFor, resolveConversationType } from './conversationTypes';
 
 /**
  * Outcome of an agent turn, as seen by the finalizer.
@@ -178,11 +179,14 @@ export class TurnFinalizer {
       const textLen = outcome.accumulatedText.length;
       const estimatedOutputTokens = Math.ceil(textLen / 4);
 
+      // Map user-visible agentType → conversationType → cost provider,
+      // keeping the switch logic centralized in conversationTypes.ts.
+      const conversationType = resolveConversationType(outcome.agent.agentType);
       costTrackingService.recordCost(driver, {
         userId: 'system_default_user',
         conversationId: outcome.conversationId,
         agentType: outcome.agent.agentType,
-        provider: outcome.agent.agentType === 'gemini' ? 'google' : 'anthropic',
+        provider: costProviderFor(conversationType),
         model: outcome.agent.agentType,
         inputTokens: 0,
         outputTokens: estimatedOutputTokens,

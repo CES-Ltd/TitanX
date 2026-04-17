@@ -28,6 +28,7 @@ import { ActionExecutor } from './ActionExecutor';
 import { TurnFinalizer } from './TurnFinalizer';
 import { AgentRegistry } from './AgentRegistry';
 import { WakeRunner } from './WakeRunner';
+import { supportsMcpInjection, registeredConversationTypes } from './conversationTypes';
 
 type SpawnAgentFn = (agentName: string, agentType?: string) => Promise<TeamAgent>;
 
@@ -43,9 +44,15 @@ function debugTeam(...args: unknown[]): void {
   if (DEBUG_TEAM) console.log(...(args as [unknown, ...unknown[]]));
 }
 
-/** Conversation types whose AgentManager supports MCP server injection via session/new */
-// All ACP-compatible backends support MCP tool injection
-export const MCP_CAPABLE_TYPES = new Set(['acp', 'gemini']);
+/**
+ * Conversation types whose AgentManager supports MCP server injection.
+ * Derived from the capability registry in `./conversationTypes`.
+ * Kept as a named export for back-compat with external callers
+ * (e.g. tests that assert the MCP capability set directly).
+ */
+export const MCP_CAPABLE_TYPES: ReadonlySet<string> = new Set(
+  registeredConversationTypes().filter((t) => supportsMcpInjection(t))
+);
 
 type TeammateManagerParams = {
   teamId: string;
@@ -244,10 +251,10 @@ export class TeammateManager extends EventEmitter {
 
   /** Check if a specific agent actually has MCP tools available */
   private agentHasMcpTools(agent: TeamAgent): boolean {
-    const result = this.mcpServerStarted && MCP_CAPABLE_TYPES.has(agent.conversationType);
+    const result = this.mcpServerStarted && supportsMcpInjection(agent.conversationType);
     if (!result && this.mcpServerStarted) {
       debugTeam(
-        `[TeammateManager] agentHasMcpTools(${agent.agentName}): false — conversationType="${agent.conversationType}" not in MCP_CAPABLE_TYPES`
+        `[TeammateManager] agentHasMcpTools(${agent.agentName}): false — conversationType="${agent.conversationType}" not MCP-capable`
       );
     }
     return result;

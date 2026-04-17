@@ -26,6 +26,7 @@ import path from 'path';
 import { resolveLocaleKey } from '@/common/utils';
 import { getDatabase } from '@process/services/database';
 import * as activityLogService from '@process/services/activityLog';
+import { resolveConversationType as registryResolveConversationType } from './conversationTypes';
 
 export class TeamSessionService {
   private readonly sessions: Map<string, TeamSession> = new Map();
@@ -549,15 +550,9 @@ export class TeamSessionService {
   }
 
   private resolveConversationType(agentType: string): AgentType {
-    if (agentType === 'gemini') return 'gemini';
-    if (agentType === 'aionrs') return 'aionrs';
-    if (agentType === 'codex') return 'acp';
-    if (agentType === 'opencode') return 'acp';
-    if (agentType === 'hermes') return 'acp';
-    if (agentType === 'openclaw-gateway') return 'openclaw-gateway';
-    if (agentType === 'nanobot') return 'nanobot';
-    if (agentType === 'remote') return 'remote';
-    return 'acp';
+    // Registry owns the agentType → conversationType mapping; the cast is safe
+    // because the registry's output domain is a subset of AgentType.
+    return registryResolveConversationType(agentType) as AgentType;
   }
 
   async renameAgent(teamId: string, slotId: string, newName: string): Promise<void> {

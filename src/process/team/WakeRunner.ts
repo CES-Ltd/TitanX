@@ -34,6 +34,7 @@ import { getDatabase } from '@process/services/database';
 import * as activityLogService from '@process/services/activityLog';
 import { TEAM_CONFIG } from './config';
 import { logNonCritical } from '@process/utils/logNonCritical';
+import { sendShapeFor } from './conversationTypes';
 
 /** Available agent backend types surfaced to the leader for spawn_agent. */
 export type AvailableAgentType = { type: string; name: string };
@@ -167,9 +168,11 @@ export class WakeRunner {
     const agentTask = await this.ctx.workerTaskManager.getOrBuildTask(agent.conversationId);
     const msgId = crypto.randomUUID();
 
-    // Gemini's AgentManager expects { input, ... }; all others expect { content, ... }.
+    // Each backend's AgentManager expects a specific payload shape.
+    // The registry maps conversationType → 'input' | 'content' so new
+    // backends can be added without touching the wake cycle.
     const messageData =
-      agent.conversationType === 'gemini'
+      sendShapeFor(agent.conversationType) === 'input'
         ? { input: payload.message, msg_id: msgId, silent: true }
         : { content: payload.message, msg_id: msgId, silent: true };
 
