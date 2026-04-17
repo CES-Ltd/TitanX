@@ -27,6 +27,8 @@ import { executeWorkflow } from '@process/services/workflows/engine';
 import type { WorkflowDefinition } from '@process/services/workflows/types';
 import { TEAM_CONFIG } from './config';
 import { logNonCritical } from '@process/utils/logNonCritical';
+import { ResponseStreamBuffer } from './ResponseStreamBuffer';
+import { WakeState } from './WakeState';
 
 type SpawnAgentFn = (agentName: string, agentType?: string) => Promise<TeamAgent>;
 
@@ -70,18 +72,22 @@ export class TeammateManager extends EventEmitter {
   /** Whether the team MCP server has been started (global flag) */
   private mcpServerStarted: boolean;
 
-  /** Accumulated text response per conversationId */
-  private readonly responseBuffer = new Map<string, string>();
-  /** Tracks which slotIds currently have an in-progress wake to avoid loops */
-  private readonly activeWakes = new Set<string>();
-  /** Pending wake queue — wakes that arrived while agent was busy, processed after current turn */
-  private readonly pendingWakes = new Set<string>();
-  /** Timeout handles for active wakes, keyed by slotId */
-  private readonly wakeTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
+  /**
+   * Per-conversation streaming text buffer + finalized-turn tracker + provider
+   * payload normalization. Extracted to ResponseStreamBuffer (Phase 3.2) so
+   * that stream-accumulation state is a cohesive, independently testable unit.
+   * Adds a bounded max-bytes guard that the previous inline Map lacked.
+   */
+  private readonly streamBuffer = new ResponseStreamBuffer();
+  /**
+   * Wake lifecycle bookkeeping: activeWakes / pendingWakes / wakeTimeouts
+   * extracted to WakeState (Phase 3.2) so the pure state half of the wake
+   * system is independently testable. The async side-effects of wake()
+   * (mailbox read, payload build, sendMessage) still live in this class.
+   */
+  private readonly wakeState = new WakeState();
   /** O(1) lookup set of conversationIds owned by this team, for fast IPC event filtering */
   private readonly ownedConversationIds = new Set<string>();
-  /** Tracks conversationIds whose turn has already been finalized, to prevent double processing */
-  private readonly finalizedTurns = new Set<string>();
   /** Maps slotId → original name before rename, for "formerly: X" hints in prompts */
   private readonly renamedAgents = new Map<string, string>();
   /** Periodic memory sweep interval handle */
@@ -119,33 +125,20 @@ export class TeammateManager extends EventEmitter {
 
   /** Sweep leaked in-memory state to prevent unbounded growth on long runs. */
   private sweepMemory(): void {
-    // 1. responseBuffer: clear entries for conversations not actively being woken
-    for (const convId of this.responseBuffer.keys()) {
-      const agent = this.agents.find((a) => a.conversationId === convId);
-      if (!agent || !this.activeWakes.has(agent.slotId)) {
-        this.responseBuffer.delete(convId);
-      }
-    }
+    // 1. streamBuffer: drop buffers whose conversation is no longer actively being woken.
+    const slotToConv = new Map<string, string>();
+    for (const a of this.agents) if (a.conversationId) slotToConv.set(a.slotId, a.conversationId);
+    this.streamBuffer.sweep(this.wakeState.activeConversationIds(slotToConv));
 
-    // 2. finalizedTurns: force-clear (entries should auto-expire after 5s; any remaining are leaked)
-    if (this.finalizedTurns.size > 0) {
-      this.finalizedTurns.clear();
-    }
+    // 2. Force-clear finalized-turn set (the 5s self-clear timer should have
+    // already emptied it; anything remaining is leaked).
+    this.streamBuffer.clearFinalizedExpired();
 
-    // 3. pendingWakes: remove stale retry_ keys (retries should complete within 10s)
-    for (const key of this.pendingWakes) {
-      if (key.startsWith('retry_')) {
-        this.pendingWakes.delete(key);
-      }
-    }
+    // 3. pendingWakes: remove stale retry_ keys.
+    this.wakeState.sweepStaleRetries();
 
-    // 4. wakeTimeouts: cancel orphaned timeouts for agents not in activeWakes
-    for (const [slotId, handle] of this.wakeTimeouts) {
-      if (!this.activeWakes.has(slotId)) {
-        clearTimeout(handle);
-        this.wakeTimeouts.delete(slotId);
-      }
-    }
+    // 4. wakeTimeouts: cancel orphaned timeouts for slots no longer active.
+    this.wakeState.sweepOrphanedTimeouts();
   }
 
   /** Get the current agents list */
@@ -201,10 +194,9 @@ export class TeammateManager extends EventEmitter {
    * Skips if the agent's wake is already in progress.
    */
   async wake(slotId: string): Promise<void> {
-    if (this.activeWakes.has(slotId)) {
+    if (this.wakeState.isActive(slotId)) {
       // Queue the wake instead of dropping it — will be processed after current turn
-      if (!this.pendingWakes.has(slotId)) {
-        this.pendingWakes.add(slotId);
+      if (this.wakeState.queueIfActive(slotId)) {
         console.log(`[TeammateManager] wake(${slotId}): QUEUED (agent busy, will retry after current turn)`);
         // Audit log: wake queued
         void (async () => {
@@ -250,7 +242,7 @@ export class TeammateManager extends EventEmitter {
       }
     })();
 
-    this.activeWakes.add(slotId);
+    this.wakeState.markActive(slotId);
     try {
       // Transition pending -> idle on first activation
       if (agent.status === 'pending') {
@@ -317,8 +309,8 @@ export class TeammateManager extends EventEmitter {
         renamedAgents: this.renamedAgents,
       });
 
-      // Clear previous buffer for this conversation
-      this.responseBuffer.set(agent.conversationId, '');
+      // Clear previous buffer for this conversation (fresh turn)
+      this.streamBuffer.resetFor(agent.conversationId);
 
       const agentTask = await this.workerTaskManager.getOrBuildTask(agent.conversationId);
       const msgId = crypto.randomUUID();
@@ -335,25 +327,23 @@ export class TeammateManager extends EventEmitter {
       // Release wake lock immediately after message is sent.
       // finalizeTurn will also delete it (safe no-op). This prevents permanent
       // deadlock when finish events are lost or finalizeTurn never fires.
-      this.activeWakes.delete(slotId);
+      this.wakeState.releaseActive(slotId);
 
       // Fallback timeout: if turnCompleted never fires, set idle so the agent
-      // can be woken again. 60s is enough for any reasonable response time.
-      const timeoutHandle = setTimeout(() => {
-        this.wakeTimeouts.delete(slotId);
+      // can be woken again. Duration is TEAM_CONFIG.WAKE_TIMEOUT_MS.
+      this.wakeState.scheduleTimeout(slotId, TeammateManager.WAKE_TIMEOUT_MS, () => {
         const currentAgent = this.agents.find((a) => a.slotId === slotId);
         if (currentAgent?.status === 'active') {
           this.setStatus(slotId, 'idle', 'Wake timed out');
         }
-      }, TeammateManager.WAKE_TIMEOUT_MS);
-      this.wakeTimeouts.set(slotId, timeoutHandle);
+      });
     } catch (error) {
-      this.activeWakes.delete(slotId);
+      this.wakeState.releaseActive(slotId);
 
       // Retry with backoff: if wake fails, try again after 3 seconds (once)
       const retryKey = `retry_${slotId}`;
-      if (!this.pendingWakes.has(retryKey)) {
-        this.pendingWakes.add(retryKey);
+      if (!this.wakeState.hasPending(retryKey)) {
+        this.wakeState.addPending(retryKey);
         console.log(`[TeammateManager] wake(${agent.agentName}): FAILED, scheduling retry in 3s`);
         // Audit log: wake failed, retrying
         void (async () => {
@@ -373,7 +363,7 @@ export class TeammateManager extends EventEmitter {
           }
         })();
         setTimeout(() => {
-          this.pendingWakes.delete(retryKey);
+          this.wakeState.dequeuePending(retryKey);
           this.setStatus(slotId, 'idle');
           void this.wake(slotId).catch(() => {
             console.error(`[TeammateManager] wake retry failed for ${agent.agentName}, giving up`);
@@ -383,12 +373,12 @@ export class TeammateManager extends EventEmitter {
       } else {
         // Already retried once — give up
         this.setStatus(slotId, 'failed');
-        this.pendingWakes.delete(retryKey);
+        this.wakeState.dequeuePending(retryKey);
         console.error(`[TeammateManager] wake(${agent.agentName}): retry also failed, setting status=failed`);
       }
       throw error;
     }
-    // activeWakes entry is removed when turnCompleted fires (or by timeout)
+    // active flag is released when turnCompleted fires (or by timeout)
   }
 
   /** Set agent status, update the local agents array, and emit IPC event */
@@ -435,14 +425,12 @@ export class TeammateManager extends EventEmitter {
   dispose(): void {
     clearInterval(this.memorySweepInterval);
     this.unsubResponseStream();
-    for (const handle of this.wakeTimeouts.values()) {
-      clearTimeout(handle);
+    this.wakeState.dispose();
+    // Drop all per-conversation buffers + finalized-turn marks on dispose.
+    for (const agent of this.agents) {
+      if (agent.conversationId) this.streamBuffer.clear(agent.conversationId);
     }
-    this.wakeTimeouts.clear();
-    this.activeWakes.clear();
-    this.responseBuffer.clear();
-    this.finalizedTurns.clear();
-    this.pendingWakes.clear();
+    this.streamBuffer.clearFinalizedExpired();
     this.removeAllListeners();
   }
 
@@ -471,19 +459,10 @@ export class TeammateManager extends EventEmitter {
       ipcBridge.team.messageStream.emit(teamMsg);
     }
 
-    // Accumulate text content for later parsing
-    // ACP agents send msg.data as plain string; some send { text: string }
-    let text: string | undefined;
-    if (typeof msg.data === 'string') {
-      text = msg.data;
-    } else if (msg.data && typeof (msg.data as { text?: string }).text === 'string') {
-      text = (msg.data as { text: string }).text;
-    } else if (msg.data && typeof (msg.data as { content?: string }).content === 'string') {
-      text = (msg.data as { content: string }).content;
-    }
-    if (typeof text === 'string' && text.length > 0 && msg.type === 'content') {
-      const existing = this.responseBuffer.get(msg.conversation_id) ?? '';
-      this.responseBuffer.set(msg.conversation_id, existing + text);
+    // Accumulate text content for later parsing. Provider payload shape
+    // (plain string / {text} / {content}) is normalized inside the buffer.
+    if (msg.type === 'content') {
+      this.streamBuffer.appendNormalized(msg.conversation_id, msg.data);
     }
 
     // ─── Intercept MCP tool calls for team_* tools ──────────────────
@@ -630,14 +609,14 @@ export class TeammateManager extends EventEmitter {
   /**
    * Shared turn completion handler. Called from both responseStream 'finish'
    * detection and the turnCompleted IPC event (if it ever fires).
-   * Uses finalizedTurns set to prevent double processing.
+   * Uses the buffer's finalized-turn tracker to prevent double processing.
    */
   private async finalizeTurn(conversationId: string): Promise<void> {
     // Dedup: skip if this turn was already finalized
-    if (this.finalizedTurns.has(conversationId)) return;
-    this.finalizedTurns.add(conversationId);
+    if (this.streamBuffer.isFinalized(conversationId)) return;
+    this.streamBuffer.markFinalized(conversationId);
     // Clean up the dedup entry after a short delay so future turns can be processed
-    setTimeout(() => this.finalizedTurns.delete(conversationId), 5000);
+    setTimeout(() => this.streamBuffer.unmarkFinalized(conversationId), 5000);
 
     const agent = this.agents.find((a) => a.conversationId === conversationId);
     if (!agent) return;
@@ -649,13 +628,12 @@ export class TeammateManager extends EventEmitter {
       'team.id': this.teamId,
     });
 
-    const accumulatedText = this.responseBuffer.get(conversationId) ?? '';
-    this.responseBuffer.delete(conversationId);
-    this.activeWakes.delete(agent.slotId);
+    // Destructive read: take() returns the accumulated text and drops the buffer
+    const accumulatedText = this.streamBuffer.take(conversationId);
+    this.wakeState.releaseActive(agent.slotId);
 
     // Process pending wake queue — if someone tried to wake this agent while it was busy
-    if (this.pendingWakes.has(agent.slotId)) {
-      this.pendingWakes.delete(agent.slotId);
+    if (this.wakeState.dequeuePending(agent.slotId)) {
       debugTeam(`[TeammateManager] Processing queued wake for ${agent.agentName} (was busy during previous request)`);
       // Audit log: deferred wake processed
       void (async () => {
@@ -679,11 +657,7 @@ export class TeammateManager extends EventEmitter {
     }
 
     // Clear the wake timeout since the turn completed normally
-    const timeoutHandle = this.wakeTimeouts.get(agent.slotId);
-    if (timeoutHandle) {
-      clearTimeout(timeoutHandle);
-      this.wakeTimeouts.delete(agent.slotId);
-    }
+    this.wakeState.clearTimeout(agent.slotId);
 
     const adapter = createPlatformAdapter(agent.conversationType, this.agentHasMcpTools(agent));
     const agentResponse: AgentResponse = { text: accumulatedText };
@@ -1277,19 +1251,15 @@ export class TeammateManager extends EventEmitter {
     const agent = this.agents.find((a) => a.slotId === slotId);
     if (!agent) return;
 
-    // Cancel any pending wake timeout
-    const timeoutHandle = this.wakeTimeouts.get(slotId);
-    if (timeoutHandle) {
-      clearTimeout(timeoutHandle);
-      this.wakeTimeouts.delete(slotId);
-    }
-    this.activeWakes.delete(slotId);
+    // Cancel any pending wake timeout + release active flag
+    this.wakeState.clearTimeout(slotId);
+    this.wakeState.releaseActive(slotId);
 
     // Clean up buffers and owned conversation tracking
     if (agent.conversationId) {
-      this.responseBuffer.delete(agent.conversationId);
+      this.streamBuffer.clear(agent.conversationId);
+      this.streamBuffer.unmarkFinalized(agent.conversationId);
       this.ownedConversationIds.delete(agent.conversationId);
-      this.finalizedTurns.delete(agent.conversationId);
     }
 
     this.agents = this.agents.filter((a) => a.slotId !== slotId);
