@@ -17,28 +17,64 @@ import { getEnhancedEnv } from '@process/utils/shellEnv';
 import type { MainToWorkerMessage } from '../WorkerProtocol';
 import { Pipe } from './pipe';
 
+/**
+ * Shared registry of live ForkTasks. The previous implementation added one
+ * `process.on('exit')` listener per ForkTask instance — with 11+ active
+ * agents that tripped Node's default MaxListeners=10 cap and emitted a
+ * MaxListenersExceededWarning on every team launch.
+ *
+ * Instead we keep a single module-level Set and install ONE process-exit
+ * listener (lazily, on first ForkTask construction) that iterates the set
+ * and kills each task. Individual tasks register/deregister themselves in
+ * the Set. Behavior on process exit is unchanged — every child still gets
+ * killed — but the number of listeners on `process` stays at exactly one
+ * regardless of team size.
+ */
+const activeForkTasks = new Set<ForkTaskKillable>();
+let processExitListenerInstalled = false;
+
+/** Minimal shape ForkTask needs the registry to call on exit. */
+type ForkTaskKillable = { kill: () => void };
+
+function ensureProcessExitListener(): void {
+  if (processExitListenerInstalled) return;
+  processExitListenerInstalled = true;
+  process.on('exit', () => {
+    for (const task of activeForkTasks) {
+      try {
+        task.kill();
+      } catch {
+        // Cleanup on exit is best-effort; swallow errors so one
+        // wedged task doesn't prevent others from being killed.
+      }
+    }
+  });
+}
+
 export class ForkTask<Data> extends Pipe {
   protected path = '';
   protected data: Data;
   protected fcp: IWorkerProcess | undefined;
-  private killFn: () => void;
   private enableFork: boolean;
+  private registered = false;
   constructor(path: string, data: Data, enableFork = true) {
     super(true);
     this.path = path;
     this.data = data;
     this.enableFork = enableFork;
-    this.killFn = () => {
-      this.kill();
-    };
-    process.on('exit', this.killFn);
+    ensureProcessExitListener();
+    activeForkTasks.add(this);
+    this.registered = true;
     if (this.enableFork) this.init();
   }
   kill() {
     if (this.fcp) {
       this.fcp.kill();
     }
-    process.off('exit', this.killFn);
+    if (this.registered) {
+      activeForkTasks.delete(this);
+      this.registered = false;
+    }
   }
   protected init() {
     const platform = getPlatformServices();
