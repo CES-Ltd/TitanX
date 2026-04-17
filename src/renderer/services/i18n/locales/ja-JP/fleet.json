@@ -1,0 +1,73 @@
+{
+  "mode": {
+    "regular": {
+      "name": "Regular",
+      "description": "Single-machine install. Your local installation. Most users pick this."
+    },
+    "master": {
+      "name": "Master",
+      "description": "Organization control plane. Manages policies, agent templates, and fleet telemetry for multiple employee machines. For IT administrators."
+    },
+    "slave": {
+      "name": "Slave",
+      "description": "Employee machine managed by an IT admin. Receives policies and templates from a master install. Requires your admin's master URL and enrollment token."
+    }
+  },
+  "wizard": {
+    "title": "Welcome to TitanX",
+    "subtitle": "How will this install be used?",
+    "hintSelectMode": "Select a mode to continue.",
+    "continue": "Continue",
+    "back": "Back",
+    "cancel": "Skip — use regular mode",
+    "launch": "Launch TitanX",
+    "done": "TitanX is configured",
+    "doneSubtitle": "You can change this anytime in Settings → System → Fleet mode.",
+    "master": {
+      "title": "Master mode network settings",
+      "subtitle": "Master TitanX exposes an API so slave machines can connect. Choose a port and network binding.",
+      "portLabel": "Port",
+      "portInvalid": "Port must be between 1 and 65535.",
+      "bindLabel": "Network binding",
+      "bindLocalName": "Local-only (127.0.0.1)",
+      "bindLocalDesc": "Slave machines on this same computer only.",
+      "bindAllName": "All interfaces (0.0.0.0)",
+      "bindAllDesc": "Accept connections from any machine on your network.",
+      "firewallHint": "To allow slaves on other machines to reach this master, pick \"All interfaces\" and ensure your firewall allows inbound traffic on the chosen port."
+    },
+    "slave": {
+      "title": "Connect to your organization's master",
+      "subtitle": "Ask your IT admin for the master URL and an enrollment token.",
+      "urlLabel": "Master URL",
+      "urlPlaceholder": "https://titanx.mycompany.lan:8888",
+      "urlInvalid": "URL must start with http:// or https://",
+      "httpWarning": "Unencrypted — use only on trusted networks.",
+      "tokenLabel": "Enrollment token",
+      "tokenPlaceholder": "Paste the token from your IT admin",
+      "tokenShort": "Token is too short — minimum 16 characters.",
+      "skipLater": "I'll set this up later",
+      "phaseANote": "Enrollment handshake happens in the next TitanX release. For now, we'll save these values securely."
+    }
+  },
+  "settings": {
+    "sectionTitle": "Fleet mode",
+    "currentLabel": "Current mode",
+    "changeButton": "Change mode…",
+    "changeConfirm": {
+      "title": "Switch fleet mode?",
+      "body": "Changing the mode will restart TitanX. Your teams, conversations, and local data will be preserved.",
+      "restartNow": "Restart now",
+      "restartLater": "I'll restart later"
+    }
+  },
+  "restricted": {
+    "title": "{{feature}} is not available",
+    "body": "This view is managed by your IT administrator and is not available on slave installs. Contact your admin if you need access."
+  },
+  "master": {
+    "placeholder": {
+      "title": "Fleet management",
+      "body": "Device roster, config sync, and fleet cost dashboards arrive in v1.9.27. This build ships the mode infrastructure only."
+    }
+  }
+}

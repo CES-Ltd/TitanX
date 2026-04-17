@@ -31,6 +31,8 @@ const AgentTeamLive = React.lazy(() => import('@renderer/pages/team/live/AgentTe
 const ProjectPlanner = React.lazy(() => import('@renderer/pages/team/planner/ProjectPlanner'));
 const ObservabilityPage = React.lazy(() => import('@renderer/pages/observability'));
 const DeepAgentPage = React.lazy(() => import('@renderer/pages/deepAgent'));
+const FleetPage = React.lazy(() => import('@renderer/pages/fleet'));
+import RestrictedRoute from '@renderer/components/common/RestrictedRoute';
 
 const withRouteFallback = (Component: React.LazyExoticComponent<React.ComponentType>) => (
   <Suspense fallback={<AppLoader />}>
@@ -85,15 +87,58 @@ const PanelRoute: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
           <Route path='/settings/ext/:tabId' element={withRouteFallback(ExtensionSettingsPage)} />
           <Route path='/settings' element={<Navigate to='/settings/gemini' replace />} />
           <Route path='/test/components' element={withRouteFallback(ComponentsShowcase)} />
-          <Route path='/governance' element={withRouteFallback(GovernancePage)} />
-          <Route path='/observability' element={withRouteFallback(ObservabilityPage)} />
-          <Route path='/deep-agent' element={withRouteFallback(DeepAgentPage)} />
+          <Route
+            path='/governance'
+            element={
+              <RestrictedRoute feature='Governance' allowedModes={['regular', 'master']}>
+                {withRouteFallback(GovernancePage)}
+              </RestrictedRoute>
+            }
+          />
+          <Route
+            path='/observability'
+            element={
+              <RestrictedRoute feature='Observability' allowedModes={['regular', 'master']}>
+                {withRouteFallback(ObservabilityPage)}
+              </RestrictedRoute>
+            }
+          />
+          <Route
+            path='/deep-agent'
+            element={
+              <RestrictedRoute feature='Deep Agent' allowedModes={['regular', 'master']}>
+                {withRouteFallback(DeepAgentPage)}
+              </RestrictedRoute>
+            }
+          />
+          <Route
+            path='/fleet'
+            element={
+              <RestrictedRoute feature='Fleet management' allowedModes={['master']}>
+                {withRouteFallback(FleetPage)}
+              </RestrictedRoute>
+            }
+          />
           <Route path='/team/:id/sprint' element={withRouteFallback(SprintBoard)} />
           <Route path='/team/:id/gallery' element={withRouteFallback(AgentGallery)} />
           <Route path='/team/:id/live' element={withRouteFallback(AgentTeamLive)} />
           <Route path='/team/:id/planner' element={withRouteFallback(ProjectPlanner)} />
-          <Route path='/scheduled' element={withRouteFallback(ScheduledTasksPage)} />
-          <Route path='/scheduled/:jobId' element={withRouteFallback(TaskDetailPage)} />
+          <Route
+            path='/scheduled'
+            element={
+              <RestrictedRoute feature='Scheduled Tasks' allowedModes={['regular', 'master']}>
+                {withRouteFallback(ScheduledTasksPage)}
+              </RestrictedRoute>
+            }
+          />
+          <Route
+            path='/scheduled/:jobId'
+            element={
+              <RestrictedRoute feature='Scheduled Tasks' allowedModes={['regular', 'master']}>
+                {withRouteFallback(TaskDetailPage)}
+              </RestrictedRoute>
+            }
+          />
         </Route>
         <Route path='*' element={<Navigate to={status === 'authenticated' ? '/guid' : '/login'} replace />} />
       </Routes>

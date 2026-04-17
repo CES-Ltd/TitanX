@@ -19,8 +19,10 @@ import SiderSearchEntry from './SiderSearchEntry';
 import SiderScheduledEntry from './SiderScheduledEntry';
 import SiderGovernanceEntry from './SiderGovernanceEntry';
 import SiderObservabilityEntry from './SiderObservabilityEntry';
+import SiderFleetEntry from './SiderFleetEntry';
 import SiderFooter from './SiderFooter';
 import CronJobSiderSection from './CronJobSiderSection';
+import { useFleetMode } from '@renderer/hooks/fleet/useFleetMode';
 import siderStyles from './Sider.module.css';
 
 const WorkspaceGroupedHistory = React.lazy(() => import('@renderer/pages/conversation/GroupedHistory'));
@@ -36,6 +38,12 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
   const isMobile = layout?.isMobile ?? false;
   const location = useLocation();
   const { pathname, search, hash } = location;
+  // Fleet mode gates IT-managed entries (Governance, Observability, Deep
+  // Agent, Scheduled Tasks) on slave installs. Master installs additionally
+  // get a Fleet sidebar entry. Regular installs render everything (default).
+  const fleetMode = useFleetMode();
+  const isSlave = fleetMode === 'slave';
+  const isMaster = fleetMode === 'master';
 
   const navigate = useNavigate();
   const { closePreview } = usePreviewContext();
@@ -193,78 +201,96 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
               onSessionClick={onSessionClick}
             />
             {/* Scheduled tasks nav entry - fixed above scroll */}
-            <SiderScheduledEntry
-              isMobile={isMobile}
-              isActive={pathname === '/scheduled'}
-              collapsed={collapsed}
-              siderTooltipProps={siderTooltipProps}
-              onClick={handleScheduledClick}
-            />
-            {/* Governance hub entry */}
-            <SiderGovernanceEntry
-              isMobile={isMobile}
-              isActive={pathname === '/governance'}
-              collapsed={collapsed}
-              siderTooltipProps={siderTooltipProps}
-              onClick={handleGovernanceClick}
-            />
-            {/* Observability entry */}
-            <SiderObservabilityEntry
-              isMobile={isMobile}
-              isActive={pathname === '/observability'}
-              collapsed={collapsed}
-              siderTooltipProps={siderTooltipProps}
-              onClick={handleObservabilityClick}
-            />
-            {/* Deep Agent entry */}
-            {collapsed ? (
-              <Tooltip {...siderTooltipProps} content='Deep Agent' position='right'>
-                <div
-                  className={classNames(
-                    'w-full py-6px flex items-center justify-center cursor-pointer transition-colors rd-8px',
-                    pathname === '/deep-agent'
-                      ? 'bg-[rgba(var(--primary-6),0.12)] text-primary'
-                      : 'hover:bg-fill-3 active:bg-fill-4'
-                  )}
-                  onClick={handleDeepAgentClick}
-                >
-                  <Brain
-                    theme='outline'
-                    size='20'
-                    fill={pathname === '/deep-agent' ? 'rgb(var(--primary-6))' : 'currentColor'}
-                    className='block leading-none shrink-0'
-                    style={{ lineHeight: 0 }}
-                  />
-                </div>
-              </Tooltip>
-            ) : (
-              <Tooltip {...siderTooltipProps} content='Deep Agent' position='right'>
-                <div
-                  className={classNames(
-                    'h-36px w-full flex items-center justify-start gap-8px px-10px rd-0.5rem cursor-pointer shrink-0 transition-all text-t-primary',
-                    isMobile && 'sider-action-btn-mobile',
-                    pathname === '/deep-agent'
-                      ? 'bg-[rgba(var(--primary-6),0.12)] text-primary'
-                      : 'hover:bg-fill-3 active:bg-fill-4'
-                  )}
-                  onClick={handleDeepAgentClick}
-                >
-                  <span className='w-28px h-28px flex items-center justify-center shrink-0'>
+            {!isSlave && (
+              <SiderScheduledEntry
+                isMobile={isMobile}
+                isActive={pathname === '/scheduled'}
+                collapsed={collapsed}
+                siderTooltipProps={siderTooltipProps}
+                onClick={handleScheduledClick}
+              />
+            )}
+            {/* Governance hub entry (IT-managed — hidden on slave) */}
+            {!isSlave && (
+              <SiderGovernanceEntry
+                isMobile={isMobile}
+                isActive={pathname === '/governance'}
+                collapsed={collapsed}
+                siderTooltipProps={siderTooltipProps}
+                onClick={handleGovernanceClick}
+              />
+            )}
+            {/* Observability entry (IT-managed — hidden on slave) */}
+            {!isSlave && (
+              <SiderObservabilityEntry
+                isMobile={isMobile}
+                isActive={pathname === '/observability'}
+                collapsed={collapsed}
+                siderTooltipProps={siderTooltipProps}
+                onClick={handleObservabilityClick}
+              />
+            )}
+            {/* Fleet entry (master only — manages enrolled slaves) */}
+            {isMaster && (
+              <SiderFleetEntry
+                isMobile={isMobile}
+                isActive={pathname === '/fleet'}
+                collapsed={collapsed}
+                siderTooltipProps={siderTooltipProps}
+              />
+            )}
+            {/* Deep Agent entry (IT-managed — hidden on slave) */}
+            {!isSlave &&
+              (collapsed ? (
+                <Tooltip {...siderTooltipProps} content='Deep Agent' position='right'>
+                  <div
+                    className={classNames(
+                      'w-full py-6px flex items-center justify-center cursor-pointer transition-colors rd-8px',
+                      pathname === '/deep-agent'
+                        ? 'bg-[rgba(var(--primary-6),0.12)] text-primary'
+                        : 'hover:bg-fill-3 active:bg-fill-4'
+                    )}
+                    onClick={handleDeepAgentClick}
+                  >
                     <Brain
                       theme='outline'
-                      size='18'
+                      size='20'
                       fill={pathname === '/deep-agent' ? 'rgb(var(--primary-6))' : 'currentColor'}
-                      className='block leading-none'
+                      className='block leading-none shrink-0'
                       style={{ lineHeight: 0 }}
                     />
-                  </span>
-                  <span className='collapsed-hidden text-t-primary text-14px font-medium leading-22px'>Deep Agent</span>
-                  <Tag size='small' color='arcoblue' className='ml-auto'>
-                    BETA
-                  </Tag>
-                </div>
-              </Tooltip>
-            )}
+                  </div>
+                </Tooltip>
+              ) : (
+                <Tooltip {...siderTooltipProps} content='Deep Agent' position='right'>
+                  <div
+                    className={classNames(
+                      'h-36px w-full flex items-center justify-start gap-8px px-10px rd-0.5rem cursor-pointer shrink-0 transition-all text-t-primary',
+                      isMobile && 'sider-action-btn-mobile',
+                      pathname === '/deep-agent'
+                        ? 'bg-[rgba(var(--primary-6),0.12)] text-primary'
+                        : 'hover:bg-fill-3 active:bg-fill-4'
+                    )}
+                    onClick={handleDeepAgentClick}
+                  >
+                    <span className='w-28px h-28px flex items-center justify-center shrink-0'>
+                      <Brain
+                        theme='outline'
+                        size='18'
+                        fill={pathname === '/deep-agent' ? 'rgb(var(--primary-6))' : 'currentColor'}
+                        className='block leading-none'
+                        style={{ lineHeight: 0 }}
+                      />
+                    </span>
+                    <span className='collapsed-hidden text-t-primary text-14px font-medium leading-22px'>
+                      Deep Agent
+                    </span>
+                    <Tag size='small' color='arcoblue' className='ml-auto'>
+                      BETA
+                    </Tag>
+                  </div>
+                </Tooltip>
+              ))}
             {/* Divider between fixed top nav and scrollable content area */}
             <div
               className={classNames(

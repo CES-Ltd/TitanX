@@ -57,6 +57,10 @@ import Sider from './components/layout/Sider';
 import { useAuth } from './hooks/context/AuthContext';
 import { ConversationHistoryProvider } from './hooks/context/ConversationHistoryContext';
 import HOC from './utils/ui/HOC';
+import { useFleetSetupRequired } from './hooks/fleet/useFleetMode';
+import { mutate as swrMutate } from 'swr';
+import { FLEET_MODE_SWR_KEY, FLEET_CONFIG_SWR_KEY, FLEET_SETUP_REQUIRED_SWR_KEY } from './hooks/fleet/useFleetMode';
+const SetupWizard = React.lazy(() => import('./pages/fleet/SetupWizard'));
 
 // Patch Korean locale with missing properties from English locale
 const koKRComplete = {
@@ -108,19 +112,39 @@ const Config: React.FC<PropsWithChildren> = ({ children }) => {
 
 const Main = () => {
   const { ready } = useAuth();
+  const { required: setupRequired, isLoading: setupLoading } = useFleetSetupRequired();
 
   if (!ready) {
     return null;
   }
 
+  // While the fleet-setup probe resolves, render nothing so the wizard
+  // doesn't flash over the main UI. Resolves within one IPC round-trip.
+  if (setupLoading) {
+    return null;
+  }
+
+  const handleWizardComplete = (): void => {
+    // Invalidate every SWR cache that depends on the mode so the sidebar
+    // + router immediately reflect the wizard outcome.
+    void swrMutate(FLEET_SETUP_REQUIRED_SWR_KEY);
+    void swrMutate(FLEET_MODE_SWR_KEY);
+    void swrMutate(FLEET_CONFIG_SWR_KEY);
+  };
+
   return (
-    <Router
-      layout={
-        <ConversationHistoryProvider>
-          <Layout sider={<Sider />} />
-        </ConversationHistoryProvider>
-      }
-    />
+    <>
+      <Router
+        layout={
+          <ConversationHistoryProvider>
+            <Layout sider={<Sider />} />
+          </ConversationHistoryProvider>
+        }
+      />
+      <React.Suspense fallback={null}>
+        <SetupWizard visible={setupRequired} onComplete={handleWizardComplete} />
+      </React.Suspense>
+    </>
   );
 };
 
