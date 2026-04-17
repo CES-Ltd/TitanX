@@ -5,7 +5,7 @@ import { teamEventBus } from './teamEventBus';
 import { addMessage } from '@process/utils/message';
 import type { IWorkerTaskManager } from '@process/task/IWorkerTaskManager';
 import type { IResponseMessage } from '@/common/adapter/ipcBridge';
-import type { TeamAgent, TeammateStatus, TeamTask, ParsedAction, ITeamMessageEvent } from './types';
+import type { TeamAgent, TeammateStatus, ParsedAction, ITeamMessageEvent } from './types';
 import type { Mailbox } from './Mailbox';
 import type { TaskManager } from './TaskManager';
 import type { AgentResponse } from './adapters/PlatformAdapter';
@@ -13,16 +13,10 @@ import { createPlatformAdapter } from './adapters/PlatformAdapter';
 import { acpDetector } from '@process/agent/acp/AcpDetector';
 import { getDatabase } from '@process/services/database';
 import * as sprintService from '@process/services/sprintTasks';
-import * as costTrackingService from '@process/services/costTracking';
 import * as activityLogService from '@process/services/activityLog';
 import * as policyService from '@process/services/policyEnforcement';
 import { startSpan, getCounter } from '@process/services/telemetry';
-import * as agentMemoryService from '@process/services/agentMemory';
-import * as reasoningBank from '@process/services/reasoningBank';
 import { runHooks } from '@process/services/hooks';
-import * as agentPlanningService from '@process/services/agentPlanning';
-import * as tracingService from '@process/services/tracing';
-import * as securityFeaturesService from '@process/services/securityFeatures';
 // executeWorkflow + WorkflowDefinition moved to ActionExecutor (Phase 3.2)
 import { TEAM_CONFIG } from './config';
 import { logNonCritical } from '@process/utils/logNonCritical';
@@ -31,6 +25,7 @@ import { WakeState } from './WakeState';
 import type { IEventPublisher } from './ports/IEventPublisher';
 import { getSharedEventPublisher } from './ports/defaultIpcEventPublisher';
 import { ActionExecutor } from './ActionExecutor';
+import { TurnFinalizer } from './TurnFinalizer';
 
 type SpawnAgentFn = (agentName: string, agentType?: string) => Promise<TeamAgent>;
 
@@ -120,6 +115,14 @@ export class TeammateManager extends EventEmitter {
    * given a context object that exposes the collaborators each handler needs.
    */
   private readonly actionExecutor: ActionExecutor;
+
+  /**
+   * Post-turn observability + learning side effects. Extracted to TurnFinalizer
+   * (Phase 3.2) so the "record what happened" cluster (reasoning bank, queen
+   * drift, cost/audit, agent memory, auto-plan, tracing) is isolated from the
+   * orchestration-critical path. Never blocks the turn; all failures logged.
+   */
+  private readonly turnFinalizer = new TurnFinalizer();
 
   constructor(params: TeammateManagerParams) {
     super();
@@ -752,84 +755,6 @@ export class TeammateManager extends EventEmitter {
       }
     }
 
-    // ─── Agent OS: ReasoningBank STORE trajectory ─────────────────
-    if (serialActions.length > 0) {
-      try {
-        // Static import: getDatabase
-        // Static import: reasoningBank
-        // Static import: activityLogService
-        const db = await getDatabase();
-        const driver = db.getDriver();
-        const trajectoryId = reasoningBank.storeTrajectory(driver, {
-          taskDescription: `${agent.agentName}: ${accumulatedText.slice(0, 100)}`,
-          steps: serialActions.map((a) => ({
-            toolName: a.type,
-            args: { ...(a as Record<string, unknown>) },
-            result: accumulatedText.slice(0, 200),
-            durationMs: 0,
-          })),
-          successScore: agent.status === 'completed' || agent.status === 'active' ? 0.8 : 0.5,
-        });
-        activityLogService.logActivity(driver, {
-          userId: 'system_default_user',
-          actorType: 'agent',
-          actorId: agent.agentName,
-          action: 'reasoning_bank.trajectory_stored',
-          entityType: 'reasoning_bank',
-          entityId: trajectoryId,
-          details: { steps: serialActions.length, agent: agent.agentName },
-        });
-      } catch {
-        // ReasoningBank storage is non-critical
-      }
-    }
-
-    // ─── Agent OS: Queen Drift Detection ──────────────────────────
-    try {
-      const queen = this.agents.find((a) => a.role === 'queen');
-      if (queen && agent.role === 'teammate' && accumulatedText.length > 50) {
-        // Simple heuristic: check if worker output relates to the team's original purpose
-        // Use lead agent name + queen name as proxy for team goal context
-        const leadAgent = this.agents.find((a) => a.role === 'lead');
-        const teamGoal = leadAgent?.agentName ?? queen.agentName ?? '';
-        const goalWords = teamGoal
-          .toLowerCase()
-          .split(/\s+/)
-          .filter((w: string) => w.length > 3);
-        const outputWords = new Set(accumulatedText.toLowerCase().split(/\s+/));
-        const overlap = goalWords.filter((w: string) => outputWords.has(w)).length;
-        const driftScore = goalWords.length > 0 ? overlap / goalWords.length : 1;
-
-        if (driftScore < 0.2 && goalWords.length >= 2) {
-          console.log(
-            `[Queen] Drift detected in ${agent.agentName}: output has ${String(Math.round(driftScore * 100))}% goal overlap`
-          );
-          try {
-            // Static import: getDatabase
-            // Static import: activityLogService
-            const db = await getDatabase();
-            activityLogService.logActivity(db.getDriver(), {
-              userId: 'system_default_user',
-              actorType: 'agent',
-              actorId: queen.agentName,
-              action: 'queen.drift_detected',
-              entityType: 'team',
-              entityId: agent.slotId,
-              details: {
-                worker: agent.agentName,
-                driftScore: Math.round(driftScore * 100),
-                goalWords: goalWords.length,
-              },
-            });
-          } catch (e) {
-            logNonCritical('team.queen.drift-audit', e);
-          }
-        }
-      }
-    } catch {
-      // Queen drift detection is non-critical
-    }
-
     // send_message: write in order (preserve message ordering), then wake all targets in parallel
     if (sendMessageActions.length > 0) {
       const wakeTargets = new Set<string>();
@@ -917,101 +842,17 @@ export class TeammateManager extends EventEmitter {
       }
     }
 
-    // Record cost event and audit log for this turn
-    try {
-      debugTeam(
-        `[TeammateManager] Recording cost + audit for agent ${agent.agentName} (${agent.slotId}), text length: ${accumulatedText.length}`
-      );
-      const db = await getDatabase();
-      const driver = db.getDriver();
-      const textLen = accumulatedText.length;
-      // Estimate tokens from text length (~4 chars per token)
-      const estimatedOutputTokens = Math.ceil(textLen / 4);
-      costTrackingService.recordCost(driver, {
-        userId: 'system_default_user',
-        conversationId,
-        agentType: agent.agentType,
-        provider: agent.agentType === 'gemini' ? 'google' : 'anthropic',
-        model: agent.agentType,
-        inputTokens: 0,
-        outputTokens: estimatedOutputTokens,
-        cachedInputTokens: 0,
-        costCents: 0, // Actual cost not available from stream — tracked as token usage
-        billingType: 'metered_api',
-        occurredAt: Date.now(),
-      });
-      // Audit log: agent turn completed
-      activityLogService.logActivity(driver, {
-        userId: 'system_default_user',
-        actorType: 'agent',
-        actorId: agent.slotId,
-        action: 'agent.turn_completed',
-        entityType: 'conversation',
-        entityId: conversationId,
-        agentId: agent.slotId,
-        details: {
-          agentName: agent.agentName,
-          agentType: agent.agentType,
-          actionsExecuted: actions.length,
-          outputTokensEstimate: estimatedOutputTokens,
-        },
-      });
-      debugTeam(`[TeammateManager] ✓ Cost + audit recorded for ${agent.agentName}`);
-
-      // ── Agent Memory: store turn content as buffer memory ──
-      if (securityFeaturesService.isFeatureEnabled(driver, 'agent_memory') && accumulatedText.length > 0) {
-        try {
-          agentMemoryService.addToBuffer(
-            driver,
-            agent.slotId,
-            this.teamId,
-            {
-              role: 'assistant',
-              content: accumulatedText.slice(0, 2000),
-              turnActions: actions.map((a) => a.type),
-            },
-            estimatedOutputTokens
-          );
-          agentMemoryService.pruneMemory(driver, agent.slotId, 8000);
-        } catch {
-          /* non-critical */
-        }
-      }
-
-      // ── Agent Planning: auto-create plan when multiple tasks created ──
-      if (securityFeaturesService.isFeatureEnabled(driver, 'agent_planning')) {
-        try {
-          const taskActions = actions.filter((a) => a.type === 'task_create');
-          if (taskActions.length >= 2) {
-            agentPlanningService.createPlan(
-              driver,
-              agent.slotId,
-              this.teamId,
-              `Auto-plan: ${agent.agentName} turn`,
-              taskActions.map((a) => (a as { subject: string }).subject)
-            );
-          }
-        } catch {
-          /* non-critical */
-        }
-      }
-
-      // ── Tracing: create trace run for this turn ──
-      if (securityFeaturesService.isFeatureEnabled(driver, 'trace_system')) {
-        try {
-          const handle = tracingService.startRun(driver, `turn:${agent.agentName}`, 'agent', {
-            agentSlotId: agent.slotId,
-            teamId: this.teamId,
-          });
-          handle.setTokens(0, estimatedOutputTokens, 0);
-          handle.end({ actionsExecuted: actions.length, textLength: textLen });
-        } catch {
-          /* non-critical */
-        }
-      }
-    } catch (err) {
-      console.error('[TeammateManager] ✗ Failed to record cost/audit:', err);
-    }
+    // Observability/learning cluster: reasoning bank, queen drift, cost + audit,
+    // agent memory, auto-plan, tracing. Extracted to TurnFinalizer (Phase 3.2) —
+    // never blocks the turn; each observer handles its own errors.
+    await this.turnFinalizer.observeTurn({
+      teamId: this.teamId,
+      agent,
+      conversationId,
+      accumulatedText,
+      actions,
+      agents: this.agents,
+    });
 
     // Only set idle if executeAction did not already change status (e.g. idle_notification)
     const currentAgent = this.agents.find((a) => a.slotId === agent.slotId);
