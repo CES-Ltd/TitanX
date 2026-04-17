@@ -25,6 +25,8 @@ import * as tracingService from '@process/services/tracing';
 import * as securityFeaturesService from '@process/services/securityFeatures';
 import { executeWorkflow } from '@process/services/workflows/engine';
 import type { WorkflowDefinition } from '@process/services/workflows/types';
+import { TEAM_CONFIG } from './config';
+import { logNonCritical } from '@process/utils/logNonCritical';
 
 type SpawnAgentFn = (agentName: string, agentType?: string) => Promise<TeamAgent>;
 
@@ -85,8 +87,9 @@ export class TeammateManager extends EventEmitter {
   /** Periodic memory sweep interval handle */
   private readonly memorySweepInterval: ReturnType<typeof setInterval>;
 
-  /** Maximum time (ms) to wait for a turnCompleted event before force-releasing a wake */
-  private static readonly WAKE_TIMEOUT_MS = 60 * 1000;
+  /** Maximum time (ms) to wait for a turnCompleted event before force-releasing a wake.
+   * Sourced from TEAM_CONFIG.WAKE_TIMEOUT_MS (override via TITANX_WAKE_TIMEOUT_MS env). */
+  private static readonly WAKE_TIMEOUT_MS = TEAM_CONFIG.WAKE_TIMEOUT_MS;
 
   private readonly unsubResponseStream: () => void;
 
@@ -111,7 +114,7 @@ export class TeammateManager extends EventEmitter {
     this.unsubResponseStream = () => teamEventBus.removeListener('responseStream', boundHandler);
 
     // Memory sweeper — clears leaked buffers, stale sets, and orphaned timeouts every 60s
-    this.memorySweepInterval = setInterval(() => this.sweepMemory(), 60_000);
+    this.memorySweepInterval = setInterval(() => this.sweepMemory(), TEAM_CONFIG.MEMORY_SWEEP_INTERVAL_MS);
   }
 
   /** Sweep leaked in-memory state to prevent unbounded growth on long runs. */
@@ -186,8 +189,8 @@ export class TeammateManager extends EventEmitter {
           agentId: agent.slotId,
           details: { agentName: agent.agentName, agentType: agent.agentType, teamId: this.teamId, role: agent.role },
         });
-      } catch {
-        /* non-critical */
+      } catch (e) {
+        logNonCritical('team.audit.agent-added', e);
       }
     })();
   }
@@ -216,8 +219,8 @@ export class TeammateManager extends EventEmitter {
               entityId: slotId,
               details: { reason: 'agent_busy', teamId: this.teamId },
             });
-          } catch {
-            /* non-critical */
+          } catch (e) {
+            logNonCritical('team.audit.wake-queued', e);
           }
         })();
       }
@@ -242,8 +245,8 @@ export class TeammateManager extends EventEmitter {
           entityId: agent.slotId,
           details: { agentName: agent.agentName, previousStatus: agent.status, teamId: this.teamId },
         });
-      } catch {
-        /* non-critical */
+      } catch (e) {
+        logNonCritical('team.audit.agent-woken', e);
       }
     })();
 
@@ -363,10 +366,10 @@ export class TeammateManager extends EventEmitter {
               action: 'heartbeat.wake_retry',
               entityType: 'agent',
               entityId: slotId,
-              details: { agentName: agent.agentName, retryDelayMs: 3000, teamId: this.teamId },
+              details: { agentName: agent.agentName, retryDelayMs: TEAM_CONFIG.RETRY_DELAY_MS, teamId: this.teamId },
             });
-          } catch {
-            /* non-critical */
+          } catch (e) {
+            logNonCritical('team.audit.wake-retry', e);
           }
         })();
         setTimeout(() => {
@@ -376,7 +379,7 @@ export class TeammateManager extends EventEmitter {
             console.error(`[TeammateManager] wake retry failed for ${agent.agentName}, giving up`);
             this.setStatus(slotId, 'failed');
           });
-        }, 3000);
+        }, TEAM_CONFIG.RETRY_DELAY_MS);
       } else {
         // Already retried once — give up
         this.setStatus(slotId, 'failed');
@@ -667,8 +670,8 @@ export class TeammateManager extends EventEmitter {
             entityId: agent.slotId,
             details: { agentName: agent.agentName, teamId: this.teamId },
           });
-        } catch {
-          /* non-critical */
+        } catch (e) {
+          logNonCritical('team.audit.deferred-wake', e);
         }
       })();
       // Defer slightly to let current turn fully complete
@@ -729,11 +732,12 @@ export class TeammateManager extends EventEmitter {
             agentId: agent.slotId,
             conversationId: agent.conversationId,
           });
-        } catch {
-          /* non-critical */
+        } catch (e) {
+          logNonCritical('team.hooks.post-tool-use', e);
         }
-      } catch {
+      } catch (e) {
         // continue executing remaining actions
+        logNonCritical('team.actions.execute', e);
       }
     }
 
@@ -806,8 +810,8 @@ export class TeammateManager extends EventEmitter {
                 goalWords: goalWords.length,
               },
             });
-          } catch {
-            /* non-critical */
+          } catch (e) {
+            logNonCritical('team.queen.drift-audit', e);
           }
         }
       }

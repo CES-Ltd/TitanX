@@ -20,6 +20,7 @@ import * as policyService from '@process/services/policyEnforcement';
 import { startSpan, getCounter, getHistogram } from '@process/services/telemetry';
 import * as tracingService from '@process/services/tracing';
 import { isFeatureEnabled } from '@process/services/securityFeatures';
+import { TEAM_CONFIG } from './config';
 
 type SpawnAgentFn = (agentName: string, agentType?: string) => Promise<TeamAgent>;
 
@@ -51,8 +52,9 @@ function writeTcpMessage(socket: net.Socket, data: unknown): void {
   socket.write(Buffer.concat([header, body]));
 }
 
-/** Max buffer size (10MB) — reset if exceeded to prevent memory exhaustion */
-const MAX_TCP_BUFFER_SIZE = 10 * 1024 * 1024;
+/** Max buffer size — reset if exceeded to prevent memory exhaustion.
+ * Sourced from TEAM_CONFIG (override via TITANX_MCP_TCP_BUFFER_MAX env). */
+const MAX_TCP_BUFFER_SIZE = TEAM_CONFIG.MCP_TCP_BUFFER_MAX_BYTES;
 
 function createTcpMessageReader(onMessage: (msg: unknown) => void): (chunk: Buffer) => void {
   let buffer = Buffer.alloc(0);
@@ -206,7 +208,7 @@ export class TeamMcpServer {
 
   private handleTcpConnection(socket: net.Socket): void {
     // Kill idle sockets after 30s to prevent connection leaks
-    socket.setTimeout(30_000, () => {
+    socket.setTimeout(TEAM_CONFIG.MCP_SOCKET_IDLE_TIMEOUT_MS, () => {
       socket.destroy();
     });
 
@@ -248,8 +250,9 @@ export class TeamMcpServer {
   // ── Rate limiting ──────────────────────────────────────────────────────────
 
   private readonly rateLimitMap = new Map<string, { count: number; windowStart: number }>();
-  private static readonly RATE_LIMIT_MAX = 30; // max calls per window
-  private static readonly RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute window
+  // Sourced from TEAM_CONFIG (override via TITANX_MCP_RATE_LIMIT_MAX / TITANX_MCP_RATE_LIMIT_WINDOW_MS)
+  private static readonly RATE_LIMIT_MAX = TEAM_CONFIG.MCP_RATE_LIMIT_MAX;
+  private static readonly RATE_LIMIT_WINDOW_MS = TEAM_CONFIG.MCP_RATE_LIMIT_WINDOW_MS;
 
   private checkRateLimit(slotId: string): void {
     const now = Date.now();

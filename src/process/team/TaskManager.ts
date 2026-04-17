@@ -4,6 +4,9 @@ import type { TeamAgent, TeamTask } from './types';
 import { getDatabase } from '@process/services/database';
 import * as sprintService from '@process/services/sprintTasks';
 import * as activityLogService from '@process/services/activityLog';
+import type { IEventPublisher } from './ports/IEventPublisher';
+import { getSharedEventPublisher } from './ports/defaultIpcEventPublisher';
+import { logNonCritical } from '@process/utils/logNonCritical';
 
 /** Parameters for creating a new task */
 type CreateTaskParams = {
@@ -33,7 +36,15 @@ type UpdateTaskParams = {
  * Maintains bidirectional links between tasks via `blockedBy` / `blocks`.
  */
 export class TaskManager {
-  constructor(private readonly repo: ITeamRepository) {}
+  private readonly events: IEventPublisher;
+
+  constructor(
+    private readonly repo: ITeamRepository,
+    /** Optional publisher for tests. Defaults to the shared IPC-backed singleton. */
+    events?: IEventPublisher
+  ) {
+    this.events = events ?? getSharedEventPublisher();
+  }
 
   /**
    * Create a new task. Auto-generates ID and timestamps.
@@ -118,10 +129,11 @@ export class TaskManager {
         details: { title: params.subject, assignee: params.owner, teamId: params.teamId, sprintTaskId: sprintTask.id },
       });
 
-      // Emit live event so Sprint Board can auto-refresh
+      // Emit live event so Sprint Board can auto-refresh.
+      // Goes through IEventPublisher → no dynamic require('@/common'),
+      // so this module no longer participates in a circular dependency.
       try {
-        const { ipcBridge } = require('@/common');
-        ipcBridge.liveEvents.activity.emit({
+        this.events.emit('live.activity', {
           id: sprintTask.id,
           userId: 'system_default_user',
           actorType: 'agent',
@@ -131,8 +143,8 @@ export class TaskManager {
           entityId: sprintTask.id,
           createdAt: Date.now(),
         });
-      } catch {
-        /* non-critical */
+      } catch (e) {
+        logNonCritical('task-manager.live-event', e);
       }
     } catch (err) {
       console.error('[TaskManager] ❌ Sprint task creation FAILED:', err);

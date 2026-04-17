@@ -13,6 +13,7 @@ import { TeamMcpServer, type StdioMcpConfig } from './TeamMcpServer';
 import { getDatabase } from '@process/services/database';
 import { revokeExpiredSessionTokens } from '@process/services/policyEnforcement';
 import { revokeExpiredTokens } from '@process/services/credentialAccess';
+import { TEAM_CONFIG } from './config';
 
 type SpawnAgentFn = (agentName: string, agentType?: string) => Promise<TeamAgent>;
 
@@ -95,7 +96,7 @@ export class TeamSession extends EventEmitter {
               // Non-critical cleanup
             }
           })();
-        }, 60_000);
+        }, TEAM_CONFIG.TOKEN_CLEANUP_INTERVAL_MS);
       }
     }
     return this.mcpStdioConfig;
