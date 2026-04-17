@@ -238,4 +238,50 @@ describe('Database migrations', () => {
       expect(del!.args[0]).toBe('fleet_mode_enabled');
     });
   });
+
+  describe('migration v61 — fleet enrollment tables', () => {
+    const v61 = ALL_MIGRATIONS.find((m) => m.version === 61);
+
+    it('creates fleet_enrollment_tokens with the expected columns', () => {
+      expect(v61).toBeDefined();
+      const { driver, captured } = makeRecordingDriver();
+      v61!.up(driver);
+      const joined = captured.execs.join('\n');
+      expect(joined).toContain('CREATE TABLE IF NOT EXISTS fleet_enrollment_tokens');
+      expect(joined).toContain('token_hash TEXT PRIMARY KEY');
+      expect(joined).toContain('expires_at INTEGER NOT NULL');
+      expect(joined).toContain('used_by_device_id');
+      expect(joined).toContain('revoked_at');
+    });
+
+    it('creates fleet_enrollments with status enum + jti column', () => {
+      const { driver, captured } = makeRecordingDriver();
+      v61!.up(driver);
+      const joined = captured.execs.join('\n');
+      expect(joined).toContain('CREATE TABLE IF NOT EXISTS fleet_enrollments');
+      expect(joined).toContain('device_id TEXT PRIMARY KEY');
+      expect(joined).toContain('device_pubkey_pem TEXT NOT NULL');
+      expect(joined).toContain("CHECK (status IN ('enrolled', 'revoked'))");
+      expect(joined).toContain('device_jwt_jti TEXT NOT NULL');
+      expect(joined).toContain('enrollment_token_hash TEXT NOT NULL');
+    });
+
+    it('creates the expected performance indexes', () => {
+      const { driver, captured } = makeRecordingDriver();
+      v61!.up(driver);
+      const joined = captured.execs.join('\n');
+      expect(joined).toContain('idx_fleet_enrollment_tokens_expires');
+      expect(joined).toContain('idx_fleet_enrollments_status');
+      expect(joined).toContain('idx_fleet_enrollments_heartbeat');
+    });
+
+    it('down() drops both tables + all indexes', () => {
+      const { driver, captured } = makeRecordingDriver();
+      v61!.down(driver);
+      const joined = captured.execs.join('\n');
+      expect(joined).toContain('DROP TABLE IF EXISTS fleet_enrollments');
+      expect(joined).toContain('DROP TABLE IF EXISTS fleet_enrollment_tokens');
+      expect(joined).toContain('DROP INDEX IF EXISTS idx_fleet_enrollments_status');
+    });
+  });
 });
