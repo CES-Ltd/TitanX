@@ -114,6 +114,24 @@ export interface IConfigStorageRefer {
   'system.commandQueueEnabled'?: boolean;
   // Caveman mode for token saving: off, lite, full, ultra
   'system.cavemanMode'?: string;
+  // ─── Fleet mode (v1.9.26+) ─────────────────────────────────────────────
+  // Operating mode — regular (single-machine), master (org control plane),
+  // slave (IT-managed employee machine). Absence = wizard has not run.
+  'fleet.mode'?: 'regular' | 'master' | 'slave';
+  // Epoch ms of wizard completion. Absence = first-boot, wizard not run.
+  'fleet.setupCompletedAt'?: number;
+  // Master-mode: port the control-plane API binds to (reuses webserver).
+  'fleet.master.port'?: number;
+  // Master-mode: true = 0.0.0.0, false = 127.0.0.1
+  'fleet.master.bindAll'?: boolean;
+  // Slave-mode: master URL collected during wizard (Phase A stores only).
+  'fleet.slave.masterUrl'?: string;
+  // Slave-mode: enrollment token, encrypted at rest with the secrets-vault
+  // master key (AES-256-GCM). JSON blob from `encryption.encrypt()`. The
+  // token is NEVER stored plaintext. Unset means no token captured.
+  'fleet.slave.enrollmentTokenCiphertext'?: string;
+  // Slave-mode: enrollment lifecycle. Phase A: always 'pending' after wizard.
+  'fleet.slave.enrollmentStatus'?: 'pending' | 'enrolled' | 'revoked';
   // Telegram assistant default model / Telegram 助手默认模型
   'assistant.telegram.defaultModel'?: {
     id: string;

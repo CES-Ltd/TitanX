@@ -17,7 +17,10 @@ export type SecurityFeature =
   | 'workflow_gates'
   | 'agent_memory'
   | 'agent_planning'
-  | 'trace_system';
+  | 'trace_system'
+  // v1.9.26+ fleet mode (master/slave). Default ON — admins disable this
+  // to force an install into Regular mode even if fleet.mode was set.
+  | 'fleet_mode_enabled';
 
 export type FeatureToggle = {
   feature: SecurityFeature;

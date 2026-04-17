@@ -2362,6 +2362,27 @@ const migration_v59: IMigration = {
   },
 };
 
+// ── Phase 16 (v1.9.26): fleet mode feature flag ────────────────────────────
+
+const migration_v60: IMigration = {
+  version: 60,
+  name: 'Register fleet_mode_enabled feature flag (default ON)',
+  up(db: ISqliteDriver) {
+    // Seed fleet_mode_enabled = 1 so v1.9.26+ installs boot into the
+    // setup wizard by default. Admins can disable post-install from
+    // the Governance UI (Security Dashboard tab) if they need to roll
+    // back to pre-fleet behavior across the team.
+    db.prepare('INSERT OR IGNORE INTO security_feature_toggles (feature, enabled, updated_at) VALUES (?, 1, ?)').run(
+      'fleet_mode_enabled',
+      Date.now()
+    );
+    console.log('[Migration-v60] Registered fleet_mode_enabled feature flag (default ON)');
+  },
+  down(db: ISqliteDriver) {
+    db.prepare('DELETE FROM security_feature_toggles WHERE feature = ?').run('fleet_mode_enabled');
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -2375,6 +2396,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v40, migration_v41, migration_v42, migration_v43, migration_v44,
   migration_v45, migration_v46, migration_v47, migration_v48, migration_v49, migration_v50, migration_v51, migration_v52, migration_v53,
   migration_v54, migration_v55, migration_v56, migration_v57, migration_v58, migration_v59,
+  migration_v60,
 ];
 
 /**

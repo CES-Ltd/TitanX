@@ -209,4 +209,33 @@ describe('Database migrations', () => {
       expect(joined).toContain('DROP INDEX IF EXISTS idx_sprint_tasks_team_status');
     });
   });
+
+  describe('migration v60 — fleet_mode_enabled feature flag', () => {
+    const v60 = ALL_MIGRATIONS.find((m) => m.version === 60);
+
+    it('seeds fleet_mode_enabled with enabled=1 (ON by default for v1.9.26+)', () => {
+      expect(v60).toBeDefined();
+      const { driver, captured } = makeRecordingDriver();
+      v60!.up(driver);
+      const run = captured.runs.find((r) => r.sql.includes('INSERT OR IGNORE INTO security_feature_toggles'));
+      expect(run).toBeDefined();
+      expect(run!.args[0]).toBe('fleet_mode_enabled');
+    });
+
+    it('uses INSERT OR IGNORE so re-running does not overwrite admin-disabled flags', () => {
+      const v60Again = ALL_MIGRATIONS.find((m) => m.version === 60);
+      const { driver, captured } = makeRecordingDriver();
+      v60Again!.up(driver);
+      const inserts = captured.prepares.filter((s) => s.includes('INSERT OR IGNORE'));
+      expect(inserts.length).toBeGreaterThan(0);
+    });
+
+    it('down() removes only the fleet flag, not other feature toggles', () => {
+      const { driver, captured } = makeRecordingDriver();
+      v60!.down(driver);
+      const del = captured.runs.find((r) => r.sql.includes('DELETE FROM security_feature_toggles WHERE feature'));
+      expect(del).toBeDefined();
+      expect(del!.args[0]).toBe('fleet_mode_enabled');
+    });
+  });
 });

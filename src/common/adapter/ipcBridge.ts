@@ -734,6 +734,31 @@ export const systemSettings = {
   setCommandQueueEnabled: bridge.buildProvider<void, { enabled: boolean }>('system-settings:set-command-queue-enabled'),
 };
 
+// 集群模式接口 / Fleet mode API (regular | master | slave)
+import type { FleetConfig, FleetMode, FleetSetupInput, FleetSetupResult } from '@/common/types/fleetTypes';
+
+export const fleet = {
+  /** Returns 'regular' if mode is unset or the feature flag is off. */
+  getMode: bridge.buildProvider<FleetMode, void>('fleet:get-mode'),
+  /**
+   * Full fleet config (mode + mode-specific subfields). Token itself is
+   * NOT returned — only whether a token is stored (hasPendingEnrollment).
+   */
+  getConfig: bridge.buildProvider<FleetConfig, void>('fleet:get-config'),
+  /**
+   * True when the setup wizard should run: feature flag enabled AND no
+   * mode is set AND this doesn't look like an upgrade from a pre-fleet
+   * install (detected by presence of other ProcessConfig keys).
+   */
+  isSetupRequired: bridge.buildProvider<boolean, void>('fleet:is-setup-required'),
+  /** Commit setup wizard selection (writes mode + mode-specific keys). */
+  completeSetup: bridge.buildProvider<FleetSetupResult, FleetSetupInput>('fleet:complete-setup'),
+  /** Change mode post-install from Settings. Caller is responsible for restart. */
+  setMode: bridge.buildProvider<FleetSetupResult, FleetSetupInput>('fleet:set-mode'),
+  /** Broadcast when mode changes so renderers can refresh their SWR caches. */
+  modeChanged: bridge.buildEmitter<{ mode: FleetMode }>('fleet:mode-changed'),
+};
+
 // 系统通知接口 / System notification API
 export type INotificationOptions = {
   title: string;
