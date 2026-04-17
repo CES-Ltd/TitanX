@@ -130,6 +130,10 @@ export interface IConfigStorageRefer {
   // master key (AES-256-GCM). JSON blob from `encryption.encrypt()`. The
   // token is NEVER stored plaintext. Unset means no token captured.
   'fleet.slave.enrollmentTokenCiphertext'?: string;
+  // Slave-mode: device JWT returned by master on enrollment, encrypted
+  // at rest with the same secrets-vault key. Presented as a Bearer token
+  // on every heartbeat. Unset = not enrolled. Clearing = forced re-enroll.
+  'fleet.slave.deviceJwtCiphertext'?: string;
   // Slave-mode: enrollment lifecycle. Phase A: always 'pending' after wizard.
   'fleet.slave.enrollmentStatus'?: 'pending' | 'enrolled' | 'revoked';
   // Telegram assistant default model / Telegram 助手默认模型

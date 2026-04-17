@@ -24,6 +24,7 @@ import {
   isSetupRequired,
   validateFleetSetup,
 } from '@process/services/fleet';
+import { getSlaveStatus, onSlaveStatusChanged } from '@process/services/fleetSlave';
 import { getDatabase } from '@process/services/database';
 import * as securityFeaturesService from '@process/services/securityFeatures';
 import { logNonCritical } from '@process/utils/logNonCritical';
@@ -89,6 +90,28 @@ export function initFleetBridge(): void {
     const result = await applyFleetSetup(input);
     if (result.ok) emitModeChanged(input.mode);
     return result;
+  });
+
+  // ── Slave client status ───────────────────────────────────────────────
+  ipcBridge.fleet.getSlaveStatus.provider(async () => {
+    const mode = await getFleetMode();
+    if (mode !== 'slave') return null;
+    return getSlaveStatus();
+  });
+
+  // Broadcast slave-client status changes so the renderer can update
+  // without polling. Subscriber lives as long as the process does.
+  onSlaveStatusChanged((status) => {
+    try {
+      ipcBridge.fleet.slaveStatusChanged.emit({
+        connection: status.connection,
+        deviceId: status.deviceId,
+        lastHeartbeatAt: status.lastHeartbeatAt,
+        lastErrorMessage: status.lastErrorMessage,
+      });
+    } catch (e) {
+      logNonCritical('fleet.emit.slave-status', e);
+    }
   });
 }
 

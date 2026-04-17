@@ -757,6 +757,27 @@ export const fleet = {
   setMode: bridge.buildProvider<FleetSetupResult, FleetSetupInput>('fleet:set-mode'),
   /** Broadcast when mode changes so renderers can refresh their SWR caches. */
   modeChanged: bridge.buildEmitter<{ mode: FleetMode }>('fleet:mode-changed'),
+  /**
+   * Slave-side enrollment status snapshot. Used by the offline banner
+   * + Settings to show whether the slave is online with its master,
+   * offline (transient), unenrolled, or revoked.
+   */
+  getSlaveStatus: bridge.buildProvider<
+    {
+      mode: 'slave';
+      connection: 'offline' | 'online' | 'revoked' | 'unenrolled';
+      deviceId?: string;
+      lastHeartbeatAt?: number;
+      lastErrorMessage?: string;
+    } | null,
+    void
+  >('fleet:get-slave-status'),
+  slaveStatusChanged: bridge.buildEmitter<{
+    connection: 'offline' | 'online' | 'revoked' | 'unenrolled';
+    deviceId?: string;
+    lastHeartbeatAt?: number;
+    lastErrorMessage?: string;
+  }>('fleet:slave-status-changed'),
 };
 
 // 系统通知接口 / System notification API

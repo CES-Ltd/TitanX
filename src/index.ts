@@ -635,6 +635,17 @@ const handleAppReady = async (): Promise<void> => {
     await initializeAcpDetector();
   }
 
+  // Fleet slave: if this install was set up as a slave, kick off the
+  // enrollment + heartbeat loop. Silent no-op when mode !== 'slave'.
+  // Fire-and-forget — the slave client is resilient to master
+  // unreachability and retries with exponential backoff.
+  try {
+    const { startSlaveIfEnrolled } = await import('./process/services/fleetSlave');
+    void startSlaveIfEnrolled();
+  } catch (err) {
+    console.error('[AionUi] Failed to start fleet slave client:', err);
+  }
+
   if (!isResetPasswordMode) {
     // Preload shell environment and apply it to process.env so workers forked
     // later inherit the complete PATH (nvm, npm globals, .zshrc paths, etc.)

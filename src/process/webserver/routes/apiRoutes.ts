@@ -23,6 +23,7 @@ import directoryApi from '../directoryApi';
 import { apiRateLimiter } from '../middleware/security';
 import { registerWeixinLoginRoutes } from './weixinLoginRoutes';
 import { registerGovernanceRoutes } from './governanceRoutes';
+import { registerFleetRoutes } from './fleetRoutes';
 
 /** Max upload size in bytes (30MB per Issue #1233) */
 const MAX_UPLOAD_SIZE = 30 * 1024 * 1024;
@@ -650,6 +651,12 @@ export function registerApiRoutes(app: Express): void {
    * GET/POST /api/governance/*
    */
   registerGovernanceRoutes(app);
+
+  /**
+   * TitanX Fleet control-plane routes (v1.9.27+ master/slave)
+   * GET/POST /api/fleet/*
+   */
+  registerFleetRoutes(app);
 
   /**
    * 通用 API 端点 - Generic API endpoint
