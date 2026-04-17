@@ -19,6 +19,7 @@
 import { type Express, type Request, type Response } from 'express';
 import { getDatabase } from '@process/services/database';
 import * as fleetEnrollment from '@process/services/fleetEnrollment';
+import { buildConfigBundle } from '@process/services/fleetConfig';
 import { createAuthMiddleware } from '@process/webserver/auth/middleware/TokenMiddleware';
 import { apiRateLimiter } from '../middleware/security';
 
@@ -164,6 +165,37 @@ export function registerFleetRoutes(app: Express): void {
       res.json({ ok: true, deviceId: auth.deviceId, recordedAt: Date.now() });
     } catch (err) {
       res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // ── Device-JWT: pull fleet config bundle (Phase C Week 2) ────────────
+  // Slaves poll this periodically with `?since=<localVersion>`. Master
+  // returns `{ bundle: { upToDate: true, version } }` when slave is
+  // already current, or the full bundle otherwise. Slave's applyConfigBundle
+  // is idempotent, so re-applying the same bundle is harmless — the
+  // since-guard is a bandwidth optimization, not a correctness requirement.
+  app.get('/api/fleet/config', apiRateLimiter, async (req: Request, res: Response) => {
+    try {
+      const bearer = extractBearer(req);
+      if (!bearer) {
+        res.status(401).json({ error: 'Authorization: Bearer <device-jwt> required' });
+        return;
+      }
+      const db = await getDatabase();
+      const auth = fleetEnrollment.verifyDeviceRequest(db.getDriver(), bearer);
+      if ('error' in auth) {
+        res.status(401).json({ error: auth.error });
+        return;
+      }
+      // `since` is a string on the wire — coerce + guard. Negative / NaN
+      // becomes 0 so "never synced" slaves get the full bundle on first poll.
+      const sinceRaw = paramStr(req.query.since as string | string[] | undefined);
+      const since = Number.parseInt(sinceRaw, 10);
+      const sinceVersion = Number.isFinite(since) && since > 0 ? since : 0;
+      const bundle = buildConfigBundle(db.getDriver(), sinceVersion);
+      res.json({ bundle });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
     }
   });
 

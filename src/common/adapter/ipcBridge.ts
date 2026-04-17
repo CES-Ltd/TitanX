@@ -804,6 +804,42 @@ export const fleet = {
   revokeDevice: bridge.buildProvider<{ ok: true } | { ok: false; error: string }, { deviceId: string }>(
     'fleet:revoke-device'
   ),
+
+  // ── Phase C Week 2: config sync (master→slave) ─────────────────────────
+  /**
+   * List every config key currently controlled by the master fleet bundle.
+   * Used by Settings / Security Dashboard / IAM pages to render a lock
+   * icon + "Controlled by IT" tooltip on governed keys.
+   */
+  listManagedKeys: bridge.buildProvider<
+    {
+      keys: Array<{ key: string; managedByVersion: number; appliedAt: number }>;
+    },
+    void
+  >('fleet:list-managed-keys'),
+  /** Single-key check — faster than filtering `listManagedKeys` in the renderer. */
+  isManaged: bridge.buildProvider<{ managed: boolean }, { key: string }>('fleet:is-managed'),
+  /** Slave-side sync-loop status (lastPoll, lastApplied, errors). */
+  getConfigSyncStatus: bridge.buildProvider<
+    {
+      running: boolean;
+      lastPollAt?: number;
+      lastAppliedVersion?: number;
+      lastErrorMessage?: string;
+    },
+    void
+  >('fleet:get-config-sync-status'),
+  /**
+   * Emitted after a slave successfully applies a config bundle from master.
+   * Renderer listens + re-fetches IAM policies / feature toggles so the UI
+   * reflects the new state without the user hitting refresh.
+   */
+  configApplied: bridge.buildEmitter<{
+    version: number;
+    iamPoliciesReplaced: number;
+    securityFeaturesUpdated: number;
+    newlyManagedKeys: string[];
+  }>('fleet:config-applied'),
 };
 
 // 系统通知接口 / System notification API

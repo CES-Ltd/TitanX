@@ -28,6 +28,8 @@ import { getSlaveStatus, onSlaveStatusChanged } from '@process/services/fleetSla
 import * as fleetEnrollment from '@process/services/fleetEnrollment';
 import { getDatabase } from '@process/services/database';
 import * as securityFeaturesService from '@process/services/securityFeatures';
+import { isManaged, listManagedKeys } from '@process/services/fleetConfig';
+import { getConfigSyncStatus, onConfigApplied } from '@process/services/fleetConfig/slaveSync';
 import { logNonCritical } from '@process/utils/logNonCritical';
 import type { FleetMode, FleetSetupInput, FleetSetupResult } from '@/common/types/fleetTypes';
 
@@ -149,6 +151,38 @@ export function initFleetBridge(): void {
       deviceId,
       revokedBy: 'desktop_admin',
     });
+  });
+
+  // ── Phase C Week 2: config sync (master→slave) ───────────────────────
+  ipcBridge.fleet.listManagedKeys.provider(async () => {
+    const db = await getDatabase();
+    const keys = listManagedKeys(db.getDriver());
+    return { keys };
+  });
+
+  ipcBridge.fleet.isManaged.provider(async ({ key }) => {
+    const db = await getDatabase();
+    return { managed: isManaged(db.getDriver(), key) };
+  });
+
+  ipcBridge.fleet.getConfigSyncStatus.provider(async () => {
+    return getConfigSyncStatus();
+  });
+
+  // Re-emit successful config-apply events to the renderer so SWR caches
+  // refresh immediately instead of on next hook revalidation. Subscriber
+  // lives as long as the process does — no unsubscribe path needed.
+  onConfigApplied((result) => {
+    try {
+      ipcBridge.fleet.configApplied.emit({
+        version: result.version,
+        iamPoliciesReplaced: result.iamPoliciesReplaced,
+        securityFeaturesUpdated: result.securityFeaturesUpdated,
+        newlyManagedKeys: result.newlyManagedKeys,
+      });
+    } catch (e) {
+      logNonCritical('fleet.emit.config-applied', e);
+    }
   });
 }
 

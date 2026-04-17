@@ -70,6 +70,24 @@ vi.mock('@process/services/database', () => ({
   }),
 }));
 
+// Mock fleetConfig service — the bridge only reads managed-key helpers.
+const mockListManagedKeys = vi.hoisted(() => vi.fn());
+const mockIsManaged = vi.hoisted(() => vi.fn());
+vi.mock('@process/services/fleetConfig', () => ({
+  listManagedKeys: mockListManagedKeys,
+  isManaged: mockIsManaged,
+}));
+
+// Mock slaveSync — bridge reads sync status + subscribes to apply events.
+const mockGetConfigSyncStatus = vi.hoisted(() => vi.fn());
+const mockOnConfigApplied = vi.hoisted(() =>
+  vi.fn<(listener: (r: unknown) => void) => () => void>((_l) => () => undefined)
+);
+vi.mock('@process/services/fleetConfig/slaveSync', () => ({
+  getConfigSyncStatus: mockGetConfigSyncStatus,
+  onConfigApplied: mockOnConfigApplied,
+}));
+
 import { initFleetBridge } from '@/process/bridge/fleetBridge';
 
 beforeEach(() => {
@@ -89,6 +107,10 @@ beforeEach(() => {
   mockDbFail.shouldFail = false;
   mockValidateFleetSetup.mockReturnValue(null);
   mockApplyFleetSetup.mockResolvedValue({ ok: true });
+  mockListManagedKeys.mockReturnValue([]);
+  mockIsManaged.mockReturnValue(false);
+  mockGetConfigSyncStatus.mockReturnValue({ running: false });
+  mockOnConfigApplied.mockImplementation(() => () => undefined);
   initFleetBridge();
 });
 
@@ -212,5 +234,83 @@ describe('fleet.setMode', () => {
     await handler({ mode: 'slave' });
     expect(mockApplyFleetSetup).toHaveBeenCalledWith({ mode: 'slave' });
     expect(emitted).toEqual([{ mode: 'slave' }]);
+  });
+});
+
+// ── Phase C Week 2 — managed-key + config-sync providers ──────────────────
+
+describe('fleet.listManagedKeys', () => {
+  it('delegates to fleetConfig.listManagedKeys and wraps result in { keys }', async () => {
+    mockListManagedKeys.mockReturnValueOnce([
+      { key: 'security_feature.network_policies', managedByVersion: 3, appliedAt: 1_000 },
+    ]);
+    const handler = providerMap.get('fleet.listManagedKeys')!;
+    const result = (await handler()) as { keys: Array<{ key: string }> };
+    expect(result.keys).toHaveLength(1);
+    expect(result.keys[0].key).toBe('security_feature.network_policies');
+  });
+
+  it('returns empty list when nothing is managed', async () => {
+    const handler = providerMap.get('fleet.listManagedKeys')!;
+    const result = (await handler()) as { keys: unknown[] };
+    expect(result.keys).toEqual([]);
+  });
+});
+
+describe('fleet.isManaged', () => {
+  it('returns { managed: true } when key is governed by master', async () => {
+    mockIsManaged.mockReturnValueOnce(true);
+    const handler = providerMap.get('fleet.isManaged')!;
+    const result = await handler({ key: 'iam.policy.abc' });
+    expect(result).toEqual({ managed: true });
+    expect(mockIsManaged).toHaveBeenCalledWith(expect.anything(), 'iam.policy.abc');
+  });
+
+  it('returns { managed: false } otherwise', async () => {
+    const handler = providerMap.get('fleet.isManaged')!;
+    const result = await handler({ key: 'iam.policy.missing' });
+    expect(result).toEqual({ managed: false });
+  });
+});
+
+describe('fleet.getConfigSyncStatus', () => {
+  it('passes through the slaveSync status struct', async () => {
+    mockGetConfigSyncStatus.mockReturnValueOnce({
+      running: true,
+      lastPollAt: 123,
+      lastAppliedVersion: 4,
+      lastErrorMessage: undefined,
+    });
+    const handler = providerMap.get('fleet.getConfigSyncStatus')!;
+    const result = (await handler()) as { running: boolean; lastAppliedVersion?: number };
+    expect(result.running).toBe(true);
+    expect(result.lastAppliedVersion).toBe(4);
+  });
+});
+
+describe('fleet.configApplied emitter wiring', () => {
+  it('subscribes to slaveSync on init and re-emits apply events to renderer', async () => {
+    // initFleetBridge ran in beforeEach and called onConfigApplied exactly once.
+    expect(mockOnConfigApplied).toHaveBeenCalledTimes(1);
+    const listener = mockOnConfigApplied.mock.calls[0]![0] as (r: unknown) => void;
+
+    const emitted: unknown[] = [];
+    emitterMap.set('fleet.configApplied', (payload) => emitted.push(payload));
+
+    listener({
+      version: 9,
+      iamPoliciesReplaced: 2,
+      securityFeaturesUpdated: 3,
+      newlyManagedKeys: ['iam.policy.x'],
+    });
+
+    expect(emitted).toEqual([
+      {
+        version: 9,
+        iamPoliciesReplaced: 2,
+        securityFeaturesUpdated: 3,
+        newlyManagedKeys: ['iam.policy.x'],
+      },
+    ]);
   });
 });

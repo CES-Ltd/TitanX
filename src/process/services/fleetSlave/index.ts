@@ -28,6 +28,7 @@ import { ProcessConfig } from '@process/utils/initStorage';
 import { getDeviceId, getDevicePublicKey } from '@process/services/deviceIdentity';
 import { encrypt, decrypt, loadOrCreateMasterKey } from '@process/services/secrets/encryption';
 import { logNonCritical } from '@process/utils/logNonCritical';
+import { startConfigSyncPoller, stopConfigSyncPoller } from '@process/services/fleetConfig/slaveSync';
 import os from 'os';
 
 /** Read app version from Electron's `app` when available; fall back to
@@ -105,9 +106,10 @@ export async function startSlaveIfEnrolled(): Promise<void> {
 
   const existingJwt = await getCachedDeviceJwt();
   if (existingJwt) {
-    // Already enrolled — jump straight to heartbeat loop
+    // Already enrolled — jump straight to heartbeat + config-sync loops
     updateStatus({ connection: 'online', deviceId: getDeviceId() });
     startHeartbeatLoop(masterUrl);
+    startConfigSyncPoller(masterUrl);
     return;
   }
 
@@ -122,6 +124,7 @@ export function stopSlaveClient(): void {
     _heartbeatTimer = null;
   }
   _enrollmentBackoffMs = ENROLLMENT_RETRY_BASE_MS;
+  stopConfigSyncPoller();
 }
 
 /** Reset all module-level state — TEST ONLY. Production code never needs this. */
@@ -175,7 +178,8 @@ async function attemptEnrollment(masterUrl: string): Promise<void> {
       lastErrorMessage: undefined,
     });
     startHeartbeatLoop(masterUrl);
-    console.log('[FleetSlave] Enrollment successful. Heartbeat loop started.');
+    startConfigSyncPoller(masterUrl);
+    console.log('[FleetSlave] Enrollment successful. Heartbeat + config-sync loops started.');
   } catch (e) {
     logNonCritical('fleet.slave.enroll', e);
     updateStatus({
