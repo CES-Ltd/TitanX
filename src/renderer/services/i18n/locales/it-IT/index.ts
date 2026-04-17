@@ -23,6 +23,7 @@ import starOffice from './starOffice.json';
 import team from './team.json';
 import tools from './tools.json';
 import update from './update.json';
+import fleet from './fleet.json';
 
 export default {
   acp,
@@ -46,4 +47,5 @@ export default {
   team,
   tools,
   update,
+  fleet,
 };

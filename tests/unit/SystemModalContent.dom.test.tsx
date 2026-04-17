@@ -50,6 +50,9 @@ vi.mock('@icon-park/react', () => ({
   FolderOpen: () => <span data-testid='icon-folder-open' />,
   FolderSearch: () => <span data-testid='icon-folder-search' />,
   Link: () => <span data-testid='icon-link' />,
+  // v1.9.26: FleetModeSwitcher uses Computer + Server for mode cards
+  Computer: () => <span data-testid='icon-computer' />,
+  Server: () => <span data-testid='icon-server' />,
 }));
 
 vi.mock('@/renderer/components/settings/LanguageSwitcher', () => ({
@@ -144,6 +147,16 @@ vi.mock('@/common', () => ({
     shell: {
       openExternal: { invoke: (...args: any[]) => mockOpenExternal(...args) },
       openFile: { invoke: (...args: any[]) => mockOpenFile(...args) },
+    },
+    // v1.9.26+: fleet mode switcher reads these from Settings. Tests here
+    // don't interact with the switcher; just stub enough to render.
+    fleet: {
+      getMode: { invoke: async () => 'regular' },
+      getConfig: { invoke: async () => ({ mode: 'regular' }) },
+      isSetupRequired: { invoke: async () => false },
+      completeSetup: { invoke: async () => ({ ok: true }) },
+      setMode: { invoke: async () => ({ ok: true }) },
+      modeChanged: { on: () => () => {}, emit: () => {} },
     },
   },
 }));

@@ -21,6 +21,8 @@ import { useSettingsViewMode } from '../../settingsViewContext';
 import DevSettings from './DevSettings';
 import DirInputItem from './DirInputItem';
 import PreferenceRow from './PreferenceRow';
+import FleetModeSwitcher from '@/renderer/pages/fleet/FleetModeSwitcher';
+import { useFleetConfig, useFleetMode } from '@/renderer/hooks/fleet/useFleetMode';
 
 /**
  * System settings content component
@@ -50,6 +52,9 @@ const SystemModalContent: React.FC = () => {
   const [promptTimeout, setPromptTimeout] = useState<number>(300);
   const [saveUploadToWorkspace, setSaveUploadToWorkspace] = useState(false);
   const [commandQueueEnabled, setCommandQueueEnabled] = useState(false);
+  const fleetMode = useFleetMode();
+  const { data: fleetConfig } = useFleetConfig();
+  const [fleetSwitcherVisible, setFleetSwitcherVisible] = useState(false);
 
   useEffect(() => {
     if (!isDesktop) {
@@ -235,6 +240,21 @@ const SystemModalContent: React.FC = () => {
       description: t('settings.commandQueueEnabledDesc'),
       component: <Switch checked={commandQueueEnabled} onChange={handleCommandQueueEnabledChange} />,
     },
+    {
+      key: 'fleetMode',
+      label: t('fleet.settings.sectionTitle', { defaultValue: 'Fleet mode' }),
+      description: t(`fleet.mode.${fleetMode}.description`, { defaultValue: '' }),
+      component: (
+        <div className='flex items-center gap-2'>
+          <span className='text-13px text-t-secondary'>
+            {t(`fleet.mode.${fleetMode}.name`, { defaultValue: fleetMode })}
+          </span>
+          <Button size='small' onClick={() => setFleetSwitcherVisible(true)}>
+            {t('fleet.settings.changeButton', { defaultValue: 'Change mode…' })}
+          </Button>
+        </div>
+      ),
+    },
   ];
 
   const saveDirConfigValidate = (_values: { cacheDir: string; workDir: string }): Promise<unknown> => {
@@ -285,6 +305,11 @@ const SystemModalContent: React.FC = () => {
   return (
     <div className='flex flex-col h-full w-full'>
       {modalContextHolder}
+      <FleetModeSwitcher
+        visible={fleetSwitcherVisible}
+        onClose={() => setFleetSwitcherVisible(false)}
+        currentConfig={fleetConfig}
+      />
 
       <AionScrollArea className='flex-1 min-h-0 pb-16px' disableOverflow={isPageMode}>
         <div className='space-y-16px'>

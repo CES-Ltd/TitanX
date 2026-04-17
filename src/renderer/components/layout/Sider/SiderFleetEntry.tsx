@@ -20,9 +20,9 @@ interface SiderFleetEntryProps {
 }
 
 const SiderFleetEntry: React.FC<SiderFleetEntryProps> = ({ isMobile, isActive, collapsed, siderTooltipProps }) => {
-  const { t } = useTranslation('fleet');
+  const { t } = useTranslation();
   const navigate = useNavigate();
-  const label = t('master.placeholder.title');
+  const label = t('fleet.master.placeholder.title');
 
   const handleClick = (): void => {
     void navigate('/fleet');

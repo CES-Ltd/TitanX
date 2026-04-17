@@ -25,6 +25,7 @@ import team from './team.json';
 import governance from './governance.json';
 import pet from './pet.json';
 import deepAgent from './deepAgent.json';
+import fleet from './fleet.json';
 
 export default {
   common,
@@ -49,4 +50,5 @@ export default {
   governance,
   pet,
   deepAgent,
+  fleet,
 };

@@ -32,7 +32,7 @@ interface RestrictedRouteProps {
 /** Blocks rendering of `children` when the current fleet mode is not allowed. */
 const RestrictedRoute: React.FC<RestrictedRouteProps> = ({ feature, allowedModes, children }) => {
   const mode = useFleetMode();
-  const { t } = useTranslation('fleet');
+  const { t } = useTranslation();
 
   if (allowedModes.includes(mode)) {
     return <>{children}</>;
@@ -44,10 +44,10 @@ const RestrictedRoute: React.FC<RestrictedRouteProps> = ({ feature, allowedModes
         <Lock theme='outline' size='32' className='text-t-tertiary' />
       </div>
       <h2 className='text-lg font-semibold text-t-primary mb-2'>
-        {t('restricted.title', { feature, defaultValue: `${feature} is not available` })}
+        {t('fleet.restricted.title', { feature, defaultValue: `${feature} is not available` })}
       </h2>
       <p className='text-sm text-t-secondary max-w-400px'>
-        {t('restricted.body', {
+        {t('fleet.restricted.body', {
           defaultValue:
             'This view is managed by your IT administrator and is not available on slave installs. Contact your admin if you need access.',
         })}
