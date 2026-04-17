@@ -27,6 +27,7 @@ import { getSharedEventPublisher } from './ports/defaultIpcEventPublisher';
 import { ActionExecutor } from './ActionExecutor';
 import { TurnFinalizer } from './TurnFinalizer';
 import { AgentRegistry } from './AgentRegistry';
+import { WakeRunner } from './WakeRunner';
 
 type SpawnAgentFn = (agentName: string, agentType?: string) => Promise<TeamAgent>;
 
@@ -135,6 +136,15 @@ export class TeammateManager extends EventEmitter {
    */
   private readonly turnFinalizer = new TurnFinalizer();
 
+  /**
+   * Async side of the wake cycle. Extracted to WakeRunner (Phase 3.2) so the
+   * queue/retry/timeout/dispatch logic pairs cleanly with the already-extracted
+   * WakeState (pure bookkeeping). WakeRunner never owns state — it defers
+   * status mutations to this manager so event publishing + audit stays
+   * centralized here.
+   */
+  private readonly wakeRunner: WakeRunner;
+
   constructor(params: TeammateManagerParams) {
     super();
     this.teamId = params.teamId;
@@ -158,6 +168,40 @@ export class TeammateManager extends EventEmitter {
       setStatus: (slotId, status, msg) => this.setStatus(slotId, status, msg),
       wake: (slotId) => this.wake(slotId),
       maybeWakeLeaderWhenAllIdle: (leadSlotId) => this.maybeWakeLeaderWhenAllIdle(leadSlotId),
+    });
+
+    // Assemble the WakeRunner context: WakeRunner gets references to the same
+    // registry / wakeState / streamBuffer this manager owns, plus injectable
+    // collaborators (adapter factory, UI emit, available-backend discovery)
+    // so the full wake cycle is testable without a real TeammateManager.
+    this.wakeRunner = new WakeRunner({
+      teamId: this.teamId,
+      registry: this.registry,
+      wakeState: this.wakeState,
+      streamBuffer: this.streamBuffer,
+      mailbox: this.mailbox,
+      taskManager: this.taskManager,
+      workerTaskManager: this.workerTaskManager,
+      setStatus: (slotId, status, msg) => this.setStatus(slotId, status, msg),
+      createAdapter: (conversationType, hasMcp) => createPlatformAdapter(conversationType, hasMcp),
+      agentHasMcpTools: (agent) => this.agentHasMcpTools(agent),
+      mcpServerStarted: () => this.mcpServerStarted,
+      getAvailableAgentTypes: () => {
+        // Only surface team-verified backends to the leader's spawn menu.
+        const TEAM_ALLOWED_BACKENDS = new Set(['claude', 'codex', 'opencode', 'gemini', 'hermes']);
+        return acpDetector
+          .getDetectedAgents()
+          .filter((a) => TEAM_ALLOWED_BACKENDS.has(a.backend))
+          .map((a) => ({ type: a.backend, name: a.name }));
+      },
+      emitIncomingMessage: (msg) =>
+        ipcBridge.acpConversation.responseStream.emit({
+          type: 'teammate_message',
+          conversation_id: msg.conversation_id,
+          msg_id: msg.msg_id,
+          data: msg,
+        }),
+      debugTeam,
     });
 
     // Listen on teamEventBus instead of ipcBridge: ipcBridge.emit() routes through
@@ -236,195 +280,12 @@ export class TeammateManager extends EventEmitter {
 
   /**
    * Wake an agent: read unread mailbox, build payload, send to agent.
-   * Sets status to 'active' during API call, 'idle' when done.
-   * Skips if the agent's wake is already in progress.
+   * The full async cycle (queue/retry/timeout/dispatch) lives in WakeRunner;
+   * this method is the public orchestration entry point so callers anywhere
+   * in the codebase still reach the wake cycle through TeammateManager.
    */
   async wake(slotId: string): Promise<void> {
-    if (this.wakeState.isActive(slotId)) {
-      // Queue the wake instead of dropping it — will be processed after current turn
-      if (this.wakeState.queueIfActive(slotId)) {
-        console.log(`[TeammateManager] wake(${slotId}): QUEUED (agent busy, will retry after current turn)`);
-        // Audit log: wake queued
-        void (async () => {
-          try {
-            const db = await getDatabase();
-            activityLogService.logActivity(db.getDriver(), {
-              userId: 'system_default_user',
-              actorType: 'system',
-              actorId: 'heartbeat',
-              action: 'heartbeat.wake_queued',
-              entityType: 'agent',
-              entityId: slotId,
-              details: { reason: 'agent_busy', teamId: this.teamId },
-            });
-          } catch (e) {
-            logNonCritical('team.audit.wake-queued', e);
-          }
-        })();
-      }
-      return;
-    }
-
-    const agent = this.agents.find((a) => a.slotId === slotId);
-    if (!agent) return;
-
-    debugTeam(`[TeammateManager] wake(${agent.agentName}): status=${agent.status}, proceeding`);
-
-    // Audit log: heartbeat wake
-    void (async () => {
-      try {
-        const db = await getDatabase();
-        activityLogService.logActivity(db.getDriver(), {
-          userId: 'system_default_user',
-          actorType: 'system',
-          actorId: 'heartbeat',
-          action: 'heartbeat.agent_woken',
-          entityType: 'agent',
-          entityId: agent.slotId,
-          details: { agentName: agent.agentName, previousStatus: agent.status, teamId: this.teamId },
-        });
-      } catch (e) {
-        logNonCritical('team.audit.agent-woken', e);
-      }
-    })();
-
-    this.wakeState.markActive(slotId);
-    try {
-      // Transition pending -> idle on first activation
-      if (agent.status === 'pending') {
-        this.setStatus(slotId, 'idle');
-      }
-
-      this.setStatus(slotId, 'active');
-
-      const hasMcp = this.agentHasMcpTools(agent);
-      debugTeam(
-        `[TeammateManager] Building payload for ${agent.agentName}: hasMcpTools=${String(hasMcp)} mcpServerStarted=${String(this.mcpServerStarted)} conversationType=${agent.conversationType}`
-      );
-      const adapter = createPlatformAdapter(agent.conversationType, hasMcp);
-      const [mailboxMessages, tasks] = await Promise.all([
-        this.mailbox.readUnread(this.teamId, slotId),
-        this.taskManager.list(this.teamId),
-      ]);
-      const teammates = this.agents.filter((a) => a.slotId !== slotId);
-
-      // Write each mailbox message into agent's conversation as user bubble
-      // so the UI shows what triggered this agent's response.
-      // Skip for leader: context is already in buildPayload; bubbles would clutter the lead tab.
-      if (agent.conversationId && mailboxMessages.length > 0 && agent.role !== 'lead') {
-        for (const msg of mailboxMessages) {
-          // Skip user messages — already written by TeamSession.sendMessage()
-          if (msg.fromAgentId === 'user') continue;
-          const sender = this.agents.find((a) => a.slotId === msg.fromAgentId);
-          const senderName = msg.fromAgentId === 'user' ? 'User' : (sender?.agentName ?? msg.fromAgentId);
-          const displayContent = mailboxMessages.length > 1 ? `[${senderName}] ${msg.content}` : msg.content;
-          const msgId = crypto.randomUUID();
-          // All messages written to target conversation are incoming from target's perspective
-          const teammateMsg = {
-            id: msgId,
-            msg_id: msgId,
-            type: 'text' as const,
-            position: 'left' as const,
-            conversation_id: agent.conversationId,
-            content: { content: displayContent, teammateMessage: true, senderName, senderAgentType: sender?.agentType },
-            createdAt: Date.now(),
-          };
-          addMessage(agent.conversationId, teammateMsg);
-          ipcBridge.acpConversation.responseStream.emit({
-            type: 'teammate_message',
-            conversation_id: agent.conversationId,
-            msg_id: msgId,
-            data: teammateMsg,
-          });
-        }
-      }
-
-      // Only show team-verified backends in the leader's available agent types
-      const TEAM_ALLOWED_BACKENDS = new Set(['claude', 'codex', 'opencode', 'gemini', 'hermes']);
-      const availableAgentTypes = acpDetector
-        .getDetectedAgents()
-        .filter((a) => TEAM_ALLOWED_BACKENDS.has(a.backend))
-        .map((a) => ({ type: a.backend, name: a.name }));
-
-      const payload = adapter.buildPayload({
-        agent,
-        mailboxMessages,
-        tasks,
-        teammates,
-        availableAgentTypes,
-        renamedAgents: this.registry.renamedMap(),
-      });
-
-      // Clear previous buffer for this conversation (fresh turn)
-      this.streamBuffer.resetFor(agent.conversationId);
-
-      const agentTask = await this.workerTaskManager.getOrBuildTask(agent.conversationId);
-      const msgId = crypto.randomUUID();
-
-      // Each AgentManager implementation expects a specific object shape.
-      // Gemini uses { input, msg_id }, all others use { content, msg_id }.
-      const messageData =
-        agent.conversationType === 'gemini'
-          ? { input: payload.message, msg_id: msgId, silent: true }
-          : { content: payload.message, msg_id: msgId, silent: true };
-
-      await agentTask.sendMessage(messageData);
-
-      // Release wake lock immediately after message is sent.
-      // finalizeTurn will also delete it (safe no-op). This prevents permanent
-      // deadlock when finish events are lost or finalizeTurn never fires.
-      this.wakeState.releaseActive(slotId);
-
-      // Fallback timeout: if turnCompleted never fires, set idle so the agent
-      // can be woken again. Duration is TEAM_CONFIG.WAKE_TIMEOUT_MS.
-      this.wakeState.scheduleTimeout(slotId, TeammateManager.WAKE_TIMEOUT_MS, () => {
-        const currentAgent = this.agents.find((a) => a.slotId === slotId);
-        if (currentAgent?.status === 'active') {
-          this.setStatus(slotId, 'idle', 'Wake timed out');
-        }
-      });
-    } catch (error) {
-      this.wakeState.releaseActive(slotId);
-
-      // Retry with backoff: if wake fails, try again after 3 seconds (once)
-      const retryKey = `retry_${slotId}`;
-      if (!this.wakeState.hasPending(retryKey)) {
-        this.wakeState.addPending(retryKey);
-        console.log(`[TeammateManager] wake(${agent.agentName}): FAILED, scheduling retry in 3s`);
-        // Audit log: wake failed, retrying
-        void (async () => {
-          try {
-            const db = await getDatabase();
-            activityLogService.logActivity(db.getDriver(), {
-              userId: 'system_default_user',
-              actorType: 'system',
-              actorId: 'heartbeat',
-              action: 'heartbeat.wake_retry',
-              entityType: 'agent',
-              entityId: slotId,
-              details: { agentName: agent.agentName, retryDelayMs: TEAM_CONFIG.RETRY_DELAY_MS, teamId: this.teamId },
-            });
-          } catch (e) {
-            logNonCritical('team.audit.wake-retry', e);
-          }
-        })();
-        setTimeout(() => {
-          this.wakeState.dequeuePending(retryKey);
-          this.setStatus(slotId, 'idle');
-          void this.wake(slotId).catch(() => {
-            console.error(`[TeammateManager] wake retry failed for ${agent.agentName}, giving up`);
-            this.setStatus(slotId, 'failed');
-          });
-        }, TEAM_CONFIG.RETRY_DELAY_MS);
-      } else {
-        // Already retried once — give up
-        this.setStatus(slotId, 'failed');
-        this.wakeState.dequeuePending(retryKey);
-        console.error(`[TeammateManager] wake(${agent.agentName}): retry also failed, setting status=failed`);
-      }
-      throw error;
-    }
-    // active flag is released when turnCompleted fires (or by timeout)
+    return this.wakeRunner.wake(slotId);
   }
 
   /** Set agent status, update the local agents array, and emit IPC event */
