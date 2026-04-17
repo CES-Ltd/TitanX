@@ -58,6 +58,7 @@ const useDebug = () => {
 };
 
 const UpdateModal = React.lazy(() => import('@/renderer/components/settings/UpdateModal'));
+const SlaveStatusBanner = React.lazy(() => import('@/renderer/components/fleet/SlaveStatusBanner'));
 
 const DEFAULT_SIDER_WIDTH = 250;
 const DESKTOP_COLLAPSED_WIDTH = 64;
@@ -531,6 +532,11 @@ const Layout: React.FC<{
             }}
             style={isMobile ? { width: '100%' } : undefined}
           >
+            {/* Fleet: slave-mode connection status banner. Renders null in
+                regular/master mode or when slave connection is healthy. */}
+            <Suspense fallback={null}>
+              <SlaveStatusBanner />
+            </Suspense>
             <Outlet />
             {multiAgentContextHolder}
             {directorySelectionContextHolder}

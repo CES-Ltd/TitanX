@@ -778,6 +778,32 @@ export const fleet = {
     lastHeartbeatAt?: number;
     lastErrorMessage?: string;
   }>('fleet:slave-status-changed'),
+
+  // ── Master admin operations (Phase B Week 3) ───────────────────────────
+  /** Mint a one-time enrollment token — returns plaintext ONCE. */
+  generateEnrollmentToken: bridge.buildProvider<
+    { token: string; tokenHash: string; expiresAt: number },
+    { ttlHours?: number; note?: string }
+  >('fleet:generate-enrollment-token'),
+  /** Device roster. */
+  listDevices: bridge.buildProvider<
+    {
+      devices: Array<{
+        deviceId: string;
+        hostname: string;
+        osVersion: string;
+        titanxVersion: string;
+        enrolledAt: number;
+        lastHeartbeatAt?: number;
+        status: 'enrolled' | 'revoked';
+      }>;
+    },
+    void
+  >('fleet:list-devices'),
+  /** Revoke a device (flips status to 'revoked'). */
+  revokeDevice: bridge.buildProvider<{ ok: true } | { ok: false; error: string }, { deviceId: string }>(
+    'fleet:revoke-device'
+  ),
 };
 
 // 系统通知接口 / System notification API

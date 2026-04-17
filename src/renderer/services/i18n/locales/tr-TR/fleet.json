@@ -68,6 +68,62 @@
     "placeholder": {
       "title": "Fleet management",
       "body": "Device roster, config sync, and fleet cost dashboards arrive in v1.9.27. This build ships the mode infrastructure only."
+    },
+    "pageTitle": "Fleet",
+    "refresh": "Refresh",
+    "generateToken": "Generate enrollment token",
+    "generateTitle": "Generate enrollment token",
+    "generateHint": "Generates a one-time token an employee pastes into their slave setup wizard. Valid until its expiry or until used.",
+    "ttlLabel": "Valid for (hours)",
+    "noteLabel": "Note (optional)",
+    "notePlaceholder": "e.g. \"engineering laptops batch 1\"",
+    "cancel": "Cancel",
+    "generate": "Generate",
+    "empty": "No devices enrolled yet. Click \"Generate enrollment token\" to onboard the first slave.",
+    "revokeButton": "Revoke",
+    "revokeConfirm": {
+      "title": "Revoke this device?",
+      "body": "The device will be unable to sync with this master until it re-enrolls."
+    },
+    "device": {
+      "revoked": "Device revoked"
+    },
+    "token": {
+      "warning": "Copy this token now — it will NOT be shown again. Give it to the employee along with your master URL.",
+      "expiresAt": "Expires",
+      "copy": "Copy",
+      "copied": "Token copied to clipboard",
+      "copyFailed": "Could not copy token — select and copy manually",
+      "done": "Done"
+    },
+    "table": {
+      "hostname": "Hostname",
+      "status": "Status",
+      "statusOnline": "Online",
+      "statusStale": "Stale",
+      "statusRevoked": "Revoked",
+      "statusNeverSeen": "Never seen",
+      "version": "Version",
+      "os": "OS",
+      "enrolled": "Enrolled",
+      "lastSeen": "Last seen"
     }
+  },
+  "banner": {
+    "offline": {
+      "title": "Not connected to master",
+      "body": "This TitanX install can't reach its master right now. You can keep working — policies remain in effect and changes will sync when the connection recovers."
+    },
+    "revoked": {
+      "title": "This device was removed from the fleet",
+      "body": "Your IT administrator revoked this installation. Contact them to re-enroll, or switch to Regular mode in Settings."
+    },
+    "unenrolled": {
+      "title": "Enrollment incomplete",
+      "body": "This install is configured as a slave but hasn't completed enrollment. Open Settings → System → Fleet mode to connect to your master."
+    },
+    "lastSeen": "Last synced",
+    "errorPrefix": "Error",
+    "never": "never"
   }
 }

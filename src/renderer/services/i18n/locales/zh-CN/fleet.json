@@ -1,73 +1,129 @@
 {
   "mode": {
     "regular": {
-      "name": "常规",
-      "description": "单机安装。本机使用。大多数用户选此项。"
+      "name": "Regular",
+      "description": "Single-machine install. Your local installation. Most users pick this."
     },
     "master": {
-      "name": "主节点",
-      "description": "组织控制平面。管理策略、Agent 模板，并聚合多台员工机器的成本遥测。面向 IT 管理员。"
+      "name": "Master",
+      "description": "Organization control plane. Manages policies, agent templates, and fleet telemetry for multiple employee machines. For IT administrators."
     },
     "slave": {
-      "name": "从节点",
-      "description": "由 IT 管理员管理的员工机器。从主节点安装接收策略与模板。需要您的管理员提供主节点 URL 和注册令牌。"
+      "name": "Slave",
+      "description": "Employee machine managed by an IT admin. Receives policies and templates from a master install. Requires your admin's master URL and enrollment token."
     }
   },
   "wizard": {
-    "title": "欢迎使用 TitanX",
-    "subtitle": "本次安装将如何使用？",
-    "hintSelectMode": "选择一种模式以继续。",
-    "continue": "继续",
-    "back": "返回",
-    "cancel": "跳过 — 使用常规模式",
-    "launch": "启动 TitanX",
-    "done": "TitanX 已配置完成",
-    "doneSubtitle": "您可随时在 设置 → 系统 → 集群模式 中更改此项。",
+    "title": "Welcome to TitanX",
+    "subtitle": "How will this install be used?",
+    "hintSelectMode": "Select a mode to continue.",
+    "continue": "Continue",
+    "back": "Back",
+    "cancel": "Skip — use regular mode",
+    "launch": "Launch TitanX",
+    "done": "TitanX is configured",
+    "doneSubtitle": "You can change this anytime in Settings → System → Fleet mode.",
     "master": {
-      "title": "主节点网络设置",
-      "subtitle": "主节点 TitanX 开放 API 以便从节点连接。请选择端口和网络绑定方式。",
-      "portLabel": "端口",
-      "portInvalid": "端口必须在 1 到 65535 之间。",
-      "bindLabel": "网络绑定",
-      "bindLocalName": "仅本机 (127.0.0.1)",
-      "bindLocalDesc": "只接受本机上的从节点连接。",
-      "bindAllName": "所有网卡 (0.0.0.0)",
-      "bindAllDesc": "接受同网络中任何机器的连接。",
-      "firewallHint": "若希望其他机器上的从节点连接本主节点，请选择\"所有网卡\"并确保防火墙放行所选端口的入站流量。"
+      "title": "Master mode network settings",
+      "subtitle": "Master TitanX exposes an API so slave machines can connect. Choose a port and network binding.",
+      "portLabel": "Port",
+      "portInvalid": "Port must be between 1 and 65535.",
+      "bindLabel": "Network binding",
+      "bindLocalName": "Local-only (127.0.0.1)",
+      "bindLocalDesc": "Slave machines on this same computer only.",
+      "bindAllName": "All interfaces (0.0.0.0)",
+      "bindAllDesc": "Accept connections from any machine on your network.",
+      "firewallHint": "To allow slaves on other machines to reach this master, pick \"All interfaces\" and ensure your firewall allows inbound traffic on the chosen port."
     },
     "slave": {
-      "title": "连接到您组织的主节点",
-      "subtitle": "向您的 IT 管理员索取主节点 URL 和注册令牌。",
-      "urlLabel": "主节点 URL",
+      "title": "Connect to your organization's master",
+      "subtitle": "Ask your IT admin for the master URL and an enrollment token.",
+      "urlLabel": "Master URL",
       "urlPlaceholder": "https://titanx.mycompany.lan:8888",
-      "urlInvalid": "URL 必须以 http:// 或 https:// 开头",
-      "httpWarning": "未加密 — 仅在受信网络中使用。",
-      "tokenLabel": "注册令牌",
-      "tokenPlaceholder": "粘贴 IT 管理员提供的令牌",
-      "tokenShort": "令牌过短 — 至少 16 个字符。",
-      "skipLater": "稍后再设置",
-      "phaseANote": "注册握手将在下一个 TitanX 版本中启用。目前我们会安全保存这些值。"
+      "urlInvalid": "URL must start with http:// or https://",
+      "httpWarning": "Unencrypted — use only on trusted networks.",
+      "tokenLabel": "Enrollment token",
+      "tokenPlaceholder": "Paste the token from your IT admin",
+      "tokenShort": "Token is too short — minimum 16 characters.",
+      "skipLater": "I'll set this up later",
+      "phaseANote": "Enrollment handshake happens in the next TitanX release. For now, we'll save these values securely."
     }
   },
   "settings": {
-    "sectionTitle": "集群模式",
-    "currentLabel": "当前模式",
-    "changeButton": "更改模式…",
+    "sectionTitle": "Fleet mode",
+    "currentLabel": "Current mode",
+    "changeButton": "Change mode…",
     "changeConfirm": {
-      "title": "切换集群模式？",
-      "body": "更改模式将重启 TitanX。您的团队、对话和本地数据将被保留。",
-      "restartNow": "立即重启",
-      "restartLater": "稍后重启"
+      "title": "Switch fleet mode?",
+      "body": "Changing the mode will restart TitanX. Your teams, conversations, and local data will be preserved.",
+      "restartNow": "Restart now",
+      "restartLater": "I'll restart later"
     }
   },
   "restricted": {
-    "title": "{{feature}} 不可用",
-    "body": "此视图由 IT 管理员管理，不在从节点安装上提供。如需访问请联系您的管理员。"
+    "title": "{{feature}} is not available",
+    "body": "This view is managed by your IT administrator and is not available on slave installs. Contact your admin if you need access."
   },
   "master": {
     "placeholder": {
-      "title": "集群管理",
-      "body": "设备列表、配置同步和集群成本仪表板将在 v1.9.27 中上线。本版本仅提供模式基础设施。"
+      "title": "Fleet management",
+      "body": "Device roster, config sync, and fleet cost dashboards arrive in v1.9.27. This build ships the mode infrastructure only."
+    },
+    "pageTitle": "Fleet",
+    "refresh": "Refresh",
+    "generateToken": "Generate enrollment token",
+    "generateTitle": "Generate enrollment token",
+    "generateHint": "Generates a one-time token an employee pastes into their slave setup wizard. Valid until its expiry or until used.",
+    "ttlLabel": "Valid for (hours)",
+    "noteLabel": "Note (optional)",
+    "notePlaceholder": "e.g. \"engineering laptops batch 1\"",
+    "cancel": "Cancel",
+    "generate": "Generate",
+    "empty": "No devices enrolled yet. Click \"Generate enrollment token\" to onboard the first slave.",
+    "revokeButton": "Revoke",
+    "revokeConfirm": {
+      "title": "Revoke this device?",
+      "body": "The device will be unable to sync with this master until it re-enrolls."
+    },
+    "device": {
+      "revoked": "Device revoked"
+    },
+    "token": {
+      "warning": "Copy this token now — it will NOT be shown again. Give it to the employee along with your master URL.",
+      "expiresAt": "Expires",
+      "copy": "Copy",
+      "copied": "Token copied to clipboard",
+      "copyFailed": "Could not copy token — select and copy manually",
+      "done": "Done"
+    },
+    "table": {
+      "hostname": "Hostname",
+      "status": "Status",
+      "statusOnline": "Online",
+      "statusStale": "Stale",
+      "statusRevoked": "Revoked",
+      "statusNeverSeen": "Never seen",
+      "version": "Version",
+      "os": "OS",
+      "enrolled": "Enrolled",
+      "lastSeen": "Last seen"
     }
+  },
+  "banner": {
+    "offline": {
+      "title": "Not connected to master",
+      "body": "This TitanX install can't reach its master right now. You can keep working — policies remain in effect and changes will sync when the connection recovers."
+    },
+    "revoked": {
+      "title": "This device was removed from the fleet",
+      "body": "Your IT administrator revoked this installation. Contact them to re-enroll, or switch to Regular mode in Settings."
+    },
+    "unenrolled": {
+      "title": "Enrollment incomplete",
+      "body": "This install is configured as a slave but hasn't completed enrollment. Open Settings → System → Fleet mode to connect to your master."
+    },
+    "lastSeen": "Last synced",
+    "errorPrefix": "Error",
+    "never": "never"
   }
 }

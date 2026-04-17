@@ -25,6 +25,7 @@ import {
   validateFleetSetup,
 } from '@process/services/fleet';
 import { getSlaveStatus, onSlaveStatusChanged } from '@process/services/fleetSlave';
+import * as fleetEnrollment from '@process/services/fleetEnrollment';
 import { getDatabase } from '@process/services/database';
 import * as securityFeaturesService from '@process/services/securityFeatures';
 import { logNonCritical } from '@process/utils/logNonCritical';
@@ -112,6 +113,42 @@ export function initFleetBridge(): void {
     } catch (e) {
       logNonCritical('fleet.emit.slave-status', e);
     }
+  });
+
+  // ── Master admin operations (Phase B Week 3) ─────────────────────────
+  // These mirror the HTTP routes at /api/fleet/* so the desktop Fleet
+  // page can use IPC without going through the webserver. Both paths
+  // share the same fleetEnrollment service, so behavior is identical.
+  ipcBridge.fleet.generateEnrollmentToken.provider(async ({ ttlHours, note }) => {
+    const db = await getDatabase();
+    const result = fleetEnrollment.generateEnrollmentToken(db.getDriver(), {
+      issuedBy: 'desktop_admin',
+      ttlHours,
+      note,
+    });
+    return { token: result.token, tokenHash: result.tokenHash, expiresAt: result.expiresAt };
+  });
+
+  ipcBridge.fleet.listDevices.provider(async () => {
+    const db = await getDatabase();
+    const devices = fleetEnrollment.listDevices(db.getDriver()).map((d) => ({
+      deviceId: d.deviceId,
+      hostname: d.hostname,
+      osVersion: d.osVersion,
+      titanxVersion: d.titanxVersion,
+      enrolledAt: d.enrolledAt,
+      lastHeartbeatAt: d.lastHeartbeatAt,
+      status: d.status,
+    }));
+    return { devices };
+  });
+
+  ipcBridge.fleet.revokeDevice.provider(async ({ deviceId }) => {
+    const db = await getDatabase();
+    return fleetEnrollment.revokeDevice(db.getDriver(), {
+      deviceId,
+      revokedBy: 'desktop_admin',
+    });
   });
 }
 
