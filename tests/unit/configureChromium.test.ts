@@ -148,7 +148,12 @@ describe('configureChromium CDP (lightweight mock + file sandbox)', () => {
 
     expect(ctx.mod.cdpStartupEnabled).toBe(false);
     expect(ctx.mod.cdpPort).toBeNull();
-    expect(ctx.appendSwitch).not.toHaveBeenCalled();
+    // CDP-specific flags must NOT be appended. Other switches (e.g. the
+    // process-wide --expose-gc/--max-old-space-size js-flags) are fine.
+    const cdpFlagCalls = ctx.appendSwitch.mock.calls.filter((c: [string, ...unknown[]]) =>
+      c[0].startsWith('remote-debugging-')
+    );
+    expect(cdpFlagCalls).toHaveLength(0);
   });
 
   it('Allows explicit CDP enablement via environment variable in packaged builds', async () => {

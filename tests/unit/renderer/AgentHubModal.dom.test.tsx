@@ -161,6 +161,6 @@ describe('AgentHubModal', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Open a PR on AionHub' }));
 
-    expect(mockOpenExternalUrl).toHaveBeenCalledWith('https://github.com/iOfficeAI/AionHub');
+    expect(mockOpenExternalUrl).toHaveBeenCalledWith('https://github.com/CES-Ltd/TitanX');
   });
 });

@@ -24,6 +24,13 @@ vi.mock('@process/webserver/auth/middleware/TokenMiddleware', () => ({
   TokenMiddleware: {
     validateToken: vi.fn().mockReturnValue((req: any, res: any, next: any) => next()),
   },
+  // Factory added when governance routes gained JSON/HTML auth split —
+  // tests don't exercise real auth, so return a pass-through middleware.
+  createAuthMiddleware: vi.fn().mockReturnValue((req: any, res: any, next: any) => next()),
+  TokenUtils: {
+    extractToken: vi.fn(),
+    verifyToken: vi.fn(),
+  },
 }));
 
 vi.mock('@process/extensions', () => ({
@@ -94,6 +101,10 @@ describe('apiRoutes helper functions', () => {
         use: vi.fn(),
         post: vi.fn(),
         get: vi.fn(),
+        put: vi.fn(),
+        patch: vi.fn(),
+        delete: vi.fn(),
+        options: vi.fn(),
       } as unknown as Express;
 
       // This triggers the registerApiRoutes which uses normalizeMountPath
@@ -107,6 +118,10 @@ describe('apiRoutes helper functions', () => {
         use: vi.fn(),
         post: vi.fn(),
         get: vi.fn(),
+        put: vi.fn(),
+        patch: vi.fn(),
+        delete: vi.fn(),
+        options: vi.fn(),
       } as unknown as Express;
 
       // This triggers code paths that use isPathInsideRoot
@@ -124,6 +139,10 @@ describe('apiRoutes - sanitizeFileName edge cases', () => {
         // Store the handlers for testing
       }),
       get: vi.fn(),
+      put: vi.fn(),
+      patch: vi.fn(),
+      delete: vi.fn(),
+      options: vi.fn(),
     } as unknown as Express;
 
     registerApiRoutes(app);

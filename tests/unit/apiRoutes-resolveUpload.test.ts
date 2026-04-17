@@ -24,6 +24,11 @@ vi.mock('@process/webserver/auth/middleware/TokenMiddleware', () => ({
   TokenMiddleware: {
     validateToken: vi.fn().mockReturnValue((req: any, res: any, next: any) => next()),
   },
+  createAuthMiddleware: vi.fn().mockReturnValue((req: any, res: any, next: any) => next()),
+  TokenUtils: {
+    extractToken: vi.fn(),
+    verifyToken: vi.fn(),
+  },
 }));
 
 // Import actual functions after mocks

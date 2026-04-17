@@ -53,24 +53,16 @@ describe('resolveConversationType', () => {
 // isTeamSupportedBackend — the gate that decides MCP injection eligibility
 // ---------------------------------------------------------------------------
 describe('isTeamSupportedBackend', () => {
-  it.each(['claude', 'codex'])('allows verified backend "%s"', (backend) => {
+  it.each(['claude', 'codex', 'opencode', 'gemini', 'hermes'])('allows verified backend "%s"', (backend) => {
     expect(isTeamSupportedBackend(backend)).toBe(true);
   });
 
-  it.each([
-    'gemini',
-    'aionrs',
-    'openclaw-gateway',
-    'nanobot',
-    'remote',
-    'qwen',
-    'copilot',
-    'kimi',
-    'goose',
-    'codebuddy',
-  ])('rejects unverified backend "%s"', (backend) => {
-    expect(isTeamSupportedBackend(backend)).toBe(false);
-  });
+  it.each(['aionrs', 'openclaw-gateway', 'nanobot', 'remote', 'qwen', 'copilot', 'kimi', 'goose', 'codebuddy'])(
+    'rejects unverified backend "%s"',
+    (backend) => {
+      expect(isTeamSupportedBackend(backend)).toBe(false);
+    }
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -94,17 +86,18 @@ describe('filterTeamSupportedAgents', () => {
       makeAgent('codebuddy'),
     ];
     const result = filterTeamSupportedAgents(agents);
-    expect(result.map((a: AvailableAgent) => a.backend)).toEqual(['claude', 'codex']);
+    expect(result.map((a: AvailableAgent) => a.backend)).toEqual(['claude', 'gemini', 'codex']);
   });
 
   it('uses presetAgentType over backend when available', () => {
-    const agent = makeAgent('claude', { presetAgentType: 'gemini' });
+    // presetAgentType 'qwen' is unverified even though the host backend 'claude' is verified
+    const agent = makeAgent('claude', { presetAgentType: 'qwen' });
     const result = filterTeamSupportedAgents([agent]);
     expect(result).toHaveLength(0);
   });
 
   it('returns empty array when no agents are supported', () => {
-    const agents = [makeAgent('gemini'), makeAgent('remote'), makeAgent('qwen')];
+    const agents = [makeAgent('aionrs'), makeAgent('remote'), makeAgent('qwen')];
     expect(filterTeamSupportedAgents(agents)).toEqual([]);
   });
 
@@ -177,8 +170,10 @@ describe('MCP injection chain consistency', () => {
     }
   });
 
-  it('TEAM_SUPPORTED_BACKENDS contains exactly claude, codex', () => {
-    expect([...TEAM_SUPPORTED_BACKENDS].toSorted()).toEqual(['claude', 'codex']);
+  it('TEAM_SUPPORTED_BACKENDS contains the full verified set', () => {
+    // Verified backends must each resolve to a MCP-capable conversationType.
+    // See the `every verified backend must resolve to a MCP_CAPABLE_TYPE` test above.
+    expect([...TEAM_SUPPORTED_BACKENDS].toSorted()).toEqual(['claude', 'codex', 'gemini', 'hermes', 'opencode']);
   });
 
   it('MCP_CAPABLE_TYPES contains "acp" — the core team protocol', () => {
