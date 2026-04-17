@@ -2,6 +2,7 @@
 
 Thank you for your interest in contributing to TitanX! This document provides guidelines for contributing.
 
+
 ## Getting Started
 
 1. Fork the repository
