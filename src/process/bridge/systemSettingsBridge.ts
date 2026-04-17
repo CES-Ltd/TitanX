@@ -214,8 +214,15 @@ export function initSystemSettingsBridge(): void {
   });
 
   ipcBridge.systemSettings.getCommandQueueEnabled.provider(async () => {
+    // Default ON: queueing messages while an agent turn is in progress is
+    // the expected UX for a multi-agent platform. Users who prefer the
+    // strict "block send while busy" behavior can toggle it off in
+    // Settings → System → "Enable command queue". Before v1.9.25 this
+    // defaulted to off, which caused typed messages to be rejected with
+    // a warning — surprisingly for team chats where follow-up direction
+    // during a long turn is a common pattern.
     const value = await ProcessConfig.get('system.commandQueueEnabled');
-    return value ?? false;
+    return value ?? true;
   });
 
   ipcBridge.systemSettings.setCommandQueueEnabled.provider(async ({ enabled }) => {

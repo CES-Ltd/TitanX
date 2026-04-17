@@ -155,4 +155,24 @@ describe('systemSettingsBridge', () => {
       expect(await handler!()).toBe(false);
     });
   });
+
+  describe('getCommandQueueEnabled', () => {
+    it('defaults to true (v1.9.25+) so typed messages queue instead of being rejected during a busy turn', async () => {
+      mockProcessConfig.get.mockResolvedValue(undefined);
+      const handler = providerMap.get('systemSettings.getCommandQueueEnabled');
+      expect(await handler!()).toBe(true);
+    });
+
+    it('honors an explicitly-disabled stored value (user opted out in Settings)', async () => {
+      mockProcessConfig.get.mockResolvedValue(false);
+      const handler = providerMap.get('systemSettings.getCommandQueueEnabled');
+      expect(await handler!()).toBe(false);
+    });
+
+    it('honors an explicitly-enabled stored value', async () => {
+      mockProcessConfig.get.mockResolvedValue(true);
+      const handler = providerMap.get('systemSettings.getCommandQueueEnabled');
+      expect(await handler!()).toBe(true);
+    });
+  });
 });
