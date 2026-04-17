@@ -6,6 +6,8 @@
 import type { ISqliteDriver } from '../database/drivers/ISqliteDriver';
 import { logActivity } from '../activityLog';
 import { startSpan, getCounter } from '../telemetry';
+import { bumpConfigVersion } from '../fleetConfig';
+import { logNonCritical } from '@process/utils/logNonCritical';
 
 export type SecurityFeature =
   | 'network_policies'
@@ -72,6 +74,14 @@ export function setToggle(db: ISqliteDriver, feature: SecurityFeature, enabled: 
     feature,
     action: enabled ? 'enabled' : 'disabled',
   });
+
+  // Fleet config bump — security features are part of the master->slave
+  // config bundle, so any toggle needs to invalidate slave caches.
+  try {
+    bumpConfigVersion(db, { reason: 'security_feature.toggle', updatedBy: 'system_default_user', entityId: feature });
+  } catch (e) {
+    logNonCritical('fleet.config.bump.security_feature', e);
+  }
 
   span.setStatus('ok');
   span.end();

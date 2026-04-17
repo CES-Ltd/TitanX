@@ -54,7 +54,11 @@ function makeRecordingDriver(
     exec: (sql: string) => {
       captured.execs.push(sql);
     },
-    pragma: vi.fn(),
+    // Default pragma() returns [] so table_info queries don't explode when
+    // a migration uses ALTER+pragma to detect pre-existing columns. Tests
+    // that need specific column lists can override via makeRecordingDriver
+    // callsite — but v63's ALTER-if-missing is happy with empty.
+    pragma: vi.fn(() => [] as unknown),
     transaction: vi.fn(),
     close: vi.fn(),
   };
@@ -282,6 +286,103 @@ describe('Database migrations', () => {
       expect(joined).toContain('DROP TABLE IF EXISTS fleet_enrollments');
       expect(joined).toContain('DROP TABLE IF EXISTS fleet_enrollment_tokens');
       expect(joined).toContain('DROP INDEX IF EXISTS idx_fleet_enrollments_status');
+    });
+  });
+
+  describe('migration v62 — fleet_config_version + managed_config_keys', () => {
+    const v62 = ALL_MIGRATIONS.find((m) => m.version === 62);
+
+    it('creates fleet_config_version as a singleton table', () => {
+      expect(v62).toBeDefined();
+      const { driver, captured } = makeRecordingDriver();
+      v62!.up(driver);
+      const joined = captured.execs.join('\n');
+      expect(joined).toContain('CREATE TABLE IF NOT EXISTS fleet_config_version');
+      expect(joined).toContain('id INTEGER PRIMARY KEY CHECK (id = 1)');
+      expect(joined).toContain('version INTEGER NOT NULL DEFAULT 0');
+    });
+
+    it('seeds the singleton row with version 0', () => {
+      const { driver, captured } = makeRecordingDriver();
+      v62!.up(driver);
+      const seed = captured.runs.find((r) => r.sql.includes('INSERT OR IGNORE INTO fleet_config_version'));
+      expect(seed).toBeDefined();
+    });
+
+    it('creates managed_config_keys with source + version tracking', () => {
+      const { driver, captured } = makeRecordingDriver();
+      v62!.up(driver);
+      const joined = captured.execs.join('\n');
+      expect(joined).toContain('CREATE TABLE IF NOT EXISTS managed_config_keys');
+      expect(joined).toContain('key TEXT PRIMARY KEY');
+      expect(joined).toContain('managed_by_version INTEGER NOT NULL');
+      expect(joined).toContain('previous_value TEXT');
+      expect(joined).toContain('idx_managed_config_keys_version');
+    });
+
+    it('down() drops both tables + index', () => {
+      const { driver, captured } = makeRecordingDriver();
+      v62!.down(driver);
+      const joined = captured.execs.join('\n');
+      expect(joined).toContain('DROP TABLE IF EXISTS fleet_config_version');
+      expect(joined).toContain('DROP TABLE IF EXISTS managed_config_keys');
+      expect(joined).toContain('DROP INDEX IF EXISTS idx_managed_config_keys_version');
+    });
+  });
+
+  describe('migration v63 — source + managed_by_version columns', () => {
+    const v63 = ALL_MIGRATIONS.find((m) => m.version === 63);
+
+    it('adds source + managed_by_version to iam_policies when missing', () => {
+      expect(v63).toBeDefined();
+      const { driver, captured } = makeRecordingDriver();
+      v63!.up(driver);
+      const joined = captured.execs.join('\n');
+      expect(joined).toContain("ALTER TABLE iam_policies ADD COLUMN source TEXT NOT NULL DEFAULT 'local'");
+      expect(joined).toContain('ALTER TABLE iam_policies ADD COLUMN managed_by_version INTEGER');
+    });
+
+    it('adds source + managed_by_version to security_feature_toggles', () => {
+      const { driver, captured } = makeRecordingDriver();
+      v63!.up(driver);
+      const joined = captured.execs.join('\n');
+      expect(joined).toContain("ALTER TABLE security_feature_toggles ADD COLUMN source TEXT NOT NULL DEFAULT 'local'");
+      expect(joined).toContain('ALTER TABLE security_feature_toggles ADD COLUMN managed_by_version INTEGER');
+    });
+
+    it('skips ALTER when column already exists (pragma detection)', () => {
+      // Simulate both columns already present → no ALTER statements
+      const driver = {
+        prepare: () => ({ run: () => ({ changes: 0, lastInsertRowid: 0 }), all: () => [], get: () => undefined }),
+        exec: (() => {
+          const execs: string[] = [];
+          const fn = (sql: string): void => {
+            execs.push(sql);
+          };
+          (fn as unknown as { _execs: string[] })._execs = execs;
+          return fn;
+        })(),
+        pragma: (q: string) => {
+          if (q.includes('iam_policies')) {
+            return [{ name: 'source' }, { name: 'managed_by_version' }, { name: 'id' }];
+          }
+          if (q.includes('security_feature_toggles')) {
+            return [{ name: 'source' }, { name: 'managed_by_version' }, { name: 'feature' }];
+          }
+          return [];
+        },
+        transaction: () => () => {},
+        close: () => {},
+      } as unknown as Parameters<typeof v63.up>[0];
+      v63!.up(driver);
+      const execs = (driver.exec as unknown as { _execs: string[] })._execs;
+      // No ALTERs because both columns already present
+      expect(execs.filter((s) => s.startsWith('ALTER'))).toHaveLength(0);
+    });
+
+    it('down() is a no-op that just logs a warning (SQLite limitation)', () => {
+      const { driver } = makeRecordingDriver();
+      expect(() => v63!.down(driver)).not.toThrow();
     });
   });
 });

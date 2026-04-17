@@ -6,6 +6,23 @@
 import crypto from 'crypto';
 import type { ISqliteDriver } from '../database/drivers/ISqliteDriver';
 import { logActivity } from '../activityLog';
+import { bumpConfigVersion } from '../fleetConfig';
+import { logNonCritical } from '@process/utils/logNonCritical';
+
+/** Bump the fleet config version for a governed mutation. Fire-and-forget —
+ *  fleet version bump is an observability concern, not a critical path. */
+function bumpFleetVersion(
+  db: ISqliteDriver,
+  reason: 'iam.policy.created' | 'iam.policy.deleted' | 'iam.policy.bound' | 'iam.policy.unbound',
+  updatedBy: string,
+  entityId?: string
+): void {
+  try {
+    bumpConfigVersion(db, { reason, updatedBy, entityId });
+  } catch (e) {
+    logNonCritical(`fleet.config.bump.${reason}`, e);
+  }
+}
 
 export type IAMPolicy = {
   id: string;
@@ -79,6 +96,9 @@ export function createPolicy(
     details: { name: input.name, ttlSeconds: input.ttlSeconds, agentCount: policy.agentIds.length },
   });
 
+  // Fleet config version bump — any IAM policy change is a delta slaves need.
+  bumpFleetVersion(db, 'iam.policy.created', input.userId, id);
+
   return policy;
 }
 
@@ -123,6 +143,7 @@ export function deletePolicy(db: ISqliteDriver, policyId: string, userId?: strin
       entityType: 'iam_policy',
       entityId: policyId,
     });
+    bumpFleetVersion(db, 'iam.policy.deleted', userId ?? 'system', policyId);
   }
   return deleted;
 }
@@ -150,6 +171,7 @@ export function bindPolicy(
     entityId: id,
     details: { agentGalleryId, policyId, ttlSeconds, expiresAt },
   });
+  bumpFleetVersion(db, 'iam.policy.bound', 'iam_service', id);
 
   return { id, agentGalleryId, policyId, expiresAt, createdAt: now };
 }
@@ -184,6 +206,7 @@ export function unbindPolicy(db: ISqliteDriver, bindingId: string): boolean {
       entityType: 'agent_policy_binding',
       entityId: bindingId,
     });
+    bumpFleetVersion(db, 'iam.policy.unbound', 'iam_service', bindingId);
   }
   return deleted;
 }

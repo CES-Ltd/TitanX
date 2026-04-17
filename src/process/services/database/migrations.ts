@@ -2438,6 +2438,84 @@ const migration_v61: IMigration = {
   },
 };
 
+// ── Phase 18 (v1.9.28): fleet config sync version + managed-key tracking ──
+
+const migration_v62: IMigration = {
+  version: 62,
+  name: 'Create fleet_config_version + managed_config_keys for Phase C config sync',
+  up(db: ISqliteDriver) {
+    // Monotonic version number that bumps on every mutation to a
+    // master-controlled table (iam_policies + security_feature_toggles
+    // today; agent_gallery + managed settings in Phase E). Slaves pull
+    // the full bundle when their local version < master version.
+    //
+    // Singleton row pattern: id is hardcoded to 1 via CHECK so we
+    // can't accidentally end up with multiple version rows.
+    db.exec(`CREATE TABLE IF NOT EXISTS fleet_config_version (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      version INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL,
+      updated_by TEXT
+    )`);
+    db.prepare(
+      'INSERT OR IGNORE INTO fleet_config_version (id, version, updated_at, updated_by) VALUES (1, 0, ?, ?)'
+    ).run(Date.now(), 'system');
+
+    // Slave-side inventory of which ProcessConfig keys are currently
+    // under master control. The UI renders these with a lock icon +
+    // "Controlled by IT" tooltip; the IPC layer blocks local writes
+    // to any key listed here.
+    //
+    // `previous_value` retains the user's pre-managed setting as a
+    // JSON blob so we can restore it if the slave unenrolls cleanly.
+    db.exec(`CREATE TABLE IF NOT EXISTS managed_config_keys (
+      key TEXT PRIMARY KEY,
+      source TEXT NOT NULL DEFAULT 'master',
+      managed_by_version INTEGER NOT NULL,
+      applied_at INTEGER NOT NULL,
+      previous_value TEXT
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_managed_config_keys_version ON managed_config_keys(managed_by_version)');
+
+    console.log('[Migration-v62] Created fleet_config_version + managed_config_keys');
+  },
+  down(db: ISqliteDriver) {
+    db.exec('DROP INDEX IF EXISTS idx_managed_config_keys_version');
+    db.exec('DROP TABLE IF EXISTS managed_config_keys');
+    db.exec('DROP TABLE IF EXISTS fleet_config_version');
+  },
+};
+
+const migration_v63: IMigration = {
+  version: 63,
+  name: 'Add source + managed_by_version columns to iam_policies and security_feature_toggles',
+  up(db: ISqliteDriver) {
+    // source = 'local' means user-created on this machine
+    // source = 'master' means pushed from master (slave-side after sync)
+    // source = 'builtin' means seeded by migration (e.g. default feature flags)
+    const addIfMissing = (table: string, column: string, decl: string): void => {
+      const cols = new Set((db.pragma(`table_info(${table})`) as Array<{ name: string }>).map((c) => c.name));
+      if (!cols.has(column)) {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
+      }
+    };
+
+    addIfMissing('iam_policies', 'source', "TEXT NOT NULL DEFAULT 'local'");
+    addIfMissing('iam_policies', 'managed_by_version', 'INTEGER');
+
+    addIfMissing('security_feature_toggles', 'source', "TEXT NOT NULL DEFAULT 'local'");
+    addIfMissing('security_feature_toggles', 'managed_by_version', 'INTEGER');
+
+    console.log('[Migration-v63] Added source + managed_by_version to iam_policies + security_feature_toggles');
+  },
+  down(_db: ISqliteDriver) {
+    // SQLite pre-3.35 doesn't support DROP COLUMN cleanly; leave the
+    // columns behind on downgrade (same approach as v56). They're
+    // NULL-safe and don't affect pre-Phase-C code.
+    console.warn('[Migration-v63] Rollback: columns remain (SQLite limitation)');
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -2451,7 +2529,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v40, migration_v41, migration_v42, migration_v43, migration_v44,
   migration_v45, migration_v46, migration_v47, migration_v48, migration_v49, migration_v50, migration_v51, migration_v52, migration_v53,
   migration_v54, migration_v55, migration_v56, migration_v57, migration_v58, migration_v59,
-  migration_v60, migration_v61,
+  migration_v60, migration_v61, migration_v62, migration_v63,
 ];
 
 /**
