@@ -323,20 +323,20 @@ https://github.com/CES-Ltd/TitanX/raw/main/docs/screenshots/demo-security.mp4
 
 ## 🛠 Tech Stack
 
-| Layer                  | Technology                                                                        |
-| ---------------------- | --------------------------------------------------------------------------------- |
-| **Desktop**            | Electron 37                                                                       |
-| **Frontend**           | React 19, TypeScript (strict), Arco Design, UnoCSS                                |
-| **Database**           | SQLite (better-sqlite3) with WAL mode, **58 migrations**, auto-pruning            |
-| **IPC**                | Custom bridge pattern (`@office-ai/platform`) — 66 IPC channels + whitelist       |
+| Layer                  | Technology                                                                                           |
+| ---------------------- | ---------------------------------------------------------------------------------------------------- |
+| **Desktop**            | Electron 37                                                                                          |
+| **Frontend**           | React 19, TypeScript (strict), Arco Design, UnoCSS                                                   |
+| **Database**           | SQLite (better-sqlite3) with WAL mode, **58 migrations**, auto-pruning                               |
+| **IPC**                | Custom bridge pattern (`@office-ai/platform`) — 66 IPC channels + whitelist                          |
 | **Security**           | AES-256-GCM, SHA-256 tokens, HMAC-SHA256 + Ed25519 device signatures, workspace isolation, CSRF gate |
-| **Observability**      | OpenTelemetry (OTLP/Console), LangSmith-compatible traces                         |
-| **AI Providers**       | 20+ LLM providers (Claude, GPT, Gemini, Codex, OpenCode, Hermes, Ollama, etc.)    |
-| **Workflow Engine**    | n8n-inspired DAG execution with topological sort, retry, error routing            |
-| **Agent Intelligence** | LangChain memory, DeepAgents planning, reflection, structured output              |
-| **Deep Agent**         | LangGraph JS, AG-UI protocol, Chart.js inline visuals, HITL, smart data detection |
-| **Testing**            | Vitest 4, 310+ test files, 80% coverage target                                    |
-| **Package Manager**    | Bun                                                                               |
+| **Observability**      | OpenTelemetry (OTLP/Console), LangSmith-compatible traces                                            |
+| **AI Providers**       | 20+ LLM providers (Claude, GPT, Gemini, Codex, OpenCode, Hermes, Ollama, etc.)                       |
+| **Workflow Engine**    | n8n-inspired DAG execution with topological sort, retry, error routing                               |
+| **Agent Intelligence** | LangChain memory, DeepAgents planning, reflection, structured output                                 |
+| **Deep Agent**         | LangGraph JS, AG-UI protocol, Chart.js inline visuals, HITL, smart data detection                    |
+| **Testing**            | Vitest 4, 310+ test files, 80% coverage target                                                       |
+| **Package Manager**    | Bun                                                                                                  |
 
 ---
 

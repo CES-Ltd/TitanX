@@ -28,6 +28,18 @@ import type { WorkflowDefinition } from '@process/services/workflows/types';
 
 type SpawnAgentFn = (agentName: string, agentType?: string) => Promise<TeamAgent>;
 
+/**
+ * Gate verbose team-orchestration logs behind an env flag. With 20+ agents
+ * running continuously, the wake()/handleResponseStream() hot paths emit
+ * ~40+ log lines per minute each — burying real warnings in noise and adding
+ * measurable logger I/O overhead. Warnings and errors remain unconditional.
+ * Enable with: DEBUG_TEAM=1
+ */
+const DEBUG_TEAM = process.env.DEBUG_TEAM === '1' || process.env.DEBUG_TEAM === 'true';
+function debugTeam(...args: unknown[]): void {
+  if (DEBUG_TEAM) console.log(...(args as [unknown, ...unknown[]]));
+}
+
 /** Conversation types whose AgentManager supports MCP server injection via session/new */
 // All ACP-compatible backends support MCP tool injection
 export const MCP_CAPABLE_TYPES = new Set(['acp', 'gemini']);
@@ -147,7 +159,7 @@ export class TeammateManager extends EventEmitter {
   private agentHasMcpTools(agent: TeamAgent): boolean {
     const result = this.mcpServerStarted && MCP_CAPABLE_TYPES.has(agent.conversationType);
     if (!result && this.mcpServerStarted) {
-      console.log(
+      debugTeam(
         `[TeammateManager] agentHasMcpTools(${agent.agentName}): false — conversationType="${agent.conversationType}" not in MCP_CAPABLE_TYPES`
       );
     }
@@ -215,7 +227,7 @@ export class TeammateManager extends EventEmitter {
     const agent = this.agents.find((a) => a.slotId === slotId);
     if (!agent) return;
 
-    console.log(`[TeammateManager] wake(${agent.agentName}): status=${agent.status}, proceeding`);
+    debugTeam(`[TeammateManager] wake(${agent.agentName}): status=${agent.status}, proceeding`);
 
     // Audit log: heartbeat wake
     void (async () => {
@@ -245,7 +257,7 @@ export class TeammateManager extends EventEmitter {
       this.setStatus(slotId, 'active');
 
       const hasMcp = this.agentHasMcpTools(agent);
-      console.log(
+      debugTeam(
         `[TeammateManager] Building payload for ${agent.agentName}: hasMcpTools=${String(hasMcp)} mcpServerStarted=${String(this.mcpServerStarted)} conversationType=${agent.conversationType}`
       );
       const adapter = createPlatformAdapter(agent.conversationType, hasMcp);
@@ -483,7 +495,7 @@ export class TeammateManager extends EventEmitter {
 
       if (toolName.startsWith('team_') && toolStatus === 'completed') {
         const toolResult = toolData?.result ?? toolData?.output ?? toolData?.content;
-        console.log(`[TeammateManager] ✓ MCP tool call intercepted: ${toolName} from ${agent.agentName}`);
+        debugTeam(`[TeammateManager] ✓ MCP tool call intercepted: ${toolName} from ${agent.agentName}`);
 
         // Parse the tool result and execute as a team action
         void this.handleMcpToolCall(
@@ -495,7 +507,7 @@ export class TeammateManager extends EventEmitter {
           console.error(`[TeammateManager] MCP tool call handling failed for ${toolName}:`, err);
         });
       } else if (toolName.startsWith('team_') && toolStatus === 'running') {
-        console.log(`[TeammateManager] MCP tool call started: ${toolName} from ${agent.agentName}`);
+        debugTeam(`[TeammateManager] MCP tool call started: ${toolName} from ${agent.agentName}`);
       }
     }
 
@@ -528,7 +540,7 @@ export class TeammateManager extends EventEmitter {
         const owner = args.owner ? String(args.owner) : undefined;
         if (!subject) break;
 
-        console.log(
+        debugTeam(
           `[TeammateManager] MCP team_task_create: "${subject}" owner=${owner ?? 'unassigned'} from=${agent.agentName}`
         );
         const task = await this.taskManager.create({
@@ -537,13 +549,13 @@ export class TeammateManager extends EventEmitter {
           description,
           owner,
         });
-        console.log(`[TeammateManager] ✓ Sprint task created via MCP: ${task.id}`);
+        debugTeam(`[TeammateManager] ✓ Sprint task created via MCP: ${task.id}`);
 
         // Auto-wake the assigned agent
         if (owner) {
           const assignee = this.agents.find((a) => a.agentName.toLowerCase().includes(owner.toLowerCase()));
           if (assignee) {
-            console.log(`[TeammateManager] Auto-waking ${assignee.agentName} for new task`);
+            debugTeam(`[TeammateManager] Auto-waking ${assignee.agentName} for new task`);
             void this.wake(assignee.slotId);
           }
         }
@@ -555,7 +567,7 @@ export class TeammateManager extends EventEmitter {
         const status = String(args.status ?? '');
         if (!taskId || !status) break;
 
-        console.log(`[TeammateManager] MCP team_task_update: ${taskId} → ${status}`);
+        debugTeam(`[TeammateManager] MCP team_task_update: ${taskId} → ${status}`);
         try {
           const existing = driver.prepare('SELECT id FROM sprint_tasks WHERE id = ?').get(taskId) as
             | { id: string }
@@ -564,7 +576,7 @@ export class TeammateManager extends EventEmitter {
             sprintService.updateTask(driver, taskId, {
               status: status as import('@process/services/sprintTasks').SprintTaskStatus,
             });
-            console.log(`[TeammateManager] ✓ Sprint task updated via MCP: ${taskId} → ${status}`);
+            debugTeam(`[TeammateManager] ✓ Sprint task updated via MCP: ${taskId} → ${status}`);
           }
         } catch (err) {
           console.error(`[TeammateManager] Sprint task update failed:`, err);
@@ -577,7 +589,7 @@ export class TeammateManager extends EventEmitter {
         const content = String(args.content ?? args.message ?? '');
         if (!to || !content) break;
 
-        console.log(`[TeammateManager] MCP team_send_message: ${agent.agentName} → ${to}`);
+        debugTeam(`[TeammateManager] MCP team_send_message: ${agent.agentName} → ${to}`);
         const targetAgent = this.agents.find((a) => a.agentName.toLowerCase().includes(to.toLowerCase()) || to === '*');
         if (targetAgent || to === '*') {
           const targets = to === '*' ? this.agents.filter((a) => a.slotId !== agent.slotId) : [targetAgent!];
@@ -596,7 +608,7 @@ export class TeammateManager extends EventEmitter {
       }
 
       default:
-        console.log(`[TeammateManager] MCP tool call not handled: ${toolName}`);
+        debugTeam(`[TeammateManager] MCP tool call not handled: ${toolName}`);
         break;
     }
 
@@ -641,7 +653,7 @@ export class TeammateManager extends EventEmitter {
     // Process pending wake queue — if someone tried to wake this agent while it was busy
     if (this.pendingWakes.has(agent.slotId)) {
       this.pendingWakes.delete(agent.slotId);
-      console.log(`[TeammateManager] Processing queued wake for ${agent.agentName} (was busy during previous request)`);
+      debugTeam(`[TeammateManager] Processing queued wake for ${agent.agentName} (was busy during previous request)`);
       // Audit log: deferred wake processed
       void (async () => {
         try {
@@ -892,7 +904,7 @@ export class TeammateManager extends EventEmitter {
 
     // Record cost event and audit log for this turn
     try {
-      console.log(
+      debugTeam(
         `[TeammateManager] Recording cost + audit for agent ${agent.agentName} (${agent.slotId}), text length: ${accumulatedText.length}`
       );
       const db = await getDatabase();
@@ -929,7 +941,7 @@ export class TeammateManager extends EventEmitter {
           outputTokensEstimate: estimatedOutputTokens,
         },
       });
-      console.log(`[TeammateManager] ✓ Cost + audit recorded for ${agent.agentName}`);
+      debugTeam(`[TeammateManager] ✓ Cost + audit recorded for ${agent.agentName}`);
 
       // ── Agent Memory: store turn content as buffer memory ──
       if (securityFeaturesService.isFeatureEnabled(driver, 'agent_memory') && accumulatedText.length > 0) {
@@ -1003,7 +1015,7 @@ export class TeammateManager extends EventEmitter {
             (t.owner === agent.agentName || t.owner === agent.slotId)
         );
         if (hasInProgressTasks) {
-          console.log(`[TeammateManager] ${agent.agentName} still has in_progress tasks — auto-re-waking in 2s`);
+          debugTeam(`[TeammateManager] ${agent.agentName} still has in_progress tasks — auto-re-waking in 2s`);
           setTimeout(() => {
             void this.wake(agent.slotId).catch(() => {
               /* non-critical — leader will re-delegate if needed */
@@ -1248,7 +1260,7 @@ export class TeammateManager extends EventEmitter {
     const allSettled = nonLeadAgents.every(
       (a) => a.status === 'idle' || a.status === 'completed' || a.status === 'failed' || a.status === 'pending'
     );
-    console.log(
+    debugTeam(
       `[TeammateManager] maybeWakeLeaderWhenAllIdle: ${nonLeadAgents.map((a) => `${a.agentName}:${a.status}`).join(', ')} → ${allSettled ? 'WAKE' : 'SKIP'}`
     );
     if (allSettled) {

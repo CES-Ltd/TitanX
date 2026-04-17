@@ -28,6 +28,8 @@
 
 import { parentPort, workerData } from 'worker_threads';
 import * as path from 'path';
+import * as fs from 'fs';
+import { createRequire } from 'node:module';
 import type { SandboxMessage } from './sandbox';
 import { hasSandboxStoragePermission } from './permissions';
 
@@ -215,14 +217,25 @@ function cleanup(): void {
 try {
   const entryPath = path.resolve(config.extensionDir, config.entryPoint);
 
+  // Security: resolved entryPath must live under the declared extension directory.
+  // Reject symlink escapes and path traversal even if caller didn't pre-validate.
+  const resolvedExt = fs.realpathSync(path.resolve(config.extensionDir));
+  const resolvedEntry = fs.realpathSync(entryPath);
+  const rel = path.relative(resolvedExt, resolvedEntry);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new Error(
+      `Sandbox refused to load entryPoint outside extension dir: entry=${resolvedEntry} ext=${resolvedExt}`
+    );
+  }
+
   // Override console in the worker
   (globalThis as any).console = sandboxConsole;
   // Expose aion proxy
   (globalThis as any).aion = aionProxy;
 
-  // eslint-disable-next-line no-eval
-  const nativeRequire = eval('require');
-  extensionModule = nativeRequire(entryPath);
+  // createRequire bound to the extension's package.json — safer than eval('require').
+  const extRequire = createRequire(path.join(resolvedExt, 'package.json'));
+  extensionModule = extRequire(resolvedEntry);
 
   const mod = extensionModule as Record<string, unknown>;
 

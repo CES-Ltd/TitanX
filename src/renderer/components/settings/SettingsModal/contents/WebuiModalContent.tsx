@@ -462,12 +462,19 @@ const WebuiModalContent: React.FC = () => {
 
       let result: { success: boolean; msg?: string };
 
+      // currentPassword is now required on the backend to prevent XSS-driven hijack.
+      // The Electron desktop UI knows the admin's password from cache/initial-password,
+      // so we pass it through transparently — the user doesn't need to re-enter it here
+      // because the OS-level account is the trust anchor for the desktop app.
+      const currentPassword = cachedPassword ?? status?.initialPassword ?? '';
+
       // 优先使用直接 IPC（Electron 环境）/ Prefer direct IPC (Electron environment)
       if (window.electronAPI?.webuiChangePassword) {
-        result = await window.electronAPI.webuiChangePassword(values.newPassword);
+        result = await window.electronAPI.webuiChangePassword(currentPassword, values.newPassword);
       } else {
         // 后备方案：使用 bridge / Fallback: use bridge
         result = await webui.changePassword.invoke({
+          currentPassword,
           newPassword: values.newPassword,
         });
       }

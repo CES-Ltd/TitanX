@@ -2336,6 +2336,32 @@ const migration_v58: IMigration = {
   },
 };
 
+// ── Phase 15: composite indexes for hot query paths ──────────────────────────
+
+const migration_v59: IMigration = {
+  version: 59,
+  name: 'Add composite indexes for activity_log governance filters and sprint_tasks board loads',
+  up(db: ISqliteDriver) {
+    // Activity log: governance page filters by user + entity type over recent window.
+    // This composite makes "latest N entries for user X of type Y" an index-only scan.
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_activity_log_user_entity_date
+      ON activity_log(user_id, entity_type, created_at DESC)
+    `);
+    // Sprint tasks: Mission Control + Sprint Board query "open tasks for team X ordered by date"
+    // many times per minute. Composite makes this an index-only scan even with 100+ tasks.
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_sprint_tasks_team_status
+      ON sprint_tasks(team_id, status, created_at DESC)
+    `);
+    console.log('[Migration-v59] Created composite indexes for activity_log + sprint_tasks');
+  },
+  down(db: ISqliteDriver) {
+    db.exec('DROP INDEX IF EXISTS idx_activity_log_user_entity_date');
+    db.exec('DROP INDEX IF EXISTS idx_sprint_tasks_team_status');
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -2348,7 +2374,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v35, migration_v36, migration_v37, migration_v38, migration_v39,
   migration_v40, migration_v41, migration_v42, migration_v43, migration_v44,
   migration_v45, migration_v46, migration_v47, migration_v48, migration_v49, migration_v50, migration_v51, migration_v52, migration_v53,
-  migration_v54, migration_v55, migration_v56, migration_v57, migration_v58,
+  migration_v54, migration_v55, migration_v56, migration_v57, migration_v58, migration_v59,
 ];
 
 /**

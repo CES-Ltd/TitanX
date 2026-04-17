@@ -17,6 +17,9 @@
  */
 
 import { spawn } from 'child_process';
+import { createRequire } from 'node:module';
+import * as path from 'node:path';
+import * as fs from 'node:fs';
 
 interface RunRequest {
   type: 'script' | 'shell';
@@ -35,25 +38,68 @@ interface RunRequest {
 
 /**
  * Allowed CLI commands for shell-type lifecycle hooks.
- * Only whitelisted commands can be executed to prevent arbitrary code execution.
+ * Commands must be invoked by bare basename (e.g. 'bun', 'bunx') — absolute
+ * paths are rejected to prevent bypass via `/tmp/attacker/bun`.
  */
 const ALLOWED_SHELL_COMMANDS = new Set(['bun', 'bunx']);
+
+/**
+ * Security: extension-script loading guard.
+ * Rejects any path containing ..-segments, non-absolute paths, or paths
+ * that after resolution escape the declared extensionDir.
+ */
+function assertScriptPathInsideExtension(scriptPath: string, extensionDir: string): string {
+  if (!scriptPath || typeof scriptPath !== 'string') {
+    throw new Error('Invalid scriptPath');
+  }
+  if (scriptPath.includes('\0')) {
+    throw new Error('scriptPath contains null byte');
+  }
+  if (scriptPath.split(path.sep).includes('..') || scriptPath.split('/').includes('..')) {
+    throw new Error('scriptPath contains parent-directory segment');
+  }
+  const resolvedExt = fs.realpathSync(path.resolve(extensionDir));
+  const resolvedScript = fs.realpathSync(path.resolve(scriptPath));
+  const rel = path.relative(resolvedExt, resolvedScript);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new Error(
+      `Refusing to load script outside its extension directory: script=${resolvedScript} extension=${resolvedExt}`
+    );
+  }
+  return resolvedScript;
+}
 
 async function runShell(msg: RunRequest): Promise<void> {
   const { cliCommand, args = [] } = msg.shell!;
 
-  // Security: only allow whitelisted commands
-  const baseCommand = cliCommand.split('/').pop()?.split('\\').pop() ?? cliCommand;
-  if (!ALLOWED_SHELL_COMMANDS.has(baseCommand)) {
+  // Reject any non-bare command name (no slashes, no backslashes, no absolute paths)
+  if (typeof cliCommand !== 'string' || cliCommand.length === 0) {
+    throw new Error('Shell cliCommand must be a non-empty string');
+  }
+  if (cliCommand.includes('/') || cliCommand.includes('\\') || path.isAbsolute(cliCommand)) {
+    throw new Error(
+      `Shell command must be a bare executable name, not a path: got "${cliCommand}". Allowed: [${[...ALLOWED_SHELL_COMMANDS].join(', ')}]`
+    );
+  }
+  if (!ALLOWED_SHELL_COMMANDS.has(cliCommand)) {
     throw new Error(
       `Shell command "${cliCommand}" is not allowed. Only [${[...ALLOWED_SHELL_COMMANDS].join(', ')}] are permitted in lifecycle hooks.`
     );
+  }
+  // Arg hygiene: reject shell metacharacters to avoid injection on Windows (shell: true)
+  for (const arg of args) {
+    if (typeof arg !== 'string') throw new Error('All shell args must be strings');
+    if (/[;&|`$\n\r]/.test(arg)) {
+      throw new Error(`Shell arg contains disallowed metacharacter: ${JSON.stringify(arg)}`);
+    }
   }
 
   const child = spawn(cliCommand, args, {
     cwd: msg.context.extensionDir,
     env: process.env,
     stdio: 'inherit',
+    // shell:false is safer but Windows needs it for .cmd/.bat resolution. Arg hygiene above
+    // blocks metacharacter injection on Windows.
     shell: process.platform === 'win32',
   });
 
@@ -67,9 +113,13 @@ async function runShell(msg: RunRequest): Promise<void> {
 }
 
 async function runScript(msg: RunRequest): Promise<void> {
-  // eslint-disable-next-line no-eval -- bypasses bundler to load extension script at runtime
-  const nativeRequire = eval('require');
-  const mod = nativeRequire(msg.scriptPath);
+  if (!msg.scriptPath) throw new Error('scriptPath is required');
+  const resolvedScript = assertScriptPathInsideExtension(msg.scriptPath, msg.context.extensionDir);
+
+  // createRequire bound to the extension directory — safer than eval('require').
+  // The resolvedScript is already validated to live under extensionDir.
+  const extRequire = createRequire(path.join(msg.context.extensionDir, 'package.json'));
+  const mod = extRequire(resolvedScript);
   const hookFn = mod.default || mod[msg.hookName!] || mod;
 
   if (typeof hookFn !== 'function') {

@@ -274,6 +274,26 @@ export class SqliteTeamRepository implements ITeamRepository {
     return row ? rowToTask(row) : null;
   }
 
+  /**
+   * Batch lookup via `WHERE id IN (?, ?, ...)` — a single query instead of N round-trips.
+   * Used by TaskManager.create() to resolve and update bidirectional `blocks` links
+   * when a task declares multiple `blockedBy` dependencies.
+   */
+  async findTasksByIds(ids: readonly string[]): Promise<TeamTask[]> {
+    if (ids.length === 0) return [];
+    const db = await this.getDb();
+    // SQLite has a default 999-parameter limit; chunk to stay safe.
+    const CHUNK = 500;
+    const results: TeamTask[] = [];
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const chunk = ids.slice(i, i + CHUNK);
+      const placeholders = chunk.map(() => '?').join(',');
+      const rows = db.prepare(`SELECT * FROM team_tasks WHERE id IN (${placeholders})`).all(...chunk) as TaskRow[];
+      for (const row of rows) results.push(rowToTask(row));
+    }
+    return results;
+  }
+
   async updateTask(id: string, updates: Partial<TeamTask>): Promise<TeamTask> {
     const current = await this.findTaskById(id);
     if (!current) throw new Error(`Task "${id}" not found`);

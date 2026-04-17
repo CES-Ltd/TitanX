@@ -33,8 +33,12 @@ export class AuthMiddleware {
    */
   public static corsMiddleware(req: Request, res: Response, next: NextFunction): void {
     const origin = req.headers.origin;
-    const allowedOrigins = ['http://localhost', 'https://localhost', 'http://127.0.0.1', 'https://127.0.0.1'];
-    if (origin && allowedOrigins.some((allowed) => origin.startsWith(allowed))) {
+    // Exact-match allowlist. `startsWith` matching is unsafe because
+    // `http://localhost.attacker.com` would pass `startsWith('http://localhost')`
+    // and let a malicious page receive `Access-Control-Allow-Origin` for the
+    // user's local server.
+    const allowedOrigins = AuthMiddleware.buildAllowedOrigins();
+    if (origin && allowedOrigins.has(origin)) {
       res.header('Access-Control-Allow-Origin', origin);
     }
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -46,6 +50,32 @@ export class AuthMiddleware {
     }
 
     next();
+  }
+
+  /**
+   * Build the exact-match CORS allowlist. Enumerates common local ports used by
+   * the Electron renderer and dev server. Extend via CORS_EXTRA_ORIGINS env var
+   * (comma-separated) when running behind a reverse proxy.
+   */
+  private static buildAllowedOrigins(): Set<string> {
+    const ports = [3000, 5173, 5174, 8080];
+    const hosts = ['localhost', '127.0.0.1'];
+    const schemes = ['http', 'https'];
+    const set = new Set<string>();
+    for (const scheme of schemes) {
+      for (const host of hosts) {
+        // Bare host (port omitted — allowed by some browsers)
+        set.add(`${scheme}://${host}`);
+        for (const port of ports) set.add(`${scheme}://${host}:${port}`);
+      }
+    }
+    if (process.env.CORS_EXTRA_ORIGINS) {
+      for (const origin of process.env.CORS_EXTRA_ORIGINS.split(',')) {
+        const trimmed = origin.trim();
+        if (trimmed) set.add(trimmed);
+      }
+    }
+    return set;
   }
 
   /**

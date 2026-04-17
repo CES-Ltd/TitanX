@@ -6,6 +6,7 @@
 
 import * as path from 'path';
 import fs from 'fs';
+import { createRequire } from 'node:module';
 import { BasePlugin, type PluginConfirmHandler, type PluginMessageHandler } from '@process/channels/plugins/BasePlugin';
 import type { LoadedExtension, ExtChannelPlugin } from '../types';
 import { isPathWithinDirectory } from '../sandbox/pathSafety';
@@ -160,9 +161,17 @@ export function resolveChannelPlugins(extensions: LoadedExtension[]): Map<string
       // privileges. Move to createSandbox() for crash isolation and permission enforcement.
       // See: docs/feature/extension-market/research/security-model.md
       try {
-        // eslint-disable-next-line no-eval
-        const nativeRequire = eval('require');
-        const mod = nativeRequire(entryPath);
+        // Validate: resolved entryPath must live inside the extension directory.
+        // This is defense-in-depth on top of resolveRuntimeEntryPath's own checks.
+        if (!isPathWithinDirectory(entryPath, ext.directory)) {
+          console.warn(
+            `[Extension] Refusing to load channel plugin outside extension dir: ${entryPath} (ext=${ext.directory})`
+          );
+          continue;
+        }
+        // createRequire bound to the extension's package.json — safer than eval('require').
+        const extRequire = createRequire(path.join(ext.directory, 'package.json'));
+        const mod = extRequire(entryPath);
 
         let PluginClass = mod.default || mod.Plugin;
         // Support module.exports = Class (CommonJS)

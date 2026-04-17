@@ -25,6 +25,25 @@ import type { IWorkspaceFlatFile } from '@/common/adapter/ipcBridge';
 type ResourceType = 'rules' | 'skills' | 'assistant';
 
 /**
+ * Security: validate that an ID or locale slug cannot escape its intended
+ * directory. Rejects any string containing path separators, null bytes,
+ * parent-directory segments, or characters outside the safe alphanumeric set.
+ * Throws to prevent path traversal (e.g. assistantId = "../../etc/passwd").
+ */
+function assertSafeIdSlug(value: string, label: string): string {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 128) {
+    throw new Error(`Invalid ${label}: must be a non-empty string of at most 128 chars`);
+  }
+  if (!/^[a-zA-Z0-9_.\-]+$/.test(value)) {
+    throw new Error(`Invalid ${label}: must match [a-zA-Z0-9_.-]+. Got ${JSON.stringify(value.slice(0, 64))}`);
+  }
+  if (value === '.' || value === '..' || value.includes('..')) {
+    throw new Error(`Invalid ${label}: parent-directory segments are not allowed`);
+  }
+  return value;
+}
+
+/**
  * Resolve builtin resource directory without Electron.
  * In development and standalone server mode: searches relative to process.cwd().
  * Returns first existing candidate, falling back to first candidate path.
@@ -93,8 +112,17 @@ async function readAssistantResource(
   locale: string,
   fileNamePattern: (id: string, loc: string) => string
 ): Promise<string> {
+  // Validate untrusted inputs before they hit path.join (path traversal defense)
+  assertSafeIdSlug(assistantId, 'assistantId');
+  assertSafeIdSlug(locale, 'locale');
   const assistantsDir = getAssistantsDir();
   const locales = [locale, 'en-US', 'zh-CN'].filter((l, i, arr) => arr.indexOf(l) === i);
+  // The fallback locales are compile-time constants and safe; only the user-provided
+  // `locale` needed validation. All filenames now pass through fileNamePattern which
+  // concatenates validated inputs only.
+  for (const loc of locales) {
+    assertSafeIdSlug(loc, 'locale');
+  }
 
   // 1. Try user data directory first
   for (const loc of locales) {
@@ -134,10 +162,20 @@ async function writeAssistantResource(
   fileNamePattern: (id: string, loc: string) => string
 ): Promise<boolean> {
   try {
+    // Validate untrusted inputs before they hit path.join (path traversal defense)
+    assertSafeIdSlug(assistantId, 'assistantId');
+    assertSafeIdSlug(locale, 'locale');
     const assistantsDir = getAssistantsDir();
     await fs.mkdir(assistantsDir, { recursive: true });
     const fileName = fileNamePattern(assistantId, locale);
-    await fs.writeFile(path.join(assistantsDir, fileName), content, 'utf-8');
+    // Defense-in-depth: ensure the final resolved path stays under assistantsDir
+    const resolvedDest = path.resolve(assistantsDir, fileName);
+    const resolvedRoot = path.resolve(assistantsDir);
+    const rel = path.relative(resolvedRoot, resolvedDest);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) {
+      throw new Error(`writeAssistantResource: resolved path ${resolvedDest} escapes root ${resolvedRoot}`);
+    }
+    await fs.writeFile(resolvedDest, content, 'utf-8');
     console.log(`[fsBridge] Wrote assistant ${resourceType}: ${fileName}`);
     return true;
   } catch (error) {

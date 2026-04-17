@@ -264,7 +264,13 @@ const createWindow = ({ showOnReady = true }: { showOnReady?: boolean } = {}): v
       : { frame: false }),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
-      webviewTag: true, // 启用 webview 标签用于 HTML 预览 / Enable webview tag for HTML preview
+      // Security: explicit hardening flags — don't rely on Electron version defaults.
+      contextIsolation: true, // isolates renderer JS context from preload + Node
+      nodeIntegration: false, // renderer cannot require('fs') or access Node APIs
+      sandbox: false, // preload needs Node APIs for the bridge (can't enable full sandbox)
+      webSecurity: true, // enforce same-origin policy
+      allowRunningInsecureContent: false,
+      webviewTag: true, // required for HTML preview; see WebviewHost for validation
     },
   });
   console.log(`[AionUi] Main window created (id=${mainWindow.id})`);

@@ -36,6 +36,63 @@ export const setPetNotifyHook = (hook: ((name: string, data: unknown) => void) |
 /** Maximum IPC payload size (50 MB). Messages exceeding this are dropped with an error notification. */
 const MAX_IPC_PAYLOAD_SIZE = 50 * 1024 * 1024;
 
+/** Maximum object depth when estimating payload size (guards against deeply nested attack payloads). */
+const MAX_PAYLOAD_DEPTH = 64;
+/** Maximum array/object property count before bailing early. */
+const MAX_PAYLOAD_NODES = 100_000;
+
+/**
+ * Estimate the serialized size of `value` without materializing JSON.stringify output.
+ * Walks the object graph with a budget (bytes, depth, nodes) and returns null if the
+ * payload would exceed any limit — letting the caller reject it before a costly
+ * stringify attempt or potential OOM on circular structures.
+ */
+function estimatePayloadSize(value: unknown, maxBytes: number): number | null {
+  let bytes = 0;
+  let nodes = 0;
+  const seen = new WeakSet<object>();
+
+  function walk(v: unknown, depth: number): boolean {
+    if (depth > MAX_PAYLOAD_DEPTH) return false;
+    if (++nodes > MAX_PAYLOAD_NODES) return false;
+    if (v === null || v === undefined) {
+      bytes += 4; // "null"
+      return bytes <= maxBytes;
+    }
+    const t = typeof v;
+    if (t === 'boolean') {
+      bytes += 5;
+    } else if (t === 'number' || t === 'bigint') {
+      bytes += 20;
+    } else if (t === 'string') {
+      // JSON overhead: quotes + possible escapes (approx 1.1x)
+      bytes += Math.ceil((v as string).length * 1.1) + 2;
+    } else if (t === 'object') {
+      if (seen.has(v as object)) return false; // cycle
+      seen.add(v as object);
+      if (Array.isArray(v)) {
+        bytes += 2; // []
+        for (const item of v) {
+          if (!walk(item, depth + 1)) return false;
+          bytes += 1; // comma
+          if (bytes > maxBytes) return false;
+        }
+      } else {
+        bytes += 2; // {}
+        for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+          bytes += k.length + 4; // "key":
+          if (!walk(val, depth + 1)) return false;
+          bytes += 1;
+          if (bytes > maxBytes) return false;
+        }
+      }
+    }
+    return bytes <= maxBytes;
+  }
+
+  return walk(value, 0) ? bytes : null;
+}
+
 bridge.adapter({
   emit(name, data) {
     // Notify pet (if hook is set)
@@ -45,6 +102,14 @@ bridge.adapter({
       } catch {
         /* never crash */
       }
+    }
+
+    // Pre-flight estimate to reject oversized/cyclic/deeply-nested payloads BEFORE
+    // the expensive JSON.stringify call, avoiding OOM on malicious structures.
+    const estimated = estimatePayloadSize({ name, data }, MAX_IPC_PAYLOAD_SIZE);
+    if (estimated === null) {
+      console.error(`[adapter] Bridge event "${name}" rejected: exceeds size/depth/node budget before serialization`);
+      return;
     }
 
     // 1. Send to all Electron BrowserWindows (skip destroyed ones)

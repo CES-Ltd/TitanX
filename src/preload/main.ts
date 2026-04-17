@@ -80,7 +80,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   webuiResetPassword: () => ipcRenderer.invoke('webui-direct-reset-password'),
   webuiGetStatus: () => ipcRenderer.invoke('webui-direct-get-status'),
   // 修改密码不需要当前密码 / Change password without current password
-  webuiChangePassword: (newPassword: string) => ipcRenderer.invoke('webui-direct-change-password', { newPassword }),
+  webuiChangePassword: (currentPassword: string, newPassword: string) =>
+    ipcRenderer.invoke('webui-direct-change-password', { currentPassword, newPassword }),
   webuiChangeUsername: (newUsername: string) => ipcRenderer.invoke('webui-direct-change-username', { newUsername }),
   // 生��二维码 token / Generate QR token
   webuiGenerateQRToken: () => ipcRenderer.invoke('webui-direct-generate-qr-token'),

@@ -10,6 +10,8 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import csrf from 'tiny-csrf';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { networkInterfaces } from 'os';
 import { AuthMiddleware } from '@process/webserver/auth/middleware/AuthMiddleware';
 import { errorHandler } from './middleware/errorHandler';
@@ -50,16 +52,35 @@ function getAllNonInternalIPs(): string[] {
  * Priority: Environment variable > Random generation (different on each startup)
  */
 function getCsrfSecret(): string {
-  // 优先使用环境变量 / Prefer environment variable
+  // Priority 1: explicit env var (exactly 32 chars for AES-256-CBC)
   if (process.env.CSRF_SECRET && process.env.CSRF_SECRET.length === 32) {
     return process.env.CSRF_SECRET;
   }
 
-  // 生成随机 32 字符密钥（16 字节的 hex 编码）
-  // Generate random 32-character secret (16 bytes hex encoded)
-  const randomSecret = crypto.randomBytes(16).toString('hex');
-  console.log('[security] Generated random CSRF secret for this session');
-  return randomSecret;
+  // Priority 2: persist to userData/.csrf-secret so tokens survive restarts.
+  // Regenerating per-restart invalidates all outstanding CSRF tokens (bad UX)
+  // and means long-lived sessions need to re-fetch tokens after every reboot.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { app } = require('electron');
+    const keyPath = path.join(app.getPath('userData'), '.csrf-secret');
+    if (fs.existsSync(keyPath)) {
+      const existing = fs.readFileSync(keyPath, 'utf8').trim();
+      if (existing.length === 32) return existing;
+      console.warn('[security] .csrf-secret has wrong length, regenerating');
+    }
+    const newSecret = crypto.randomBytes(16).toString('hex');
+    fs.writeFileSync(keyPath, newSecret, { mode: 0o600 });
+    console.log('[security] Persisted new CSRF secret to user data');
+    return newSecret;
+  } catch (err) {
+    // Non-Electron context (e.g. CLI / tests) — fall back to in-memory per-session
+    console.warn(
+      '[security] Could not persist CSRF secret, using in-memory session secret:',
+      err instanceof Error ? err.message : err
+    );
+    return crypto.randomBytes(16).toString('hex');
+  }
 }
 
 // 在模块加载时生成一次，整个进程生命周期内保持不变

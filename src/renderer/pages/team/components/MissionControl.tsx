@@ -89,7 +89,7 @@ const TeamHealthStrip: React.FC<{
   tasks: ISprintTask[];
   agents: TeamAgent[];
   statusMap: Map<string, { status: TeammateStatus; lastMessage?: string }>;
-}> = ({ tasks, agents, statusMap }) => {
+}> = React.memo(({ tasks, agents, statusMap }) => {
   const done = tasks.filter((t) => t.status === 'done').length;
   const inProgress = tasks.filter((t) => t.status === 'in_progress').length;
   const blocked = tasks.filter((t) => t.blockedBy.length > 0 && t.status !== 'done').length;
@@ -160,11 +160,12 @@ const TeamHealthStrip: React.FC<{
       )}
     </>
   );
-};
+});
+TeamHealthStrip.displayName = 'TeamHealthStrip';
 
 // ── Task Timeline ───────────────────────────────────────────────────────
 
-const TaskTimeline: React.FC<{ tasks: ISprintTask[]; agents: TeamAgent[] }> = ({ tasks, agents }) => {
+const TaskTimeline: React.FC<{ tasks: ISprintTask[]; agents: TeamAgent[] }> = React.memo(({ tasks, agents }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const sorted = [...tasks].sort((a, b) => (STATUS_ORDER[a.status] ?? 5) - (STATUS_ORDER[b.status] ?? 5));
@@ -253,11 +254,12 @@ const TaskTimeline: React.FC<{ tasks: ISprintTask[]; agents: TeamAgent[] }> = ({
       </div>
     </div>
   );
-};
+});
+TaskTimeline.displayName = 'TaskTimeline';
 
 // ── Activity Feed ───────────────────────────────────────────────────────
 
-const ActivityFeed: React.FC<{ teamId: string }> = ({ teamId }) => {
+const ActivityFeed: React.FC<{ teamId: string }> = React.memo(({ teamId }) => {
   const [events, setEvents] = useState<IActivityEntry[]>([]);
   const feedRef = useRef<HTMLDivElement>(null);
 
@@ -311,7 +313,8 @@ const ActivityFeed: React.FC<{ teamId: string }> = ({ teamId }) => {
       )}
     </div>
   );
-};
+});
+ActivityFeed.displayName = 'ActivityFeed';
 
 // ── Main Component ──────────────────────────────────────────────────────
 
@@ -327,10 +330,10 @@ const MissionControl: React.FC<MissionControlProps> = ({ teamId, agents, statusM
     }
   }, [teamId]);
 
-  // Initial load + poll every 10s
+  // Initial load + 30s fallback poll. Real-time updates arrive via live events below.
   useEffect(() => {
     void loadTasks();
-    const interval = setInterval(() => void loadTasks(), 10_000);
+    const interval = setInterval(() => void loadTasks(), 30_000);
     return () => clearInterval(interval);
   }, [loadTasks]);
 

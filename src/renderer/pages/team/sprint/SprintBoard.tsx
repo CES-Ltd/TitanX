@@ -21,7 +21,7 @@ import {
   Radio,
 } from '@arco-design/web-react';
 import { Plus, Left, Viewfinder, ApplicationMenu } from '@icon-park/react';
-import { sprintBoard, team as teamBridge, type ISprintTask } from '@/common/adapter/ipcBridge';
+import { sprintBoard, team as teamBridge, liveEvents, type ISprintTask } from '@/common/adapter/ipcBridge';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
 import SwimLaneView from './SwimLaneView';
 import ListView from './ListView';
@@ -72,12 +72,25 @@ const SprintBoard: React.FC = () => {
     loadData();
   }, [loadData]);
 
-  // Auto-refresh: poll every 15 seconds to pick up agent-created tasks
+  // Prefer live events over polling. New agent-created tasks arrive via the
+  // activity stream; the 30s fallback poll catches anything missed during
+  // subscription setup or reconnect.
   useEffect(() => {
     const interval = setInterval(() => {
       if (!loading) void loadData();
-    }, 15000);
-    return () => clearInterval(interval);
+    }, 30_000);
+    const unsub = liveEvents.activity.on((entry) => {
+      if (entry.action.includes('task') || entry.action.includes('sprint')) {
+        // Debounce to batch rapid back-to-back updates
+        setTimeout(() => {
+          if (!loading) void loadData();
+        }, 400);
+      }
+    });
+    return () => {
+      clearInterval(interval);
+      unsub();
+    };
   }, [loadData, loading]);
 
   const handleCreateTask = useCallback(async () => {

@@ -12,6 +12,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import { encrypt, decrypt, loadOrCreateMasterKey } from '@process/services/secrets/encryption';
 
 /** Device identity key pair */
 type DeviceKeyPair = {
@@ -83,11 +84,40 @@ export function getDeviceIdentity(): DeviceKeyPair {
   const metaPath = keyStorePath + '.json';
 
   try {
-    // Attempt to load existing key pair
+    // Attempt to load existing key pair. Private key is AES-256-GCM encrypted at rest
+    // using the secrets-vault master key. Legacy unencrypted keys are upgraded in place.
     if (fs.existsSync(pubKeyPath) && fs.existsSync(privKeyPath) && fs.existsSync(metaPath)) {
       const publicKey = fs.readFileSync(pubKeyPath, 'utf8');
-      const privateKey = fs.readFileSync(privKeyPath, 'utf8');
+      const privateKeyRaw = fs.readFileSync(privKeyPath, 'utf8');
       const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+
+      let privateKey: string;
+      if (meta.encrypted === true) {
+        const masterKey = loadOrCreateMasterKey();
+        try {
+          privateKey = decrypt(privateKeyRaw, masterKey);
+        } catch (err) {
+          throw new Error(
+            `[DeviceIdentity] Failed to decrypt private key. File corruption or master key mismatch: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
+      } else {
+        // Legacy plaintext key — upgrade to encrypted storage on this launch
+        privateKey = privateKeyRaw;
+        try {
+          const masterKey = loadOrCreateMasterKey();
+          const ciphertext = encrypt(privateKey, masterKey);
+          fs.writeFileSync(privKeyPath, ciphertext, { mode: 0o600 });
+          fs.writeFileSync(
+            metaPath,
+            JSON.stringify({ deviceId: meta.deviceId, createdAt: meta.createdAt, encrypted: true }),
+            { mode: 0o600 }
+          );
+          console.log('[DeviceIdentity] Upgraded device key to encrypted storage');
+        } catch (err) {
+          console.warn('[DeviceIdentity] Could not upgrade legacy plaintext key to encrypted:', err);
+        }
+      }
 
       _cachedKeyPair = {
         publicKey,
@@ -103,16 +133,20 @@ export function getDeviceIdentity(): DeviceKeyPair {
     console.warn('[DeviceIdentity] Failed to load existing key pair, generating new one:', err);
   }
 
-  // Generate new key pair
+  // Generate new key pair — private key encrypted at rest with AES-256-GCM
   ensureKeyStoreDir(keyStorePath);
   const keyPair = generateKeyPair();
 
   try {
+    const masterKey = loadOrCreateMasterKey();
+    const encryptedPrivate = encrypt(keyPair.privateKey, masterKey);
     fs.writeFileSync(pubKeyPath, keyPair.publicKey, { mode: 0o644 });
-    fs.writeFileSync(privKeyPath, keyPair.privateKey, { mode: 0o600 });
-    fs.writeFileSync(metaPath, JSON.stringify({ deviceId: keyPair.deviceId, createdAt: keyPair.createdAt }), {
-      mode: 0o600,
-    });
+    fs.writeFileSync(privKeyPath, encryptedPrivate, { mode: 0o600 });
+    fs.writeFileSync(
+      metaPath,
+      JSON.stringify({ deviceId: keyPair.deviceId, createdAt: keyPair.createdAt, encrypted: true }),
+      { mode: 0o600 }
+    );
     console.log(`[DeviceIdentity] Generated new device identity: ${keyPair.deviceId}`);
   } catch (err) {
     console.error('[DeviceIdentity] Failed to persist key pair:', err);

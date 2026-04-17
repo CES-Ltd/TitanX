@@ -157,8 +157,18 @@ export class AuthService {
       return this.jwtSecret;
     }
 
-    // 优先使用环境变量，方便部署覆盖 / Prefer env var for deploy-time override
+    // 优先使用环境变量，方便部署覆盖 / Prefer env var for deploy-time override.
+    // Require strong secret length to prevent brute-force / dictionary attacks
+    // on JWT signatures. Warn loudly so operators know an env-var secret is in use.
     if (process.env.JWT_SECRET) {
+      if (process.env.JWT_SECRET.length < 64) {
+        throw new Error(
+          '[AuthService] JWT_SECRET env var must be at least 64 characters. Refusing to start with weak secret.'
+        );
+      }
+      console.warn(
+        '[AuthService] Using JWT secret from env var. Ensure this value is rotated regularly and never logged.'
+      );
       this.jwtSecret = process.env.JWT_SECRET;
       return this.jwtSecret;
     }

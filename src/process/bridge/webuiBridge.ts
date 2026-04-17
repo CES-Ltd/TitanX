@@ -160,11 +160,10 @@ export function initWebuiBridge(): void {
     }
   });
 
-  // Change password — audit logged for security visibility.
-  // NOTE: No current password required — local desktop app where user has physical access.
-  webui.changePassword.provider(async ({ newPassword }) => {
+  // Change password — requires currentPassword to prevent XSS-driven account hijack.
+  webui.changePassword.provider(async ({ newPassword, currentPassword }) => {
     return WebuiService.handleAsync(async () => {
-      await WebuiService.changePassword(newPassword);
+      await WebuiService.changePassword(newPassword, { currentPassword });
       try {
         const { getDatabase } = await import('@process/services/database');
         const activityLog = await import('@process/services/activityLog');
@@ -271,13 +270,16 @@ export function initWebuiBridge(): void {
     }, 'Direct IPC: Get status');
   });
 
-  // 直接 IPC: 修改密码（不需要当前密码）/ Direct IPC: Change password (no current password required)
-  ipcMain.handle('webui-direct-change-password', async (_event, { newPassword }: { newPassword: string }) => {
-    return WebuiService.handleAsync(async () => {
-      await WebuiService.changePassword(newPassword);
-      return { success: true };
-    }, 'Direct IPC: Change password');
-  });
+  // Direct IPC: Change password — requires currentPassword verification.
+  ipcMain.handle(
+    'webui-direct-change-password',
+    async (_event, { newPassword, currentPassword }: { newPassword: string; currentPassword: string }) => {
+      return WebuiService.handleAsync(async () => {
+        await WebuiService.changePassword(newPassword, { currentPassword });
+        return { success: true };
+      }, 'Direct IPC: Change password');
+    }
+  );
 
   ipcMain.handle('webui-direct-change-username', async (_event, { newUsername }: { newUsername: string }) => {
     return WebuiService.handleAsync(async () => {

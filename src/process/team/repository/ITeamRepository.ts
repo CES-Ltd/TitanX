@@ -24,6 +24,8 @@ export interface IMailboxRepository {
 export interface ITaskRepository {
   createTask(task: TeamTask): Promise<TeamTask>;
   findTaskById(id: string): Promise<TeamTask | null>;
+  /** Batch lookup — single query for all matching ids (replaces N x findTaskById). */
+  findTasksByIds(ids: readonly string[]): Promise<TeamTask[]>;
   updateTask(id: string, updates: Partial<TeamTask>): Promise<TeamTask>;
   findTasksByTeam(teamId: string): Promise<TeamTask[]>;
   findTasksByOwner(teamId: string, owner: string): Promise<TeamTask[]>;

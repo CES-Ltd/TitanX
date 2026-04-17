@@ -775,8 +775,10 @@ export const webui = {
   >('webui.start'),
   // 停止 WebUI / Stop WebUI
   stop: bridge.buildProvider<IBridgeResponse, void>('webui.stop'),
-  // 修改密码（不需要当前密码）/ Change password (no current password required)
-  changePassword: bridge.buildProvider<IBridgeResponse, { newPassword: string }>('webui.change-password'),
+  // Change password — requires `currentPassword` except for the reset path (see resetPassword).
+  changePassword: bridge.buildProvider<IBridgeResponse, { newPassword: string; currentPassword: string }>(
+    'webui.change-password'
+  ),
   changeUsername: bridge.buildProvider<IBridgeResponse<{ username: string }>, { newUsername: string }>(
     'webui.change-username'
   ),

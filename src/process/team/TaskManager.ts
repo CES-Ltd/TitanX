@@ -58,18 +58,18 @@ export class TaskManager {
 
     const created = await this.repo.createTask(task);
 
-    // Update `blocks` on each upstream task (bidirectional link)
+    // Update `blocks` on each upstream task (bidirectional link).
+    // Previously this ran N separate findTaskById queries — now batched into one
+    // IN (?, ?, ...) lookup, then the updates run in parallel.
     if (created.blockedBy.length > 0) {
+      const upstreams = await this.repo.findTasksByIds(created.blockedBy);
       await Promise.all(
-        created.blockedBy.map(async (upstreamId) => {
-          const upstream = await this.repo.findTaskById(upstreamId);
-          if (upstream) {
-            await this.repo.updateTask(upstreamId, {
-              blocks: [...upstream.blocks, created.id],
-              updatedAt: now,
-            });
-          }
-        })
+        upstreams.map((upstream) =>
+          this.repo.updateTask(upstream.id, {
+            blocks: [...upstream.blocks, created.id],
+            updatedAt: now,
+          })
+        )
       );
     }
 

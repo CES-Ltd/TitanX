@@ -7,7 +7,6 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 import type { ISqliteDriver } from '../database/drivers/ISqliteDriver';
 import { sanitizeRecord } from '@process/utils/redaction';
 import { signAuditEntry as deviceSignAuditEntry } from '@process/services/deviceIdentity';
@@ -55,29 +54,41 @@ let _hmacKey: string | null = null;
 function getHmacKey(): string {
   if (_hmacKey) return _hmacKey;
 
-  // Priority 1: Explicit env var
+  // Priority 1: Explicit env var (must be at least 32 chars for HMAC-SHA256 security)
   if (process.env.TITANX_AUDIT_HMAC_KEY) {
+    if (process.env.TITANX_AUDIT_HMAC_KEY.length < 32) {
+      throw new Error(
+        '[AuditLog] TITANX_AUDIT_HMAC_KEY must be at least 32 characters. Refusing to start with weak key.'
+      );
+    }
     _hmacKey = process.env.TITANX_AUDIT_HMAC_KEY;
     return _hmacKey;
   }
 
-  // Priority 2: Derive from a per-install random key file
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { app } = require('electron');
-    const keyPath = path.join(app.getPath('userData'), '.audit-hmac-key');
-    if (fs.existsSync(keyPath)) {
-      _hmacKey = fs.readFileSync(keyPath, 'utf8').trim();
-    } else {
-      // Generate a random 32-byte key on first run
-      _hmacKey = crypto.randomBytes(32).toString('hex');
-      fs.writeFileSync(keyPath, _hmacKey, { mode: 0o600 });
-      console.log('[AuditLog] Generated new HMAC signing key');
+  // Priority 2: Per-install persistent random key file. Fail loudly on any error —
+  // downgrading to a predictable fallback would let an attacker forge audit signatures
+  // simply by deleting or corrupting the key file.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { app } = require('electron');
+  const keyPath = path.join(app.getPath('userData'), '.audit-hmac-key');
+  if (fs.existsSync(keyPath)) {
+    const existing = fs.readFileSync(keyPath, 'utf8').trim();
+    if (existing.length < 32) {
+      throw new Error(`[AuditLog] HMAC key file at ${keyPath} is corrupted or truncated (< 32 chars).`);
     }
-  } catch {
-    // Fallback: derive from process ID + hostname (still unique per install)
-    _hmacKey = crypto.createHash('sha256').update(`titanx-${process.pid}-${os.hostname()}-${Date.now()}`).digest('hex');
-    console.warn('[AuditLog] Using fallback HMAC key — audit signatures are session-scoped');
+    _hmacKey = existing;
+  } else {
+    // Generate a cryptographically secure 32-byte key on first run
+    const newKey = crypto.randomBytes(32).toString('hex');
+    try {
+      fs.writeFileSync(keyPath, newKey, { mode: 0o600 });
+    } catch (err) {
+      throw new Error(
+        `[AuditLog] Failed to persist HMAC signing key to ${keyPath}. Refusing to proceed with in-memory-only key: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+    _hmacKey = newKey;
+    console.log('[AuditLog] Generated new HMAC signing key');
   }
 
   return _hmacKey;

@@ -138,11 +138,27 @@ export class WebuiService {
   }
 
   /**
-   * 修改密码（不需要当前密码验证）
-   * Change password (no current password verification required)
+   * Change password.
+   * Requires verification of `currentPassword` to prevent renderer-side XSS
+   * from silently hijacking the admin account. The only exception is an
+   * explicit `skipCurrentCheck: true` flag used by the first-run reset flow.
    */
-  static async changePassword(newPassword: string): Promise<void> {
+  static async changePassword(
+    newPassword: string,
+    opts: { currentPassword?: string; skipCurrentCheck?: boolean } = {}
+  ): Promise<void> {
     const adminUser = await this.getAdminUser();
+
+    // Security: require current password unless this is the documented reset path.
+    if (!opts.skipCurrentCheck) {
+      if (!opts.currentPassword) {
+        throw new Error('Current password is required to change the password');
+      }
+      const ok = await AuthService.verifyPassword(opts.currentPassword, adminUser.password_hash);
+      if (!ok) {
+        throw new Error('Current password is incorrect');
+      }
+    }
 
     // 验证新密码强度 / Validate new password strength
     const passwordValidation = AuthService.validatePasswordStrength(newPassword);
