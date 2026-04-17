@@ -23,12 +23,14 @@ import { runHooks } from '@process/services/hooks';
 import * as agentPlanningService from '@process/services/agentPlanning';
 import * as tracingService from '@process/services/tracing';
 import * as securityFeaturesService from '@process/services/securityFeatures';
-import { executeWorkflow } from '@process/services/workflows/engine';
-import type { WorkflowDefinition } from '@process/services/workflows/types';
+// executeWorkflow + WorkflowDefinition moved to ActionExecutor (Phase 3.2)
 import { TEAM_CONFIG } from './config';
 import { logNonCritical } from '@process/utils/logNonCritical';
 import { ResponseStreamBuffer } from './ResponseStreamBuffer';
 import { WakeState } from './WakeState';
+import type { IEventPublisher } from './ports/IEventPublisher';
+import { getSharedEventPublisher } from './ports/defaultIpcEventPublisher';
+import { ActionExecutor } from './ActionExecutor';
 
 type SpawnAgentFn = (agentName: string, agentType?: string) => Promise<TeamAgent>;
 
@@ -56,6 +58,12 @@ type TeammateManagerParams = {
   workerTaskManager: IWorkerTaskManager;
   spawnAgent?: SpawnAgentFn;
   hasMcpTools?: boolean;
+  /**
+   * Optional publisher for cross-process events. Defaults to the shared
+   * IPC-backed singleton in production; tests inject NoopEventPublisher
+   * or a spy to assert without a real Electron bridge.
+   */
+  events?: IEventPublisher;
 };
 
 /**
@@ -99,15 +107,44 @@ export class TeammateManager extends EventEmitter {
 
   private readonly unsubResponseStream: () => void;
 
+  /**
+   * Cross-process event publisher. Typed channel mapping lives in
+   * `ports/IEventPublisher.ts`. Injectable via TeammateManagerParams.events
+   * for tests; production wires the shared IPC-backed singleton.
+   */
+  private readonly events: IEventPublisher;
+
+  /**
+   * Parsed-action dispatcher. Extracted to ActionExecutor (Phase 3.2) so the
+   * 10-case switch + handler bodies live in their own file. The executor is
+   * given a context object that exposes the collaborators each handler needs.
+   */
+  private readonly actionExecutor: ActionExecutor;
+
   constructor(params: TeammateManagerParams) {
     super();
     this.teamId = params.teamId;
     this.agents = [...params.agents];
+    this.events = params.events ?? getSharedEventPublisher();
     this.mailbox = params.mailbox;
     this.taskManager = params.taskManager;
     this.workerTaskManager = params.workerTaskManager;
     this.spawnAgentFn = params.spawnAgent;
     this.mcpServerStarted = params.hasMcpTools ?? false;
+
+    // Assemble the ActionExecutor context from this manager's collaborators.
+    this.actionExecutor = new ActionExecutor({
+      teamId: this.teamId,
+      getAgents: () => this.agents,
+      resolveSlotId: (ref: string) => this.resolveSlotId(ref),
+      mailbox: this.mailbox,
+      taskManager: this.taskManager,
+      events: this.events,
+      spawnAgentFn: this.spawnAgentFn,
+      setStatus: (slotId, status, msg) => this.setStatus(slotId, status, msg),
+      wake: (slotId) => this.wake(slotId),
+      maybeWakeLeaderWhenAllIdle: (leadSlotId) => this.maybeWakeLeaderWhenAllIdle(leadSlotId),
+    });
 
     for (const agent of this.agents) {
       this.ownedConversationIds.add(agent.conversationId);
@@ -167,7 +204,7 @@ export class TeammateManager extends EventEmitter {
     this.agents = [...this.agents, agent];
     this.ownedConversationIds.add(agent.conversationId);
     // Notify renderer so it can refresh team data (tabs, status, etc.)
-    ipcBridge.team.agentSpawned.emit({ teamId: this.teamId, agent });
+    this.events.emit('team.agent-spawned', { teamId: this.teamId, agent });
     // Audit log: agent added to team
     void (async () => {
       try {
@@ -385,7 +422,7 @@ export class TeammateManager extends EventEmitter {
   setStatus(slotId: string, status: TeammateStatus, lastMessage?: string): void {
     const agent = this.agents.find((a) => a.slotId === slotId);
     this.agents = this.agents.map((a) => (a.slotId === slotId ? { ...a, status } : a));
-    ipcBridge.team.agentStatusChanged.emit({ teamId: this.teamId, slotId, status, lastMessage });
+    this.events.emit('team.agent-status-changed', { teamId: this.teamId, slotId, status, lastMessage });
     this.emit('agentStatusChanged', { teamId: this.teamId, slotId, status, lastMessage });
 
     // Audit log agent status changes + revoke tokens on completion/failure
@@ -456,7 +493,7 @@ export class TeammateManager extends EventEmitter {
         msg_id: msg.msg_id,
         conversation_id: msg.conversation_id,
       };
-      ipcBridge.team.messageStream.emit(teamMsg);
+      this.events.emit('team.message-stream', teamMsg);
     }
 
     // Accumulate text content for later parsing. Provider payload shape
@@ -694,7 +731,7 @@ export class TeammateManager extends EventEmitter {
           /* hook failure = allow */
         }
 
-        await this.executeAction(action, agent.slotId);
+        await this.actionExecutor.execute(action, agent.slotId);
 
         // ─── Agent OS: PostToolUse Hook ─────────────────────────
         try {
@@ -1036,197 +1073,6 @@ export class TeammateManager extends EventEmitter {
     });
   }
 
-  // ---------------------------------------------------------------------------
-  // Action execution
-  // ---------------------------------------------------------------------------
-
-  private async executeAction(action: ParsedAction, fromSlotId: string): Promise<void> {
-    // Runtime IAM policy enforcement for parsed actions
-    try {
-      const db = await getDatabase();
-      const driver = db.getDriver();
-      const agent = this.agents.find((a) => a.slotId === fromSlotId);
-      const toolName = `action.${action.type}`;
-      const decision = policyService.evaluateToolAccess(
-        driver,
-        fromSlotId,
-        agent?.agentGalleryId,
-        toolName,
-        this.teamId
-      );
-      policyService.logPolicyDecision(driver, decision, this.teamId);
-      if (!decision.allowed) {
-        console.warn(`[TeammateManager] Action blocked by policy: ${action.type} for ${fromSlotId}`);
-        return; // Skip this action
-      }
-    } catch {
-      // Non-critical: continue execution if policy check fails
-    }
-
-    switch (action.type) {
-      case 'send_message': {
-        const targetSlotId = this.resolveSlotId(action.to);
-        if (!targetSlotId) break;
-        await this.mailbox.write({
-          teamId: this.teamId,
-          toAgentId: targetSlotId,
-          fromAgentId: fromSlotId,
-          content: action.content,
-          summary: action.summary,
-        });
-        // Write dispatched message into target agent's conversation
-        const targetAgent = this.agents.find((a) => a.slotId === targetSlotId);
-        if (targetAgent?.conversationId) {
-          const msgId = crypto.randomUUID();
-          const fromAgent = this.agents.find((a) => a.slotId === fromSlotId);
-          const executedMsg = {
-            id: msgId,
-            msg_id: msgId,
-            type: 'text' as const,
-            position: 'left' as const,
-            conversation_id: targetAgent.conversationId,
-            content: {
-              content: action.content,
-              teammateMessage: true,
-              senderName: fromAgent?.agentName,
-              senderAgentType: fromAgent?.agentType,
-            },
-            createdAt: Date.now(),
-          };
-          addMessage(targetAgent.conversationId, executedMsg);
-          ipcBridge.acpConversation.responseStream.emit({
-            type: 'teammate_message',
-            conversation_id: targetAgent.conversationId,
-            msg_id: msgId,
-            data: executedMsg,
-          });
-        }
-        await this.wake(targetSlotId);
-        break;
-      }
-
-      case 'task_create': {
-        // TaskManager.create() now handles sprint bridging + audit logging internally
-        await this.taskManager.create({
-          teamId: this.teamId,
-          subject: action.subject,
-          description: action.description,
-          owner: action.owner,
-        });
-        break;
-      }
-
-      case 'task_update': {
-        // TaskManager.update() handles sprint sync + audit logging centrally
-        await this.taskManager.update(action.taskId, {
-          status: action.status as TeamTask['status'],
-          owner: action.owner,
-        });
-        if (action.status === 'completed') {
-          await this.taskManager.checkUnblocks(action.taskId);
-        }
-        break;
-      }
-
-      case 'spawn_agent': {
-        if (!this.spawnAgentFn) {
-          console.warn('[TeammateManager] spawnAgent not available');
-          break;
-        }
-        const newAgent = await this.spawnAgentFn(action.agentName, action.agentType);
-        // Notify the lead that the agent was created
-        // Note: spawnAgentFn already calls TeammateManager.addAgent internally via session.addAgent
-        await this.mailbox.write({
-          teamId: this.teamId,
-          toAgentId: fromSlotId,
-          fromAgentId: newAgent.slotId,
-          content: `Teammate "${action.agentName}" (${newAgent.slotId}) has been created and is ready.`,
-        });
-        break;
-      }
-
-      case 'idle_notification': {
-        this.setStatus(fromSlotId, 'idle', action.summary);
-        const leadAgent = this.agents.find((a) => a.role === 'lead');
-        if (leadAgent) {
-          await this.mailbox.write({
-            teamId: this.teamId,
-            toAgentId: leadAgent.slotId,
-            fromAgentId: fromSlotId,
-            content: action.summary,
-            type: 'idle_notification',
-          });
-          // Only wake leader when ALL non-lead teammates are idle/completed/failed/pending.
-          this.maybeWakeLeaderWhenAllIdle(leadAgent.slotId);
-        }
-        break;
-      }
-
-      case 'plain_response':
-        // Already forwarded via responseStream; nothing further needed
-        break;
-
-      case 'write_plan': {
-        try {
-          const db = await getDatabase();
-          const driver = db.getDriver();
-          if (securityFeaturesService.isFeatureEnabled(driver, 'agent_planning')) {
-            agentPlanningService.createPlan(driver, fromSlotId, this.teamId, action.title, action.steps);
-            console.log(`[TeammateManager] Plan created: "${action.title}" (${action.steps.length} steps)`);
-          }
-        } catch {
-          /* non-critical */
-        }
-        break;
-      }
-
-      case 'reflect': {
-        try {
-          const db = await getDatabase();
-          const driver = db.getDriver();
-          if (securityFeaturesService.isFeatureEnabled(driver, 'agent_planning')) {
-            agentPlanningService.reflectOnPlan(driver, action.planId, action.reflection, action.score);
-            console.log(`[TeammateManager] Reflection on plan ${action.planId}: score=${action.score}`);
-          }
-        } catch {
-          /* non-critical */
-        }
-        break;
-      }
-
-      case 'trigger_workflow': {
-        try {
-          const db = await getDatabase();
-          const driver = db.getDriver();
-          if (securityFeaturesService.isFeatureEnabled(driver, 'workflow_gates')) {
-            const wfRow = driver.prepare('SELECT * FROM workflow_definitions WHERE id = ?').get(action.workflowId) as
-              | Record<string, unknown>
-              | undefined;
-            if (wfRow) {
-              const wf: WorkflowDefinition = {
-                id: wfRow.id as string,
-                userId: wfRow.user_id as string,
-                name: wfRow.name as string,
-                nodes: JSON.parse((wfRow.nodes as string) || '[]'),
-                connections: JSON.parse((wfRow.connections as string) || '[]'),
-                settings: JSON.parse((wfRow.settings as string) || '{}'),
-                enabled: (wfRow.enabled as number) === 1,
-                version: (wfRow.version as number) ?? 1,
-                createdAt: wfRow.created_at as number,
-                updatedAt: wfRow.updated_at as number,
-              };
-              await executeWorkflow(driver, wf, action.inputs);
-              console.log(`[TeammateManager] Workflow "${wf.name}" triggered by ${fromSlotId}`);
-            }
-          }
-        } catch (err) {
-          console.error('[TeammateManager] Workflow trigger failed:', err);
-        }
-        break;
-      }
-    }
-  }
-
   /**
    * Wake the leader only when ALL non-lead teammates are settled (idle/completed/failed/pending).
    * Prevents death loops where each individual idle notification triggers a new leader turn
@@ -1264,7 +1110,7 @@ export class TeammateManager extends EventEmitter {
 
     this.agents = this.agents.filter((a) => a.slotId !== slotId);
     console.log(`[TeammateManager] Agent ${slotId} (${agent.agentName}) removed`);
-    ipcBridge.team.agentRemoved.emit({ teamId: this.teamId, slotId });
+    this.events.emit('team.agent-removed', { teamId: this.teamId, slotId });
     // Audit log: agent removed
     void (async () => {
       try {
@@ -1304,7 +1150,7 @@ export class TeammateManager extends EventEmitter {
     }
     this.agents = this.agents.map((a) => (a.slotId === slotId ? { ...a, agentName: trimmed } : a));
     console.log(`[TeammateManager] Agent ${slotId} renamed: "${oldName}" → "${trimmed}"`);
-    ipcBridge.team.agentRenamed.emit({ teamId: this.teamId, slotId, oldName, newName: trimmed });
+    this.events.emit('team.agent-renamed', { teamId: this.teamId, slotId, oldName, newName: trimmed });
     // Audit log: agent renamed
     void (async () => {
       try {
