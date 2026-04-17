@@ -7,7 +7,7 @@ export type LeadPromptParams = {
   tasks: TeamTask[];
   unreadMessages: MailboxMessage[];
   availableAgentTypes?: Array<{ type: string; name: string }>;
-  renamedAgents?: Map<string, string>;
+  renamedAgents?: ReadonlyMap<string, string>;
 };
 
 function formatTasks(tasks: TeamTask[]): string {

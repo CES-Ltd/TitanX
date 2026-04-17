@@ -10,7 +10,7 @@ type BuildRolePromptParams = {
   tasks: TeamTask[];
   teammates: TeamAgent[];
   availableAgentTypes?: Array<{ type: string; name: string }>;
-  renamedAgents?: Map<string, string>;
+  renamedAgents?: ReadonlyMap<string, string>;
 };
 
 /**

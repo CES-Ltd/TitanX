@@ -8,7 +8,7 @@ export type TeammatePromptParams = {
   teammates: TeamAgent[];
   assignedTasks: TeamTask[];
   unreadMessages: MailboxMessage[];
-  renamedAgents?: Map<string, string>;
+  renamedAgents?: ReadonlyMap<string, string>;
 };
 
 function roleDescription(agentType: string): string {

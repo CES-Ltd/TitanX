@@ -36,7 +36,7 @@ export type BuildPayloadParams = {
   tasks: TeamTask[];
   teammates: TeamAgent[];
   availableAgentTypes?: Array<{ type: string; name: string }>;
-  renamedAgents?: Map<string, string>;
+  renamedAgents?: ReadonlyMap<string, string>;
 };
 
 /** Unified adapter interface for cross-platform agent communication */

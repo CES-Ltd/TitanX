@@ -26,6 +26,7 @@ import type { IEventPublisher } from './ports/IEventPublisher';
 import { getSharedEventPublisher } from './ports/defaultIpcEventPublisher';
 import { ActionExecutor } from './ActionExecutor';
 import { TurnFinalizer } from './TurnFinalizer';
+import { AgentRegistry } from './AgentRegistry';
 
 type SpawnAgentFn = (agentName: string, agentType?: string) => Promise<TeamAgent>;
 
@@ -67,7 +68,21 @@ type TeammateManagerParams = {
  */
 export class TeammateManager extends EventEmitter {
   private readonly teamId: string;
-  private agents: TeamAgent[];
+  /**
+   * Single source of truth for the team's in-memory agents. Extracted to
+   * AgentRegistry (Phase 3.2) — owns agents[], ownedConversationIds Set,
+   * renamedAgents Map, resolveSlotId/normalize helpers. TeammateManager
+   * remains the sole publisher of events + audit for agent mutations.
+   */
+  private readonly registry: AgentRegistry;
+  /**
+   * Back-compat getter: the codebase used `this.agents` as a readonly
+   * TeamAgent[] in ~40+ places. Forwarding to registry.list() keeps all
+   * call sites working after the extraction without a sweeping rename.
+   */
+  private get agents(): readonly TeamAgent[] {
+    return this.registry.list();
+  }
   private readonly mailbox: Mailbox;
   private readonly taskManager: TaskManager;
   private readonly workerTaskManager: IWorkerTaskManager;
@@ -89,10 +104,6 @@ export class TeammateManager extends EventEmitter {
    * (mailbox read, payload build, sendMessage) still live in this class.
    */
   private readonly wakeState = new WakeState();
-  /** O(1) lookup set of conversationIds owned by this team, for fast IPC event filtering */
-  private readonly ownedConversationIds = new Set<string>();
-  /** Maps slotId → original name before rename, for "formerly: X" hints in prompts */
-  private readonly renamedAgents = new Map<string, string>();
   /** Periodic memory sweep interval handle */
   private readonly memorySweepInterval: ReturnType<typeof setInterval>;
 
@@ -127,7 +138,7 @@ export class TeammateManager extends EventEmitter {
   constructor(params: TeammateManagerParams) {
     super();
     this.teamId = params.teamId;
-    this.agents = [...params.agents];
+    this.registry = new AgentRegistry(params.agents);
     this.events = params.events ?? getSharedEventPublisher();
     this.mailbox = params.mailbox;
     this.taskManager = params.taskManager;
@@ -138,8 +149,8 @@ export class TeammateManager extends EventEmitter {
     // Assemble the ActionExecutor context from this manager's collaborators.
     this.actionExecutor = new ActionExecutor({
       teamId: this.teamId,
-      getAgents: () => this.agents,
-      resolveSlotId: (ref: string) => this.resolveSlotId(ref),
+      getAgents: () => this.registry.list(),
+      resolveSlotId: (ref: string) => this.registry.resolveSlotId(ref),
       mailbox: this.mailbox,
       taskManager: this.taskManager,
       events: this.events,
@@ -148,10 +159,6 @@ export class TeammateManager extends EventEmitter {
       wake: (slotId) => this.wake(slotId),
       maybeWakeLeaderWhenAllIdle: (leadSlotId) => this.maybeWakeLeaderWhenAllIdle(leadSlotId),
     });
-
-    for (const agent of this.agents) {
-      this.ownedConversationIds.add(agent.conversationId);
-    }
 
     // Listen on teamEventBus instead of ipcBridge: ipcBridge.emit() routes through
     // webContents.send() and never triggers same-process .on() listeners.
@@ -204,8 +211,7 @@ export class TeammateManager extends EventEmitter {
 
   /** Add a new agent to the team and notify renderer */
   addAgent(agent: TeamAgent): void {
-    this.agents = [...this.agents, agent];
-    this.ownedConversationIds.add(agent.conversationId);
+    this.registry.add(agent);
     // Notify renderer so it can refresh team data (tabs, status, etc.)
     this.events.emit('team.agent-spawned', { teamId: this.teamId, agent });
     // Audit log: agent added to team
@@ -346,7 +352,7 @@ export class TeammateManager extends EventEmitter {
         tasks,
         teammates,
         availableAgentTypes,
-        renamedAgents: this.renamedAgents,
+        renamedAgents: this.registry.renamedMap(),
       });
 
       // Clear previous buffer for this conversation (fresh turn)
@@ -423,8 +429,7 @@ export class TeammateManager extends EventEmitter {
 
   /** Set agent status, update the local agents array, and emit IPC event */
   setStatus(slotId: string, status: TeammateStatus, lastMessage?: string): void {
-    const agent = this.agents.find((a) => a.slotId === slotId);
-    this.agents = this.agents.map((a) => (a.slotId === slotId ? { ...a, status } : a));
+    const agent = this.registry.setStatus(slotId, status);
     this.events.emit('team.agent-status-changed', { teamId: this.teamId, slotId, status, lastMessage });
     this.emit('agentStatusChanged', { teamId: this.teamId, slotId, status, lastMessage });
 
@@ -480,7 +485,7 @@ export class TeammateManager extends EventEmitter {
 
   private handleResponseStream(msg: IResponseMessage): void {
     // Fast O(1) check: skip events for conversations not owned by this team
-    if (!this.ownedConversationIds.has(msg.conversation_id)) return;
+    if (!this.registry.ownsConversation(msg.conversation_id)) return;
 
     const agent = this.agents.find((a) => a.conversationId === msg.conversation_id);
     if (!agent) return;
@@ -935,21 +940,21 @@ export class TeammateManager extends EventEmitter {
 
   /** Remove an agent: cancel pending wake, clear buffers, remove from in-memory list */
   removeAgent(slotId: string): void {
-    const agent = this.agents.find((a) => a.slotId === slotId);
+    // Peek before mutating so we still have conversationId / agentName for cleanup
+    const agent = this.registry.findBySlotId(slotId);
     if (!agent) return;
 
     // Cancel any pending wake timeout + release active flag
     this.wakeState.clearTimeout(slotId);
     this.wakeState.releaseActive(slotId);
 
-    // Clean up buffers and owned conversation tracking
+    // Clean up buffers (ownedConversationIds is cleared by registry.remove)
     if (agent.conversationId) {
       this.streamBuffer.clear(agent.conversationId);
       this.streamBuffer.unmarkFinalized(agent.conversationId);
-      this.ownedConversationIds.delete(agent.conversationId);
     }
 
-    this.agents = this.agents.filter((a) => a.slotId !== slotId);
+    this.registry.remove(slotId);
     console.log(`[TeammateManager] Agent ${slotId} (${agent.agentName}) removed`);
     this.events.emit('team.agent-removed', { teamId: this.teamId, slotId });
     // Audit log: agent removed
@@ -974,22 +979,8 @@ export class TeammateManager extends EventEmitter {
 
   /** Rename an agent. Updates in-memory state; caller is responsible for persistence. */
   renameAgent(slotId: string, newName: string): void {
-    const trimmed = newName.trim();
-    if (!trimmed) throw new Error('Agent name cannot be empty');
-
-    const agent = this.agents.find((a) => a.slotId === slotId);
-    if (!agent) throw new Error(`Agent "${slotId}" not found`);
-
-    const needle = TeammateManager.normalize(trimmed);
-    const duplicate = this.agents.find((a) => a.slotId !== slotId && TeammateManager.normalize(a.agentName) === needle);
-    if (duplicate) throw new Error(`Agent name "${trimmed}" is already taken by ${duplicate.slotId}`);
-
-    const oldName = agent.agentName;
-    // Only store the very first original name so multiple renames show the original
-    if (!this.renamedAgents.has(slotId)) {
-      this.renamedAgents.set(slotId, oldName);
-    }
-    this.agents = this.agents.map((a) => (a.slotId === slotId ? { ...a, agentName: trimmed } : a));
+    // Validation (empty/missing/duplicate) + mutation live in AgentRegistry.rename.
+    const { oldName, newName: trimmed } = this.registry.rename(slotId, newName);
     console.log(`[TeammateManager] Agent ${slotId} renamed: "${oldName}" → "${trimmed}"`);
     this.events.emit('team.agent-renamed', { teamId: this.teamId, slotId, oldName, newName: trimmed });
     // Audit log: agent renamed
@@ -1015,22 +1006,10 @@ export class TeammateManager extends EventEmitter {
   /**
    * Resolve an agent identifier (slotId or agentName) to a slotId.
    * Agent outputs may reference teammates by name rather than slotId.
+   * Thin wrapper over AgentRegistry.resolveSlotId so external callers
+   * (tests, peer services) keep the same entry point.
    */
-  /** Normalize a string for fuzzy matching: trim, collapse whitespace, strip quotes */
-  private static normalize(s: string): string {
-    return s
-      .trim()
-      .replace(/\u00a0|\u200b|\u200c|\u200d|\ufeff/g, ' ')
-      .replace(/[\u201c\u201d\u201e\u2018\u2019"']/g, '')
-      .replace(/\s+/g, ' ')
-      .toLowerCase();
-  }
-
   private resolveSlotId(nameOrSlotId: string): string | undefined {
-    const bySlot = this.agents.find((a) => a.slotId === nameOrSlotId);
-    if (bySlot) return bySlot.slotId;
-    const needle = TeammateManager.normalize(nameOrSlotId);
-    const byName = this.agents.find((a) => TeammateManager.normalize(a.agentName) === needle);
-    return byName?.slotId;
+    return this.registry.resolveSlotId(nameOrSlotId);
   }
 }
