@@ -192,7 +192,10 @@ export function enrollDevice(db: ISqliteDriver, input: EnrollDeviceInput): Enrol
   ).run(now, deviceId, tokenHash);
 
   auditSafe(db, {
-    userId: 'fleet_enrollment',
+    // `user_id` has an FK to users(id) — use the seeded default user id
+    // for system-initiated audit rows. `actorId` carries the logical
+    // actor label ('fleet_enrollment') for human readers of the log.
+    userId: 'system_default_user',
     actorType: 'system',
     actorId: 'fleet_enrollment',
     action: existingRow ? 'fleet.device.re-enrolled' : 'fleet.device.enrolled',

@@ -143,7 +143,9 @@ export function deletePolicy(db: ISqliteDriver, policyId: string, userId?: strin
       entityType: 'iam_policy',
       entityId: policyId,
     });
-    bumpFleetVersion(db, 'iam.policy.deleted', userId ?? 'system', policyId);
+    // activity_log.user_id FKs to users(id); 'system' isn't seeded, so
+    // fall back to the default user when the caller didn't supply one.
+    bumpFleetVersion(db, 'iam.policy.deleted', userId ?? 'system_default_user', policyId);
   }
   return deleted;
 }
@@ -165,13 +167,13 @@ export function bindPolicy(
   logActivity(db, {
     userId: 'system_default_user',
     actorType: 'system',
-    actorId: 'iam_service',
+    actorId: 'system_default_user',
     action: 'iam.policy_bound',
     entityType: 'agent_policy_binding',
     entityId: id,
     details: { agentGalleryId, policyId, ttlSeconds, expiresAt },
   });
-  bumpFleetVersion(db, 'iam.policy.bound', 'iam_service', id);
+  bumpFleetVersion(db, 'iam.policy.bound', 'system_default_user', id);
 
   return { id, agentGalleryId, policyId, expiresAt, createdAt: now };
 }
@@ -201,12 +203,12 @@ export function unbindPolicy(db: ISqliteDriver, bindingId: string): boolean {
     logActivity(db, {
       userId: 'system_default_user',
       actorType: 'system',
-      actorId: 'iam_service',
+      actorId: 'system_default_user',
       action: 'iam.policy_unbound',
       entityType: 'agent_policy_binding',
       entityId: bindingId,
     });
-    bumpFleetVersion(db, 'iam.policy.unbound', 'iam_service', bindingId);
+    bumpFleetVersion(db, 'iam.policy.unbound', 'system_default_user', bindingId);
   }
   return deleted;
 }

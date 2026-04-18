@@ -124,7 +124,7 @@ export function initFleetBridge(): void {
   ipcBridge.fleet.generateEnrollmentToken.provider(async ({ ttlHours, note }) => {
     const db = await getDatabase();
     const result = fleetEnrollment.generateEnrollmentToken(db.getDriver(), {
-      issuedBy: 'desktop_admin',
+      issuedBy: 'system_default_user',
       ttlHours,
       note,
     });
@@ -149,7 +149,7 @@ export function initFleetBridge(): void {
     const db = await getDatabase();
     return fleetEnrollment.revokeDevice(db.getDriver(), {
       deviceId,
-      revokedBy: 'desktop_admin',
+      revokedBy: 'system_default_user',
     });
   });
 
