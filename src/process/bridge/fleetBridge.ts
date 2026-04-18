@@ -24,7 +24,8 @@ import {
   isSetupRequired,
   validateFleetSetup,
 } from '@process/services/fleet';
-import { getSlaveStatus, onSlaveStatusChanged } from '@process/services/fleetSlave';
+import { clearEnrollmentState, getSlaveStatus, onSlaveStatusChanged } from '@process/services/fleetSlave';
+import { ProcessConfig } from '@process/utils/initStorage';
 import * as fleetEnrollment from '@process/services/fleetEnrollment';
 import { getDatabase } from '@process/services/database';
 import * as securityFeaturesService from '@process/services/securityFeatures';
@@ -108,6 +109,31 @@ export function initFleetBridge(): void {
     const result = await applyFleetSetup(input);
     if (result.ok) emitModeChanged(input.mode);
     return result;
+  });
+
+  // v2.1.0 — role read/write + force-reenroll IPC for the top-bar role
+  // switcher. These three operate on the slave side of the fence; the
+  // master-side revokeDevice + generateEnrollmentToken already exist.
+  ipcBridge.fleet.getEnrollmentRole.provider(async () => {
+    const raw = (await ProcessConfig.get('fleet.enrollmentRole')) as string | undefined;
+    return { role: raw === 'farm' ? 'farm' : 'workforce' };
+  });
+
+  ipcBridge.fleet.setEnrollmentRole.provider(async ({ role }) => {
+    if (role !== 'workforce' && role !== 'farm') {
+      return { ok: false };
+    }
+    await ProcessConfig.set('fleet.enrollmentRole', role);
+    return { ok: true };
+  });
+
+  ipcBridge.fleet.clearEnrollment.provider(async () => {
+    try {
+      await clearEnrollmentState();
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
   });
 
   // ── Slave client status ───────────────────────────────────────────────

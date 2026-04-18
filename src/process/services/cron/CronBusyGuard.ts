@@ -129,7 +129,32 @@ export class CronBusyGuard {
   clear(): void {
     this.states.clear();
   }
+
+  /**
+   * v2.1.0 [CRIT]: periodic cleanup timer. Previously `cleanup()`
+   * existed but was never wired to a schedule, so the `states` Map
+   * grew unbounded over months of usage (conversation IDs come +
+   * go but their state entries never got swept).
+   *
+   * Fired hourly. Safe to call multiple times — start() is idempotent
+   * via the existing-timer guard. Caller (main process boot) is
+   * responsible for calling stopAutoCleanup() at app shutdown so the
+   * timer doesn't block process exit.
+   */
+  private autoCleanupTimer: ReturnType<typeof setInterval> | null = null;
+
+  startAutoCleanup(intervalMs = 60 * 60 * 1000): void {
+    if (this.autoCleanupTimer) return;
+    this.autoCleanupTimer = setInterval(() => this.cleanup(), intervalMs);
+  }
+
+  stopAutoCleanup(): void {
+    if (this.autoCleanupTimer) {
+      clearInterval(this.autoCleanupTimer);
+      this.autoCleanupTimer = null;
+    }
+  }
 }
 
-// Singleton instance
+// Singleton instance — auto-cleanup wired at app boot from main process.
 export const cronBusyGuard = new CronBusyGuard();

@@ -758,6 +758,26 @@ export const fleet = {
   /** Broadcast when mode changes so renderers can refresh their SWR caches. */
   modeChanged: bridge.buildEmitter<{ mode: FleetMode }>('fleet:mode-changed'),
   /**
+   * v2.1.0 — slave-only: clear device JWT + enrollment token + master
+   * pubkey so the next heartbeat fails → next enrollment cycle uses a
+   * fresh token. Required when flipping fleet.enrollmentRole since the
+   * server-side role is locked at enroll time.
+   *
+   * The slave still needs a new enrollment token after calling this;
+   * the UI flow is (1) admin revokes device on master, (2) admin
+   * generates new token, (3) slave sets enrollmentRole + token + calls
+   * this.
+   */
+  clearEnrollment: bridge.buildProvider<{ ok: boolean; error?: string }, void>('fleet:clear-enrollment'),
+  /**
+   * v2.1.0 — read/write fleet.enrollmentRole from the renderer. The
+   * slave-side config key that travels on enroll. Writing it does NOT
+   * force re-enrollment on its own (master locks role at enroll);
+   * pair with clearEnrollment + new token paste.
+   */
+  getEnrollmentRole: bridge.buildProvider<{ role: 'workforce' | 'farm' }, void>('fleet:get-enrollment-role'),
+  setEnrollmentRole: bridge.buildProvider<{ ok: boolean }, { role: 'workforce' | 'farm' }>('fleet:set-enrollment-role'),
+  /**
    * Slave-side enrollment status snapshot. Used by the offline banner
    * + Settings to show whether the slave is online with its master,
    * offline (transient), unenrolled, or revoked.

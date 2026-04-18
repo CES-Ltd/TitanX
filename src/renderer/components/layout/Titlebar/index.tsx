@@ -100,6 +100,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { ipcBridge } from '@/common';
 import { TEAM_MODE_ENABLED } from '@/common/config/constants';
 import WindowControls from '../WindowControls';
+import FleetModeButton from './FleetModeButton';
+import FleetRoleButton from './FleetRoleButton';
 import { WORKSPACE_STATE_EVENT, dispatchWorkspaceToggleEvent } from '@renderer/utils/workspace/workspaceEvents';
 import type { WorkspaceStateDetail } from '@renderer/utils/workspace/workspaceEvents';
 import { useLayoutContext } from '@/renderer/hooks/context/LayoutContext';
@@ -395,6 +397,10 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
       <div ref={toolbarRef} className='app-titlebar__toolbar'>
         {/* Caveman Mode Toggle */}
         <CavemanButton iconSize={iconSize} isMobile={layout?.isMobile} />
+        {/* v2.1.0 — Fleet mode switcher inline (replaces Settings modal) */}
+        <FleetModeButton iconSize={iconSize} isMobile={layout?.isMobile} />
+        {/* v2.1.0 — Slave-only role switcher (renders null on regular/master) */}
+        <FleetRoleButton iconSize={iconSize} isMobile={layout?.isMobile} />
         {/* Help Button */}
         <Tooltip content='Help & Feature Guide' position='bottom' mini>
           <button

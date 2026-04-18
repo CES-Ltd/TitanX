@@ -53,11 +53,43 @@
     "sectionTitle": "Fleet mode",
     "currentLabel": "Current mode",
     "changeButton": "Change mode…",
+    "locationHint": "Mode changes are now in the titlebar, next to Caveman Mode.",
     "changeConfirm": {
       "title": "Switch fleet mode?",
       "body": "Changing the mode will restart TitanX. Your teams, conversations, and local data will be preserved.",
       "restartNow": "Restart now",
       "restartLater": "I'll restart later"
+    }
+  },
+  "topbar": {
+    "title": "Fleet mode",
+    "subtitle": "Switch between single-machine, organization master, and managed slave modes.",
+    "cancel": "Cancel",
+    "applyRestart": "Save & restart",
+    "restartHint": "Mode change requires a restart. Your teams and conversations are preserved.",
+    "tooltip": "Fleet mode (Regular)",
+    "tooltipActive": "Fleet mode: {{mode}}"
+  },
+  "role": {
+    "title": "Slave role",
+    "subtitle": "Role is locked at enrollment. Changing it clears your JWT + prompts for a fresh token from your admin.",
+    "warning": "Ask your admin to revoke this device on master and mint a fresh enrollment token, then paste it below.",
+    "tokenLabel": "New enrollment token",
+    "tokenPlaceholder": "Paste the one-time token\u2026",
+    "tokenRequired": "Paste a fresh enrollment token from your admin to re-enroll.",
+    "setFailed": "Could not persist the new role.",
+    "clearFailed": "Could not clear previous enrollment state.",
+    "restartPrompt": "Role updated. Restarting to complete enrollment\u2026",
+    "cancel": "Cancel",
+    "applyRestart": "Re-enroll & restart",
+    "tooltip": "Slave role: {{role}}",
+    "workforce": {
+      "name": "Workforce",
+      "description": "Managed employee endpoint. Receives policies and templates from master."
+    },
+    "farm": {
+      "name": "Farm",
+      "description": "Compute node exposing local agents for remote execution."
     }
   },
   "restricted": {

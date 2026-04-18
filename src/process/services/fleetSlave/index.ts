@@ -148,6 +148,44 @@ export function __resetSlaveClientForTests(): void {
   _statusListeners = [];
 }
 
+/**
+ * v2.1.0 — force a re-enrollment flow. Clears the cached device JWT +
+ * enrollment token + master signing pubkey on the slave side, which
+ * makes the NEXT heartbeat attempt fail → the next startSlaveClient
+ * branch will hit the "need to enroll" path.
+ *
+ * Use cases:
+ *   - Admin changes `fleet.enrollmentRole` (workforce ↔ farm) — must
+ *     re-enroll for master to record the new role in fleet_farm_devices
+ *   - Master URL changes and the slave has to re-handshake
+ *   - Operator recovers from a corrupted JWT state
+ *
+ * The master's `revokeDevice` IPC is a separate concern — this is the
+ * slave half of the round-trip. Typical flow: admin calls this → UI
+ * prompts the user for a fresh enrollment token → next heartbeat
+ * cycle enrolls with the new role.
+ *
+ * Does NOT restart the slave client loop automatically. Caller is
+ * expected to `stopSlaveClient()` + `startSlaveClient(masterUrl)` or
+ * the user just relaunches the app.
+ */
+export async function clearEnrollmentState(): Promise<void> {
+  try {
+    await ProcessConfig.set('fleet.slave.deviceJwtCiphertext', '');
+    await ProcessConfig.set('fleet.slave.masterCommandSigningPubKeyCiphertext', '');
+    await ProcessConfig.set('fleet.slave.enrollmentTokenCiphertext', '');
+    await ProcessConfig.set('fleet.slave.enrollmentStatus', 'pending');
+    updateStatus({
+      connection: 'unenrolled',
+      deviceId: undefined,
+      lastErrorMessage: 'Enrollment cleared by user — awaiting new token',
+    });
+  } catch (e) {
+    logNonCritical('fleet.slave.clear-enrollment', e);
+    throw e;
+  }
+}
+
 // ── Enrollment ──────────────────────────────────────────────────────────
 
 async function attemptEnrollment(masterUrl: string): Promise<void> {

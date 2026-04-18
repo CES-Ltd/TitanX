@@ -32,6 +32,18 @@ export async function runResearchGraph(params: RunResearchGraphParams): Promise<
   const { conversationId, question, provider, mcpServers, signal } = params;
   const bridge = new StreamBridge(conversationId);
 
+  // v2.1.0 [CRIT]: ensure the bridge's IPC listener + pending
+  // interrupt resolvers get cleaned up no matter how this function
+  // exits (normal completion, throw, cancellation). Previously every
+  // research run leaked one listener + any unresolved interrupts.
+  const cleanup = (): void => {
+    try {
+      bridge.destroy();
+    } catch (e) {
+      console.warn('[LangGraph] StreamBridge cleanup failed:', e);
+    }
+  };
+
   try {
     // Check for early cancellation
     if (signal?.aborted) {
@@ -88,5 +100,7 @@ export async function runResearchGraph(params: RunResearchGraphParams): Promise<
     console.error('[LangGraph] Research graph error:', err);
     bridge.emitError(`Research failed: ${message}`);
     bridge.emitRunFinished();
+  } finally {
+    cleanup();
   }
 }

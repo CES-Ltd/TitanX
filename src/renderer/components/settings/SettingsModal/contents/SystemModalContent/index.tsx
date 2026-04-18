@@ -21,8 +21,7 @@ import { useSettingsViewMode } from '../../settingsViewContext';
 import DevSettings from './DevSettings';
 import DirInputItem from './DirInputItem';
 import PreferenceRow from './PreferenceRow';
-import FleetModeSwitcher from '@/renderer/pages/fleet/FleetModeSwitcher';
-import { useFleetConfig, useFleetMode } from '@/renderer/hooks/fleet/useFleetMode';
+import { useFleetMode } from '@/renderer/hooks/fleet/useFleetMode';
 import FleetSyncPanel from '@/renderer/components/fleet/FleetSyncPanel';
 import ChangePasswordModal from '@/renderer/components/settings/ChangePasswordModal';
 
@@ -55,8 +54,9 @@ const SystemModalContent: React.FC = () => {
   const [saveUploadToWorkspace, setSaveUploadToWorkspace] = useState(false);
   const [commandQueueEnabled, setCommandQueueEnabled] = useState(false);
   const fleetMode = useFleetMode();
-  const { data: fleetConfig } = useFleetConfig();
-  const [fleetSwitcherVisible, setFleetSwitcherVisible] = useState(false);
+  // Fleet mode switcher moved to the titlebar in v2.1.0 — local modal
+  // state + useFleetConfig hook removed. FleetModeButton owns the full
+  // popover + config + restart flow.
   // v1.9.38: in-app password change modal trigger state.
   const [passwordModalVisible, setPasswordModalVisible] = useState(false);
 
@@ -245,17 +245,19 @@ const SystemModalContent: React.FC = () => {
       component: <Switch checked={commandQueueEnabled} onChange={handleCommandQueueEnabledChange} />,
     },
     {
+      // v2.1.0: the "Change mode" button moved to the titlebar (next
+      // to Caveman Mode). This row now just displays current mode as
+      // a read-only reference + points to the new control location.
       key: 'fleetMode',
       label: t('fleet.settings.sectionTitle', { defaultValue: 'Fleet mode' }),
-      description: t(`fleet.mode.${fleetMode}.description`, { defaultValue: '' }),
+      description: t('fleet.settings.locationHint', {
+        defaultValue: 'Mode changes are now in the titlebar, next to Caveman Mode.',
+      }),
       component: (
         <div className='flex items-center gap-2'>
           <span className='text-13px text-t-secondary'>
             {t(`fleet.mode.${fleetMode}.name`, { defaultValue: fleetMode })}
           </span>
-          <Button size='small' onClick={() => setFleetSwitcherVisible(true)}>
-            {t('fleet.settings.changeButton', { defaultValue: 'Change mode…' })}
-          </Button>
         </div>
       ),
     },
@@ -324,11 +326,6 @@ const SystemModalContent: React.FC = () => {
   return (
     <div className='flex flex-col h-full w-full'>
       {modalContextHolder}
-      <FleetModeSwitcher
-        visible={fleetSwitcherVisible}
-        onClose={() => setFleetSwitcherVisible(false)}
-        currentConfig={fleetConfig}
-      />
       <ChangePasswordModal open={passwordModalVisible} onClose={() => setPasswordModalVisible(false)} />
 
       <AionScrollArea className='flex-1 min-h-0 pb-16px' disableOverflow={isPageMode}>

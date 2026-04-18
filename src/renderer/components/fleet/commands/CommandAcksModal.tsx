@@ -8,7 +8,7 @@
  * command. Null commandId closes the modal AND disables the SWR fetch.
  */
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Modal, Table, Tag, Empty, Spin } from '@arco-design/web-react';
 import { useCommandAcks, type AckStatus, type FleetCommandAckRow } from '@renderer/hooks/fleet/useFleetCommands';
@@ -18,6 +18,12 @@ type Props = {
   onClose: () => void;
 };
 
+type EnrichedAckRow = FleetCommandAckRow & {
+  /** Pre-stringified result so the column render doesn't re-stringify
+   *  on every parent re-render. v2.1.0 perf fix. */
+  resultText: string;
+};
+
 const statusColor = (s: AckStatus): 'green' | 'red' | 'orange' =>
   s === 'succeeded' ? 'green' : s === 'failed' ? 'red' : 'orange';
 
@@ -25,36 +31,54 @@ const CommandAcksModal: React.FC<Props> = ({ commandId, onClose }) => {
   const { t } = useTranslation();
   const { acks, isLoading } = useCommandAcks(commandId);
 
-  const columns = [
-    {
-      title: t('fleet.commands.acks.device', { defaultValue: 'Device' }),
-      dataIndex: 'deviceId',
-      key: 'device',
-      render: (v: string) => <code className='text-11px'>{v.slice(0, 12)}…</code>,
-    },
-    {
-      title: t('fleet.commands.acks.status', { defaultValue: 'Status' }),
-      key: 'status',
-      render: (_: unknown, row: FleetCommandAckRow) => (
-        <Tag color={statusColor(row.status)} size='small'>
-          {row.status}
-        </Tag>
-      ),
-    },
-    {
-      title: t('fleet.commands.acks.result', { defaultValue: 'Result' }),
-      key: 'result',
-      render: (_: unknown, row: FleetCommandAckRow) => {
-        const text = Object.keys(row.result).length === 0 ? '—' : JSON.stringify(row.result);
-        return <code className='text-11px text-t-tertiary break-all'>{text}</code>;
+  // v2.1.0 [PERF]: pre-compute resultText (the JSON-stringified result
+  // blob) once per acks-change instead of re-stringifying on every
+  // table render. On large command fan-outs (100+ devices) this turns
+  // O(100 * rerenders) stringifications into O(100 * data-changes).
+  const enrichedAcks = useMemo<EnrichedAckRow[]>(
+    () =>
+      acks.map((row) => ({
+        ...row,
+        resultText: Object.keys(row.result).length === 0 ? '—' : JSON.stringify(row.result),
+      })),
+    [acks]
+  );
+
+  // Columns only depend on `t`, so memoize to avoid rebuilding the
+  // column array reference on every render — stable column refs
+  // prevent Arco Table from doing unnecessary diff work.
+  const columns = useMemo(
+    () => [
+      {
+        title: t('fleet.commands.acks.device', { defaultValue: 'Device' }),
+        dataIndex: 'deviceId',
+        key: 'device',
+        render: (v: string) => <code className='text-11px'>{v.slice(0, 12)}…</code>,
       },
-    },
-    {
-      title: t('fleet.commands.acks.ackedAt', { defaultValue: 'Acked' }),
-      key: 'ackedAt',
-      render: (_: unknown, row: FleetCommandAckRow) => new Date(row.ackedAt).toLocaleString(),
-    },
-  ];
+      {
+        title: t('fleet.commands.acks.status', { defaultValue: 'Status' }),
+        key: 'status',
+        render: (_: unknown, row: EnrichedAckRow) => (
+          <Tag color={statusColor(row.status)} size='small'>
+            {row.status}
+          </Tag>
+        ),
+      },
+      {
+        title: t('fleet.commands.acks.result', { defaultValue: 'Result' }),
+        key: 'result',
+        render: (_: unknown, row: EnrichedAckRow) => (
+          <code className='text-11px text-t-tertiary break-all'>{row.resultText}</code>
+        ),
+      },
+      {
+        title: t('fleet.commands.acks.ackedAt', { defaultValue: 'Acked' }),
+        key: 'ackedAt',
+        render: (_: unknown, row: EnrichedAckRow) => new Date(row.ackedAt).toLocaleString(),
+      },
+    ],
+    [t]
+  );
 
   return (
     <Modal
@@ -64,9 +88,9 @@ const CommandAcksModal: React.FC<Props> = ({ commandId, onClose }) => {
       title={t('fleet.commands.acks.title', { defaultValue: 'Command acks' })}
       style={{ width: 720 }}
     >
-      {isLoading && acks.length === 0 ? (
+      {isLoading && enrichedAcks.length === 0 ? (
         <Spin className='flex justify-center my-8' />
-      ) : acks.length === 0 ? (
+      ) : enrichedAcks.length === 0 ? (
         <Empty
           description={t('fleet.commands.acks.empty', {
             defaultValue: 'No devices have acked this command yet.',
@@ -75,8 +99,8 @@ const CommandAcksModal: React.FC<Props> = ({ commandId, onClose }) => {
       ) : (
         <Table
           columns={columns as never}
-          data={acks}
-          rowKey={(r: FleetCommandAckRow) => `${r.commandId}:${r.deviceId}`}
+          data={enrichedAcks}
+          rowKey={(r: EnrichedAckRow) => `${r.commandId}:${r.deviceId}`}
           pagination={false}
           size='small'
           scroll={{ y: 360 }}
