@@ -202,6 +202,16 @@ export async function applyFleetSetup(input: FleetSetupInput): Promise<FleetSetu
         logNonCritical('fleet.setup.encrypt-token', e);
         return { ok: false, error: 'Failed to encrypt enrollment token; please retry.' };
       }
+
+      // v1.9.37 hotfix: when the user supplies a NEW enrollment token,
+      // wipe the cached device JWT + master command-signing pubkey
+      // from prior enrollments. Without this, the slave client's boot
+      // path (startSlaveIfEnrolled) finds the stale JWT, skips the
+      // enroll step, hits 401 on heartbeat, flips to 'revoked', and
+      // the supplied token never gets used. Clearing the cache forces
+      // the fresh enrollment to happen on next app launch.
+      await ProcessConfig.set('fleet.slave.deviceJwtCiphertext', '');
+      await ProcessConfig.set('fleet.slave.masterCommandSigningPubKeyCiphertext', '');
     }
     await ProcessConfig.set('fleet.slave.enrollmentStatus', 'pending');
   }
@@ -219,6 +229,23 @@ export async function applyFleetSetup(input: FleetSetupInput): Promise<FleetSetu
   // to see /api/fleet/* reachable. No-op if already running.
   if (input.mode === 'master' && priorMode !== 'master') {
     void startMasterWebServerIfConfigured();
+  }
+
+  // v1.9.37 hotfix: slave re-enrollment without an app restart. If the
+  // user re-entered URL + token in Settings (or the wizard), the
+  // heartbeat loop may have been torn down by an earlier 'revoked'
+  // state. Stop any running loops, then call startSlaveIfEnrolled to
+  // pick up the fresh ProcessConfig state. Dynamic import avoids a
+  // circular dep with fleetSlave (which imports fleetConfig/fleetTelemetry
+  // which both import from this service).
+  if (input.mode === 'slave' && input.slaveEnrollmentToken) {
+    try {
+      const { stopSlaveClient, startSlaveIfEnrolled } = await import('@process/services/fleetSlave');
+      stopSlaveClient();
+      void startSlaveIfEnrolled();
+    } catch (e) {
+      logNonCritical('fleet.setup.slave-restart', e);
+    }
   }
 
   return { ok: true };

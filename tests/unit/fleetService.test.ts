@@ -295,6 +295,35 @@ describe('applyFleetSetup', () => {
     expect(configStore['fleet.slave.enrollmentStatus']).toBe('pending');
   });
 
+  // ── v1.9.37 hotfix: re-enrollment must clear stale JWT + pubkey ──
+  it('clears cached device JWT when a new enrollment token is provided', async () => {
+    // Simulate a prior successful enrollment whose JWT is now stale
+    // (e.g. master revoked the device).
+    configStore['fleet.slave.deviceJwtCiphertext'] = 'ct:old-jwt-from-before';
+    configStore['fleet.slave.masterCommandSigningPubKeyCiphertext'] = 'ct:old-pubkey';
+
+    await applyFleetSetup({
+      mode: 'slave',
+      slaveMasterUrl: 'https://master.local:8888',
+      slaveEnrollmentToken: 'fresh-enrollment-token-abc',
+    });
+
+    // Both prior caches must be cleared so startSlaveIfEnrolled's boot
+    // path re-enrolls from scratch instead of using the stale JWT.
+    expect(configStore['fleet.slave.deviceJwtCiphertext']).toBe('');
+    expect(configStore['fleet.slave.masterCommandSigningPubKeyCiphertext']).toBe('');
+  });
+
+  it('does NOT clear cached JWT when no new enrollment token is provided (URL-only edit)', async () => {
+    configStore['fleet.slave.deviceJwtCiphertext'] = 'ct:still-valid-jwt';
+    await applyFleetSetup({
+      mode: 'slave',
+      slaveMasterUrl: 'https://master.local:8888',
+      // no slaveEnrollmentToken
+    });
+    expect(configStore['fleet.slave.deviceJwtCiphertext']).toBe('ct:still-valid-jwt');
+  });
+
   it('returns ok:false for validation failure without writing state', async () => {
     const result = await applyFleetSetup({ mode: 'master', masterPort: -5 });
     expect(result.ok).toBe(false);
