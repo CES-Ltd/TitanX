@@ -14,10 +14,12 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Message, Modal, Table, Tag, Input, InputNumber, Popconfirm } from '@arco-design/web-react';
-import { Copy, Delete, Refresh, Plus } from '@icon-park/react';
+import { Button, Dropdown, Menu, Message, Modal, Table, Tag, Input, InputNumber, Popconfirm } from '@arco-design/web-react';
+import { Copy, Delete, Refresh, Plus, Lightning, Download } from '@icon-park/react';
 import { ipcBridge } from '@/common';
 import FleetDashboard from '@renderer/components/fleet/FleetDashboard';
+import CommandHistoryPanel from '@renderer/components/fleet/CommandHistoryPanel';
+import { enqueueFleetCommand, type FleetCommandType } from '@renderer/hooks/fleet/useFleetCommands';
 
 type EnrolledDevice = {
   deviceId: string;
@@ -114,6 +116,57 @@ const FleetPage: React.FC = () => {
     [refresh, t]
   );
 
+  // ── Phase F Week 3: remote commands (per-device + fleet-wide) ──────
+  const handleEnqueueCommand = useCallback(
+    async (targetDeviceId: string, commandType: FleetCommandType): Promise<void> => {
+      try {
+        // The IPC bridge generic defeats TS's narrowing on `result.ok`,
+        // so read the fields through an inline structural cast rather
+        // than rely on discriminated-union narrowing.
+        const rawResult = await enqueueFleetCommand({ targetDeviceId, commandType });
+        const result = rawResult as {
+          ok: boolean;
+          commandId?: string;
+          error?: string;
+          code?: 'per_device' | 'fleet_wide';
+        };
+        if (result.ok) {
+          const labelKey =
+            commandType === 'force_config_sync'
+              ? 'fleet.commands.enqueued.configSync'
+              : 'fleet.commands.enqueued.telemetryPush';
+          Message.success(
+            t(labelKey, {
+              defaultValue:
+                commandType === 'force_config_sync' ? 'Queued config sync' : 'Queued telemetry push',
+            })
+          );
+          return;
+        }
+        if (result.code === 'per_device') {
+          Message.warning(
+            t('fleet.commands.rateLimit.perDevice', {
+              defaultValue: 'Too many pending commands for this device. Wait for them to complete or revoke some.',
+            })
+          );
+          return;
+        }
+        if (result.code === 'fleet_wide') {
+          Message.warning(
+            t('fleet.commands.rateLimit.fleetWide', {
+              defaultValue: 'Fleet-wide command rate limit reached. Try again in an hour.',
+            })
+          );
+          return;
+        }
+        Message.error(result.error ?? 'Failed to enqueue command');
+      } catch (err) {
+        Message.error(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [t]
+  );
+
   const columns = [
     {
       title: t('fleet.master.table.hostname', { defaultValue: 'Hostname' }),
@@ -161,21 +214,44 @@ const FleetPage: React.FC = () => {
     {
       title: '',
       key: 'actions',
-      width: 120,
-      render: (_: unknown, row: EnrolledDevice) =>
-        row.status === 'enrolled' ? (
-          <Popconfirm
-            title={t('fleet.master.revokeConfirm.title', { defaultValue: 'Revoke this device?' })}
-            content={t('fleet.master.revokeConfirm.body', {
-              defaultValue: 'The device will be unable to sync with this master until it re-enrolls.',
-            })}
-            onOk={() => void handleRevoke(row.deviceId)}
-          >
-            <Button size='small' status='danger' icon={<Delete theme='outline' size='14' />}>
-              {t('fleet.master.revokeButton', { defaultValue: 'Revoke' })}
-            </Button>
-          </Popconfirm>
-        ) : null,
+      width: 200,
+      render: (_: unknown, row: EnrolledDevice) => {
+        if (row.status !== 'enrolled') return null;
+        const actionsMenu = (
+          <Menu>
+            <Menu.Item
+              key='force-sync'
+              onClick={() => void handleEnqueueCommand(row.deviceId, 'force_config_sync')}
+            >
+              {t('fleet.commands.actions.forceSync', { defaultValue: 'Force config sync' })}
+            </Menu.Item>
+            <Menu.Item
+              key='force-telemetry'
+              onClick={() => void handleEnqueueCommand(row.deviceId, 'force_telemetry_push')}
+            >
+              {t('fleet.commands.actions.forceTelemetry', { defaultValue: 'Force telemetry push' })}
+            </Menu.Item>
+          </Menu>
+        );
+        return (
+          <div className='flex items-center gap-2'>
+            <Dropdown droplist={actionsMenu} trigger='click' position='br'>
+              <Button size='small' icon={<Lightning theme='outline' size='14' />}>
+                {t('fleet.commands.actions.button', { defaultValue: 'Actions' })}
+              </Button>
+            </Dropdown>
+            <Popconfirm
+              title={t('fleet.master.revokeConfirm.title', { defaultValue: 'Revoke this device?' })}
+              content={t('fleet.master.revokeConfirm.body', {
+                defaultValue: 'The device will be unable to sync with this master until it re-enrolls.',
+              })}
+              onOk={() => void handleRevoke(row.deviceId)}
+            >
+              <Button size='small' status='danger' icon={<Delete theme='outline' size='14' />} />
+            </Popconfirm>
+          </div>
+        );
+      },
     },
   ];
 
@@ -186,6 +262,25 @@ const FleetPage: React.FC = () => {
           {t('fleet.master.pageTitle', { defaultValue: 'Fleet' })}
         </h1>
         <div className='flex gap-2'>
+          {/* Phase F Week 3: fleet-wide action buttons. Only show when
+              there's at least one enrolled device — otherwise the
+              commands queue rows nobody will ever execute. */}
+          {devices.some((d) => d.status === 'enrolled') && (
+            <>
+              <Button
+                icon={<Refresh theme='outline' size='14' />}
+                onClick={() => void handleEnqueueCommand('all', 'force_config_sync')}
+              >
+                {t('fleet.commands.actions.forceSyncAll', { defaultValue: 'Sync all' })}
+              </Button>
+              <Button
+                icon={<Download theme='outline' size='14' />}
+                onClick={() => void handleEnqueueCommand('all', 'force_telemetry_push')}
+              >
+                {t('fleet.commands.actions.forceTelemetryAll', { defaultValue: 'Telemetry all' })}
+              </Button>
+            </>
+          )}
           <Button icon={<Refresh theme='outline' size='14' />} onClick={() => void refresh()}>
             {t('fleet.master.refresh', { defaultValue: 'Refresh' })}
           </Button>
@@ -214,6 +309,11 @@ const FleetPage: React.FC = () => {
         {/* Phase D — fleet-wide telemetry dashboard */}
         <div className='mt-6 border-t-1 border-border-2'>
           <FleetDashboard />
+        </div>
+
+        {/* Phase F Week 3 — recent remote commands + per-device acks */}
+        <div className='mt-4 px-6 pb-6'>
+          <CommandHistoryPanel />
         </div>
       </div>
 

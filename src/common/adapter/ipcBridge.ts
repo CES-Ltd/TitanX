@@ -880,6 +880,68 @@ export const fleet = {
     },
     { windowStart: number; windowEnd: number; topDevicesLimit?: number }
   >('fleet:get-telemetry-summary'),
+  // ── Phase F: remote commands (master-side admin) ───────────────────────
+  /**
+   * Enqueue a command addressed to one device or 'all'. Returns
+   * { ok: true, commandId } on success, { ok: false, error, code? } on
+   * rate-limit / validation failure so the renderer can branch its toast.
+   */
+  enqueueCommand: bridge.buildProvider<
+    { ok: true; commandId: string } | { ok: false; error: string; code?: 'per_device' | 'fleet_wide' },
+    {
+      targetDeviceId: string; // deviceId or 'all'
+      commandType: 'force_config_sync' | 'force_telemetry_push';
+      ttlSeconds?: number;
+    }
+  >('fleet:enqueue-command'),
+  /** Admin: recent commands + per-status ack counts for the history table. */
+  listCommands: bridge.buildProvider<
+    {
+      commands: Array<{
+        id: string;
+        targetDeviceId: string;
+        commandType: 'force_config_sync' | 'force_telemetry_push';
+        params: Record<string, unknown>;
+        createdAt: number;
+        createdBy: string;
+        expiresAt: number;
+        revokedAt?: number;
+        acks: {
+          succeeded: number;
+          failed: number;
+          skipped: number;
+          total: number;
+          lastAckedAt?: number;
+        };
+      }>;
+    },
+    { limit?: number }
+  >('fleet:list-commands'),
+  /** Admin: per-device ack rows for one command (drill-down). */
+  listCommandAcks: bridge.buildProvider<
+    {
+      acks: Array<{
+        commandId: string;
+        deviceId: string;
+        status: 'succeeded' | 'failed' | 'skipped';
+        result: Record<string, unknown>;
+        ackedAt: number;
+      }>;
+    },
+    { commandId: string }
+  >('fleet:list-command-acks'),
+  /** Admin: cancel a pending command so slaves never pick it up. */
+  revokeCommand: bridge.buildProvider<{ ok: boolean }, { commandId: string }>('fleet:revoke-command'),
+  /**
+   * Emitted when master records an ack from a slave — renderer uses this
+   * to invalidate the command-history SWR cache without polling. Fires
+   * once per ack (if a batch of 10 devices acks in 100ms, 10 events
+   * reach the renderer; it coalesces via SWR's mutate debounce).
+   */
+  commandAcked: bridge.buildEmitter<{ commandId: string; deviceId: string; status: 'succeeded' | 'failed' | 'skipped' }>(
+    'fleet:command-acked'
+  ),
+
   /**
    * Per-template adoption rollup (Phase E Week 3). Lists every
    * master-published template plus active vs enrolled device counts

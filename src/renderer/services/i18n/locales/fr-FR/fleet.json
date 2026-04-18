@@ -216,5 +216,43 @@
       "unknown": "Template not found — refresh and try again",
       "deleteBlocked": "This template is managed by your IT administrator and cannot be deleted locally."
     }
+  },
+  "commands": {
+    "actions": {
+      "button": "Actions",
+      "forceSync": "Force config sync",
+      "forceTelemetry": "Force telemetry push",
+      "forceSyncAll": "Sync all",
+      "forceTelemetryAll": "Telemetry all"
+    },
+    "enqueued": {
+      "configSync": "Queued config sync",
+      "telemetryPush": "Queued telemetry push"
+    },
+    "rateLimit": {
+      "perDevice": "Too many pending commands for this device. Wait for them to complete or revoke some.",
+      "fleetWide": "Fleet-wide command rate limit reached. Try again in an hour."
+    },
+    "history": {
+      "title": "Command history",
+      "type": "Command",
+      "status": "Status",
+      "created": "Created",
+      "inspect": "Inspect",
+      "allDevices": "all devices",
+      "revoked": "Revoked",
+      "expired": "Expired",
+      "pending": "pending",
+      "empty": "No commands fired yet.",
+      "revokeConfirm": "Revoke this command?"
+    },
+    "acks": {
+      "title": "Command acks",
+      "device": "Device",
+      "status": "Status",
+      "result": "Result",
+      "ackedAt": "Acked",
+      "empty": "No devices have acked this command yet."
+    }
   }
 }

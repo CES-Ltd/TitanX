@@ -40,6 +40,29 @@ import {
   type EnqueueCommandInput,
 } from './types';
 
+// ── Ack listener registry (for IPC emitter wiring) ──────────────────────
+
+type AckNotification = { commandId: string; deviceId: string; status: AckStatus };
+let _ackListeners: Array<(n: AckNotification) => void> = [];
+
+/**
+ * Subscribe to ack events. Returns an unsubscribe function. fleetBridge
+ * uses this to re-emit each ack on the `fleet:command-acked` IPC channel
+ * so the admin UI's command-history SWR cache invalidates immediately
+ * instead of waiting for the next poll.
+ */
+export function onCommandAcked(listener: (n: AckNotification) => void): () => void {
+  _ackListeners.push(listener);
+  return () => {
+    _ackListeners = _ackListeners.filter((l) => l !== listener);
+  };
+}
+
+/** Reset module-level listener state — TEST ONLY. */
+export function __resetCommandListenersForTests(): void {
+  _ackListeners = [];
+}
+
 // ── Master: enqueue ─────────────────────────────────────────────────────
 
 /**
@@ -232,6 +255,17 @@ export function ackCommand(
     });
   } catch (e) {
     logNonCritical('fleet.command.audit-ack', e);
+  }
+
+  // Fire-and-forget listener notification so fleetBridge can re-emit
+  // the ack over IPC. Swallowing errors per-listener keeps one buggy
+  // subscriber from starving the rest.
+  for (const listener of _ackListeners) {
+    try {
+      listener({ commandId: params.commandId, deviceId: params.deviceId, status: params.status });
+    } catch (e) {
+      logNonCritical('fleet.command.ack-listener', e);
+    }
   }
 
   return true;

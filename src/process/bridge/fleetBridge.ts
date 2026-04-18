@@ -36,6 +36,14 @@ import {
   getFleetCostSummary,
   listPublishedTemplatesWithAdoption,
 } from '@process/services/fleetTelemetry';
+import {
+  enqueueCommand,
+  FleetCommandRateLimitError,
+  listAcksForCommand,
+  listCommandsWithAcks,
+  onCommandAcked,
+  revokeCommand,
+} from '@process/services/fleetCommands';
 import { logNonCritical } from '@process/utils/logNonCritical';
 import type { FleetMode, FleetSetupInput, FleetSetupResult } from '@/common/types/fleetTypes';
 
@@ -205,6 +213,54 @@ export function initFleetBridge(): void {
     const db = await getDatabase();
     const templates = listPublishedTemplatesWithAdoption(db.getDriver());
     return { templates };
+  });
+
+  // ── Phase F Week 3: remote commands (admin surface) ─────────────────
+  ipcBridge.fleet.enqueueCommand.provider(async ({ targetDeviceId, commandType, ttlSeconds }) => {
+    const db = await getDatabase();
+    try {
+      const record = enqueueCommand(db.getDriver(), {
+        targetDeviceId,
+        commandType,
+        ttlSeconds,
+        createdBy: 'system_default_user',
+      });
+      return { ok: true as const, commandId: record.id };
+    } catch (err) {
+      if (err instanceof FleetCommandRateLimitError) {
+        return { ok: false as const, error: err.message, code: err.code };
+      }
+      return { ok: false as const, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcBridge.fleet.listCommands.provider(async ({ limit }) => {
+    const db = await getDatabase();
+    const commands = listCommandsWithAcks(db.getDriver(), limit);
+    return { commands };
+  });
+
+  ipcBridge.fleet.listCommandAcks.provider(async ({ commandId }) => {
+    const db = await getDatabase();
+    const acks = listAcksForCommand(db.getDriver(), commandId);
+    return { acks };
+  });
+
+  ipcBridge.fleet.revokeCommand.provider(async ({ commandId }) => {
+    const db = await getDatabase();
+    const ok = revokeCommand(db.getDriver(), commandId, 'system_default_user');
+    return { ok };
+  });
+
+  // Re-emit ack events to the renderer so the history SWR refreshes
+  // immediately on every slave ack instead of polling. Subscriber
+  // lives as long as the process does — no unsubscribe path.
+  onCommandAcked((notification) => {
+    try {
+      ipcBridge.fleet.commandAcked.emit(notification);
+    } catch (e) {
+      logNonCritical('fleet.emit.command-acked', e);
+    }
   });
 
   // Re-emit successful config-apply events to the renderer so SWR caches
