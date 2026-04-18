@@ -487,4 +487,35 @@ describe('Database migrations', () => {
       expect(() => v66!.down(driver)).not.toThrow();
     });
   });
+
+  describe('migration v67 — fleet_commands + fleet_command_acks', () => {
+    const v67 = ALL_MIGRATIONS.find((m) => m.version === 67);
+
+    it('creates fleet_commands + fleet_command_acks tables', () => {
+      expect(v67).toBeDefined();
+      const { driver, captured } = makeRecordingDriver();
+      v67!.up(driver);
+      const joined = captured.execs.join('\n');
+      expect(joined).toContain('CREATE TABLE IF NOT EXISTS fleet_commands');
+      expect(joined).toContain('CREATE TABLE IF NOT EXISTS fleet_command_acks');
+      expect(joined).toContain('PRIMARY KEY (command_id, device_id)');
+    });
+
+    it('creates all three query indexes', () => {
+      const { driver, captured } = makeRecordingDriver();
+      v67!.up(driver);
+      const joined = captured.execs.join('\n');
+      expect(joined).toContain('idx_fleet_commands_target_expires');
+      expect(joined).toContain('idx_fleet_commands_created');
+      expect(joined).toContain('idx_fleet_command_acks_command');
+    });
+
+    it('down() drops tables + indexes without throwing', () => {
+      const { driver, captured } = makeRecordingDriver();
+      v67!.down(driver);
+      const joined = captured.execs.join('\n');
+      expect(joined).toContain('DROP TABLE IF EXISTS fleet_commands');
+      expect(joined).toContain('DROP TABLE IF EXISTS fleet_command_acks');
+    });
+  });
 });

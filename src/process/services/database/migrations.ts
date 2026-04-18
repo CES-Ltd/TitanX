@@ -2631,6 +2631,79 @@ const migration_v66: IMigration = {
   },
 };
 
+// ────────────────────────────────────────────────────────────────────────
+// Phase F Week 1 — Remote commands (v1.9.35)
+// ────────────────────────────────────────────────────────────────────────
+
+/**
+ * Master-side command queue + slave-side ack trail. Two tables:
+ *
+ *   fleet_commands: master enqueues commands here. Slaves pull the
+ *   subset addressed to them (or to 'all') piggybacked on every
+ *   heartbeat response. Commands expire via `expires_at` so a
+ *   forgotten command doesn't fire weeks later when a stale device
+ *   reconnects.
+ *
+ *   fleet_command_acks: slaves POST back the outcome of each command
+ *   they executed. Composite PK (command_id, device_id) makes replays
+ *   idempotent — a slave retrying an ack updates its row rather than
+ *   creating a duplicate.
+ *
+ * Why two tables instead of one with status column? Because a command
+ * targeted at 'all' fans out to N devices, each of which acks
+ * independently. Storing the ack per-device in its own row lets the
+ * admin dashboard render "13 of 15 devices acked" without a JSON blob.
+ *
+ * Phase F v1 ships with non-destructive command types only
+ * (force_config_sync, force_telemetry_push). The schema is intentionally
+ * open-ended via `params TEXT` (JSON) so adding new command types
+ * doesn't require a migration.
+ */
+const migration_v67: IMigration = {
+  version: 67,
+  name: 'Create fleet_commands + fleet_command_acks for Phase F remote commands',
+  up(db: ISqliteDriver) {
+    db.exec(`CREATE TABLE IF NOT EXISTS fleet_commands (
+      id TEXT PRIMARY KEY,
+      target_device_id TEXT NOT NULL,
+      command_type TEXT NOT NULL,
+      params TEXT NOT NULL DEFAULT '{}',
+      created_at INTEGER NOT NULL,
+      created_by TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      revoked_at INTEGER
+    )`);
+    // Hot path: slave asks "anything for me right now?" — index on
+    // target_device_id + expires_at so the WHERE clause is O(log n).
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_fleet_commands_target_expires ON fleet_commands(target_device_id, expires_at DESC)'
+    );
+    // Admin dashboard: list recent commands newest-first.
+    db.exec('CREATE INDEX IF NOT EXISTS idx_fleet_commands_created ON fleet_commands(created_at DESC)');
+
+    db.exec(`CREATE TABLE IF NOT EXISTS fleet_command_acks (
+      command_id TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      result TEXT NOT NULL DEFAULT '{}',
+      acked_at INTEGER NOT NULL,
+      PRIMARY KEY (command_id, device_id)
+    )`);
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_fleet_command_acks_command ON fleet_command_acks(command_id, acked_at DESC)'
+    );
+
+    console.log('[Migration-v67] Created fleet_commands + fleet_command_acks');
+  },
+  down(db: ISqliteDriver) {
+    db.exec('DROP INDEX IF EXISTS idx_fleet_command_acks_command');
+    db.exec('DROP TABLE IF EXISTS fleet_command_acks');
+    db.exec('DROP INDEX IF EXISTS idx_fleet_commands_created');
+    db.exec('DROP INDEX IF EXISTS idx_fleet_commands_target_expires');
+    db.exec('DROP TABLE IF EXISTS fleet_commands');
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -2645,7 +2718,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v45, migration_v46, migration_v47, migration_v48, migration_v49, migration_v50, migration_v51, migration_v52, migration_v53,
   migration_v54, migration_v55, migration_v56, migration_v57, migration_v58, migration_v59,
   migration_v60, migration_v61, migration_v62, migration_v63, migration_v64, migration_v65,
-  migration_v66,
+  migration_v66, migration_v67,
 ];
 
 /**
