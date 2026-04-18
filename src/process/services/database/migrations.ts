@@ -2586,6 +2586,51 @@ const migration_v65: IMigration = {
   },
 };
 
+// ────────────────────────────────────────────────────────────────────────
+// Phase E Week 1 — Agent template distribution (v1.9.33+)
+// ────────────────────────────────────────────────────────────────────────
+
+/**
+ * Extends agent_gallery with the same three columns Phase C added to
+ * iam_policies / security_feature_toggles (v63), plus a dedicated
+ * `published_to_fleet` flag that master admins flip to "push this
+ * template down to all slaves".
+ *
+ * Semantics:
+ *   - source='local' (default): created on this machine, lives here
+ *   - source='master': pushed from master via a fleet bundle (slave side)
+ *   - source='builtin': seeded by a migration (no rows flag this yet
+ *     for agent_gallery, but the column keeps the vocabulary consistent
+ *     with iam_policies)
+ *   - published_to_fleet: master-side curation flag — governs whether
+ *     buildConfigBundle() includes this template in the push payload.
+ *     Orthogonal to the pre-existing `published` column (which governs
+ *     whether the template is visible in the user's own gallery).
+ */
+const migration_v66: IMigration = {
+  version: 66,
+  name: 'Add source + managed_by_version + published_to_fleet columns to agent_gallery',
+  up(db: ISqliteDriver) {
+    const addIfMissing = (table: string, column: string, decl: string): void => {
+      const cols = new Set((db.pragma(`table_info(${table})`) as Array<{ name: string }>).map((c) => c.name));
+      if (!cols.has(column)) {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
+      }
+    };
+
+    addIfMissing('agent_gallery', 'source', "TEXT NOT NULL DEFAULT 'local'");
+    addIfMissing('agent_gallery', 'managed_by_version', 'INTEGER');
+    addIfMissing('agent_gallery', 'published_to_fleet', 'INTEGER NOT NULL DEFAULT 0');
+
+    console.log('[Migration-v66] Added source + managed_by_version + published_to_fleet to agent_gallery');
+  },
+  down(_db: ISqliteDriver) {
+    // SQLite pre-3.35 can't DROP COLUMN cleanly; columns stay behind
+    // on downgrade. NULL-safe, so older code paths keep working.
+    console.warn('[Migration-v66] Rollback: columns remain (SQLite limitation)');
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -2600,6 +2645,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v45, migration_v46, migration_v47, migration_v48, migration_v49, migration_v50, migration_v51, migration_v52, migration_v53,
   migration_v54, migration_v55, migration_v56, migration_v57, migration_v58, migration_v59,
   migration_v60, migration_v61, migration_v62, migration_v63, migration_v64, migration_v65,
+  migration_v66,
 ];
 
 /**

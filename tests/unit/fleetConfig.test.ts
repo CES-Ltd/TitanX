@@ -35,7 +35,7 @@ const describeOrSkip = nativeAvailable ? describe : describe.skip;
 function setupDb(): ISqliteDriver {
   const driver = new BetterSqlite3Driver(':memory:');
   initSchema(driver);
-  runMigrations(driver, 0, 63);
+  runMigrations(driver, 0, 66);
   driver
     .prepare('INSERT INTO users (id, username, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
     .run('u1', 'admin', 'hash', Date.now(), Date.now());
@@ -159,6 +159,7 @@ describeOrSkip('fleetConfig — applyConfigBundle (slave side)', () => {
       updatedBy: 'master-admin',
       iamPolicies: [],
       securityFeatures: [],
+      agentTemplates: [],
       upToDate: false,
       ...overrides,
     };
@@ -396,6 +397,7 @@ describeOrSkip('fleetConfig — assertNotManaged + FleetManagedKeyError', () => 
         },
       ],
       securityFeatures: [{ feature: 'network_policies', enabled: true, updatedAt: Date.now() }],
+      agentTemplates: [],
       upToDate: false,
     };
     applyConfigBundle(db, bundle);
@@ -405,5 +407,247 @@ describeOrSkip('fleetConfig — assertNotManaged + FleetManagedKeyError', () => 
     expect(() => assertNotManaged(db, 'security_feature.network_policies')).toThrow(FleetManagedKeyError);
     // Unmanaged key still unaffected.
     expect(() => assertNotManaged(db, 'iam.policy.local-one')).not.toThrow();
+  });
+});
+
+// ── Phase E Week 1 — Agent template distribution ────────────────────────
+
+describeOrSkip('fleetConfig — buildConfigBundle agentTemplates', () => {
+  let db: ISqliteDriver;
+  beforeEach(() => {
+    db = setupDb();
+  });
+  afterEach(() => {
+    (db as BetterSqlite3Driver).close();
+  });
+
+  function insertAgentRow(
+    id: string,
+    overrides: Partial<{ published_to_fleet: number; source: string; name: string }> = {}
+  ): void {
+    db.prepare(
+      `INSERT INTO agent_gallery
+       (id, user_id, name, agent_type, category, avatar_sprite_idx, capabilities, config, whitelisted,
+        allowed_tools, published, env_bindings, created_at, updated_at, published_to_fleet, source)
+       VALUES (?, 'u1', ?, 'claude', 'technical', 0, '[]', '{}', 1, '[]', 1, '{}', ?, ?, ?, ?)`
+    ).run(
+      id,
+      overrides.name ?? `Agent ${id}`,
+      Date.now(),
+      Date.now(),
+      overrides.published_to_fleet ?? 0,
+      overrides.source ?? 'local'
+    );
+  }
+
+  it('ships no agent templates when none are published_to_fleet', () => {
+    insertAgentRow('a1', { published_to_fleet: 0 });
+    insertAgentRow('a2', { published_to_fleet: 0 });
+    bumpConfigVersion(db, { reason: 'config.manual_bump', updatedBy: 'u1' });
+    const bundle = buildConfigBundle(db, 0);
+    expect(bundle.agentTemplates).toEqual([]);
+  });
+
+  it('ships published templates with lean shape (no user_id, no runtime state)', () => {
+    insertAgentRow('a-fleet', { published_to_fleet: 1, name: 'FleetDefault' });
+    bumpConfigVersion(db, { reason: 'agent.template.published', updatedBy: 'u1', entityId: 'a-fleet' });
+    const bundle = buildConfigBundle(db, 0);
+    expect(bundle.agentTemplates).toHaveLength(1);
+    expect(bundle.agentTemplates[0]).toMatchObject({
+      id: 'a-fleet',
+      name: 'FleetDefault',
+      agentType: 'claude',
+    });
+    // Lean shape: does NOT include user_id, whitelisted, published, publishedToFleet
+    expect('userId' in bundle.agentTemplates[0]!).toBe(false);
+  });
+
+  it("excludes source='master' rows — slaves never re-broadcast what they received", () => {
+    insertAgentRow('a-local', { published_to_fleet: 1, source: 'local' });
+    insertAgentRow('a-master', { published_to_fleet: 1, source: 'master' });
+    bumpConfigVersion(db, { reason: 'agent.template.published', updatedBy: 'u1' });
+    const bundle = buildConfigBundle(db, 0);
+    expect(bundle.agentTemplates.map((a) => a.id)).toEqual(['a-local']);
+  });
+
+  it('upToDate bundle has empty agentTemplates', () => {
+    insertAgentRow('a-fleet', { published_to_fleet: 1 });
+    bumpConfigVersion(db, { reason: 'agent.template.published', updatedBy: 'u1' });
+    const bundle = buildConfigBundle(db, 99);
+    expect(bundle.upToDate).toBe(true);
+    expect(bundle.agentTemplates).toEqual([]);
+  });
+});
+
+describeOrSkip('fleetConfig — applyConfigBundle agentTemplates', () => {
+  let db: ISqliteDriver;
+  beforeEach(() => {
+    db = setupDb();
+  });
+  afterEach(() => {
+    (db as BetterSqlite3Driver).close();
+  });
+
+  function templateFixture(id: string, overrides: Partial<{ name: string }> = {}) {
+    return {
+      id,
+      name: overrides.name ?? `Template ${id}`,
+      agentType: 'claude',
+      category: 'technical',
+      avatarSpriteIdx: 0,
+      capabilities: ['web'],
+      config: { model: 'claude-sonnet' },
+      allowedTools: ['write'],
+      heartbeatIntervalSec: 0,
+      envBindings: {},
+      createdAt: 1_600_000_000_000,
+    };
+  }
+
+  it("inserts bundle agent templates as source='master' with managed_by_version", () => {
+    const bundle = {
+      version: 7,
+      updatedAt: Date.now(),
+      updatedBy: 'master-admin',
+      iamPolicies: [],
+      securityFeatures: [],
+      agentTemplates: [templateFixture('tpl-1'), templateFixture('tpl-2')],
+      upToDate: false,
+    };
+    const result = applyConfigBundle(db, bundle);
+    expect(result.agentTemplatesReplaced).toBe(2);
+
+    const rows = db
+      .prepare('SELECT id, source, managed_by_version, name FROM agent_gallery ORDER BY id ASC')
+      .all() as Array<{ id: string; source: string; managed_by_version: number; name: string }>;
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.source).toBe('master');
+    expect(rows[0]!.managed_by_version).toBe(7);
+    expect(rows.map((r) => r.id)).toEqual(['tpl-1', 'tpl-2']);
+  });
+
+  it("preserves source='local' rows when applying a new bundle", () => {
+    // Insert a local row first
+    db.prepare(
+      `INSERT INTO agent_gallery
+       (id, user_id, name, agent_type, category, avatar_sprite_idx, capabilities, config, whitelisted,
+        allowed_tools, published, env_bindings, created_at, updated_at, source)
+       VALUES (?, 'u1', ?, 'claude', 'technical', 0, '[]', '{}', 1, '[]', 1, '{}', ?, ?, 'local')`
+    ).run('a-local', 'Local Agent', Date.now(), Date.now());
+
+    applyConfigBundle(db, {
+      version: 3,
+      updatedAt: Date.now(),
+      updatedBy: 'admin',
+      iamPolicies: [],
+      securityFeatures: [],
+      agentTemplates: [templateFixture('tpl-master')],
+      upToDate: false,
+    });
+
+    const rows = db.prepare('SELECT id, source FROM agent_gallery ORDER BY id ASC').all() as Array<{
+      id: string;
+      source: string;
+    }>;
+    expect(rows).toEqual([
+      { id: 'a-local', source: 'local' },
+      { id: 'tpl-master', source: 'master' },
+    ]);
+  });
+
+  it("wipes and replaces source='master' rows on re-apply", () => {
+    // First apply
+    applyConfigBundle(db, {
+      version: 2,
+      updatedAt: Date.now(),
+      updatedBy: 'admin',
+      iamPolicies: [],
+      securityFeatures: [],
+      agentTemplates: [templateFixture('old-1'), templateFixture('old-2')],
+      upToDate: false,
+    });
+    // Second apply with different set — old ones must go, new ones land
+    applyConfigBundle(db, {
+      version: 3,
+      updatedAt: Date.now(),
+      updatedBy: 'admin',
+      iamPolicies: [],
+      securityFeatures: [],
+      agentTemplates: [templateFixture('new-1')],
+      upToDate: false,
+    });
+    const ids = (db.prepare("SELECT id FROM agent_gallery WHERE source = 'master'").all() as Array<{ id: string }>)
+      .map((r) => r.id)
+      .sort();
+    expect(ids).toEqual(['new-1']);
+  });
+
+  it('registers agent.template.<id> in managed_config_keys + cleans up stale ones', () => {
+    applyConfigBundle(db, {
+      version: 1,
+      updatedAt: Date.now(),
+      updatedBy: 'admin',
+      iamPolicies: [],
+      securityFeatures: [],
+      agentTemplates: [templateFixture('foo'), templateFixture('bar')],
+      upToDate: false,
+    });
+    let keys = (db.prepare('SELECT key FROM managed_config_keys ORDER BY key ASC').all() as Array<{ key: string }>).map(
+      (r) => r.key
+    );
+    expect(keys).toEqual(['agent.template.bar', 'agent.template.foo']);
+
+    // Second apply drops 'foo' — stale-key sweeper should clear it
+    applyConfigBundle(db, {
+      version: 2,
+      updatedAt: Date.now(),
+      updatedBy: 'admin',
+      iamPolicies: [],
+      securityFeatures: [],
+      agentTemplates: [templateFixture('bar')],
+      upToDate: false,
+    });
+    keys = (db.prepare('SELECT key FROM managed_config_keys ORDER BY key ASC').all() as Array<{ key: string }>).map(
+      (r) => r.key
+    );
+    expect(keys).toEqual(['agent.template.bar']);
+  });
+});
+
+describeOrSkip('agentGallery — publishToFleet / unpublishFromFleet', () => {
+  let db: ISqliteDriver;
+  beforeEach(() => {
+    db = setupDb();
+  });
+  afterEach(() => {
+    (db as BetterSqlite3Driver).close();
+  });
+
+  it('publishToFleet flips the flag and bumps config version', async () => {
+    const gallery = await import('@process/services/agentGallery');
+    const agent = gallery.createAgent(db, { userId: 'u1', name: 'T1', agentType: 'claude' });
+    expect(getConfigVersion(db)).toBe(0);
+
+    const ok = gallery.publishToFleet(db, agent.id, 'u1');
+    expect(ok).toBe(true);
+    expect(gallery.isPublishedToFleet(db, agent.id)).toBe(true);
+    expect(getConfigVersion(db)).toBe(1);
+  });
+
+  it('unpublishFromFleet resets the flag and bumps again', async () => {
+    const gallery = await import('@process/services/agentGallery');
+    const agent = gallery.createAgent(db, { userId: 'u1', name: 'T1', agentType: 'claude' });
+    gallery.publishToFleet(db, agent.id, 'u1');
+    gallery.unpublishFromFleet(db, agent.id, 'u1');
+    expect(gallery.isPublishedToFleet(db, agent.id)).toBe(false);
+    expect(getConfigVersion(db)).toBe(2);
+  });
+
+  it('returns false when agent id does not exist — no bump fires', async () => {
+    const gallery = await import('@process/services/agentGallery');
+    const before = getConfigVersion(db);
+    expect(gallery.publishToFleet(db, 'nope')).toBe(false);
+    expect(gallery.unpublishFromFleet(db, 'nope')).toBe(false);
+    expect(getConfigVersion(db)).toBe(before);
   });
 });

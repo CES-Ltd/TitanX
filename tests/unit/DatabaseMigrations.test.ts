@@ -443,4 +443,48 @@ describe('Database migrations', () => {
       expect(captured.execs.join('\n')).toContain('DROP TABLE IF EXISTS fleet_telemetry_state');
     });
   });
+
+  describe('migration v66 — source + managed_by_version + published_to_fleet on agent_gallery', () => {
+    const v66 = ALL_MIGRATIONS.find((m) => m.version === 66);
+
+    it('adds all three new columns when missing', () => {
+      expect(v66).toBeDefined();
+      const { driver, captured } = makeRecordingDriver();
+      v66!.up(driver);
+      const joined = captured.execs.join('\n');
+      expect(joined).toContain("ALTER TABLE agent_gallery ADD COLUMN source TEXT NOT NULL DEFAULT 'local'");
+      expect(joined).toContain('ALTER TABLE agent_gallery ADD COLUMN managed_by_version INTEGER');
+      expect(joined).toContain('ALTER TABLE agent_gallery ADD COLUMN published_to_fleet INTEGER NOT NULL DEFAULT 0');
+    });
+
+    it('skips ALTER when all columns already exist', () => {
+      const driver = {
+        prepare: () => ({ run: () => ({ changes: 0, lastInsertRowid: 0 }), all: () => [], get: () => undefined }),
+        exec: (() => {
+          const execs: string[] = [];
+          const fn = (sql: string): void => {
+            execs.push(sql);
+          };
+          (fn as unknown as { _execs: string[] })._execs = execs;
+          return fn;
+        })(),
+        pragma: () => [
+          { name: 'id' },
+          { name: 'source' },
+          { name: 'managed_by_version' },
+          { name: 'published_to_fleet' },
+        ],
+        transaction: () => () => {},
+        close: () => {},
+      } as unknown as Parameters<typeof v66.up>[0];
+      v66!.up(driver);
+      const execs = (driver.exec as unknown as { _execs: string[] })._execs;
+      expect(execs.filter((s) => s.startsWith('ALTER'))).toHaveLength(0);
+    });
+
+    it('down() is a no-op that just logs a warning (SQLite limitation)', () => {
+      const { driver } = makeRecordingDriver();
+      expect(() => v66!.down(driver)).not.toThrow();
+    });
+  });
 });

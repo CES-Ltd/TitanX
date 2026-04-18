@@ -7,6 +7,8 @@
 
 import crypto from 'crypto';
 import type { ISqliteDriver } from '../database/drivers/ISqliteDriver';
+import { bumpConfigVersion } from '../fleetConfig';
+import { logNonCritical } from '@process/utils/logNonCritical';
 
 export type EnvBinding =
   | string
@@ -24,6 +26,7 @@ export type GalleryAgent = {
   capabilities: string[];
   config: Record<string, unknown>;
   whitelisted: boolean;
+  /** Visible in the user's own gallery. Independent of publishedToFleet. */
   published: boolean;
   maxBudgetCents?: number;
   allowedTools: string[];
@@ -35,6 +38,12 @@ export type GalleryAgent = {
   envBindings: Record<string, EnvBinding>;
   createdAt: number;
   updatedAt: number;
+  /** Phase E: 'local' | 'master' | 'builtin'. Same vocabulary as iam_policies. */
+  source: 'local' | 'master' | 'builtin';
+  /** Bundle version that installed this row (only for source='master'). */
+  managedByVersion?: number;
+  /** Master-side curation flag: has the admin pushed this to the fleet? */
+  publishedToFleet: boolean;
 };
 
 type CreateGalleryAgentInput = {
@@ -114,6 +123,12 @@ export function createAgent(db: ISqliteDriver, input: CreateGalleryAgentInput): 
     envBindings: {},
     createdAt: now,
     updatedAt: now,
+    // New rows are always source='local' — only the bundle apply path
+    // inserts source='master' rows. publishedToFleet defaults off; admin
+    // explicitly flips it via publishToFleet() when they're ready.
+    source: 'local',
+    managedByVersion: undefined,
+    publishedToFleet: false,
   };
 }
 
@@ -227,7 +242,70 @@ export function deleteAgent(db: ISqliteDriver, agentId: string): boolean {
   return result.changes > 0;
 }
 
+// ── Phase E: fleet publishing (master-side curation) ────────────────────
+
+/**
+ * Mark this template as "published to the fleet" — on every next
+ * master→slave bundle poll, slaves will insert/refresh a source='master'
+ * copy of this row in their own agent_gallery. Bumps fleet config
+ * version so slaves pick up the change on their next 30-second poll.
+ *
+ * Idempotent: setting published_to_fleet=1 on an already-published
+ * template still bumps (the admin action is audit-worthy) but doesn't
+ * produce a visible change on slaves since the bundle content is
+ * unchanged.
+ */
+export function publishToFleet(db: ISqliteDriver, agentId: string, updatedBy: string = 'system_default_user'): boolean {
+  const result = db
+    .prepare('UPDATE agent_gallery SET published_to_fleet = 1, updated_at = ? WHERE id = ?')
+    .run(Date.now(), agentId);
+  if (result.changes === 0) return false;
+
+  // Fire-and-forget fleet version bump — observability, not critical
+  // path. A failed bump means the change lands on the next mutation's
+  // bump, just delayed by up to 6 hours in the worst case.
+  try {
+    bumpConfigVersion(db, { reason: 'agent.template.published', updatedBy, entityId: agentId });
+  } catch (e) {
+    logNonCritical('fleet.config.bump.agent_template_published', e);
+  }
+  return true;
+}
+
+/**
+ * Remove this template from the fleet push. Slaves will drop the
+ * source='master' row on their next apply; the managed_config_keys
+ * entry (`agent.template.<id>`) gets cleaned up by the stale-key
+ * sweeper in applyConfigBundle.
+ */
+export function unpublishFromFleet(
+  db: ISqliteDriver,
+  agentId: string,
+  updatedBy: string = 'system_default_user'
+): boolean {
+  const result = db
+    .prepare('UPDATE agent_gallery SET published_to_fleet = 0, updated_at = ? WHERE id = ?')
+    .run(Date.now(), agentId);
+  if (result.changes === 0) return false;
+
+  try {
+    bumpConfigVersion(db, { reason: 'agent.template.unpublished', updatedBy, entityId: agentId });
+  } catch (e) {
+    logNonCritical('fleet.config.bump.agent_template_unpublished', e);
+  }
+  return true;
+}
+
+/** Is this template currently published to the fleet? */
+export function isPublishedToFleet(db: ISqliteDriver, agentId: string): boolean {
+  const row = db.prepare('SELECT published_to_fleet FROM agent_gallery WHERE id = ?').get(agentId) as
+    | { published_to_fleet: number }
+    | undefined;
+  return row?.published_to_fleet === 1;
+}
+
 function rowToAgent(row: Record<string, unknown>): GalleryAgent {
+  const source = (row.source as string) ?? 'local';
   return {
     id: row.id as string,
     userId: row.user_id as string,
@@ -250,5 +328,8 @@ function rowToAgent(row: Record<string, unknown>): GalleryAgent {
     envBindings: JSON.parse((row.env_bindings as string) || '{}'),
     createdAt: row.created_at as number,
     updatedAt: row.updated_at as number,
+    source: source === 'master' || source === 'builtin' ? source : 'local',
+    managedByVersion: (row.managed_by_version as number) ?? undefined,
+    publishedToFleet: (row.published_to_fleet as number) === 1,
   };
 }

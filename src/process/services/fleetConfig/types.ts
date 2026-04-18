@@ -5,6 +5,7 @@
 
 import type { IAMPolicy } from '../iamPolicies';
 import type { SecurityFeature } from '../securityFeatures';
+import type { GalleryAgent } from '../agentGallery';
 
 /** Managed security feature toggle row. */
 export type ManagedFeatureToggle = {
@@ -12,6 +13,32 @@ export type ManagedFeatureToggle = {
   enabled: boolean;
   updatedAt: number;
 };
+
+/**
+ * Agent template shipped by master. Lean version of GalleryAgent — we
+ * drop user-scoped + runtime fields (heartbeatEnabled, whitelisted,
+ * etc.) that should be controlled by the slave user or reset on apply.
+ * Everything the master curates is preserved.
+ */
+export type ManagedAgentTemplate = Pick<
+  GalleryAgent,
+  | 'id'
+  | 'name'
+  | 'agentType'
+  | 'category'
+  | 'description'
+  | 'avatarSpriteIdx'
+  | 'capabilities'
+  | 'config'
+  | 'maxBudgetCents'
+  | 'allowedTools'
+  | 'instructionsMd'
+  | 'skillsMd'
+  | 'heartbeatMd'
+  | 'heartbeatIntervalSec'
+  | 'envBindings'
+  | 'createdAt'
+>;
 
 /**
  * Config bundle shape — what master returns via GET /api/fleet/config,
@@ -32,6 +59,13 @@ export type FleetConfigBundle = {
   /** Full list of feature toggles the master controls (subset replaced on slave). */
   securityFeatures: ManagedFeatureToggle[];
   /**
+   * Agent templates the master has published to the fleet (Phase E).
+   * Slaves insert these as `source='master'` rows in agent_gallery +
+   * register `agent.template.<id>` in managed_config_keys so the UI
+   * can show "Installed by IT" badges and reject local deletes.
+   */
+  agentTemplates: ManagedAgentTemplate[];
+  /**
    * True when the caller's `since` was already >= master version — slave
    * can skip the apply step. Lets slaves poll efficiently.
    */
@@ -43,6 +77,8 @@ export type ApplyBundleResult = {
   version: number;
   iamPoliciesReplaced: number;
   securityFeaturesUpdated: number;
+  /** How many master-pushed agent templates landed (Phase E). */
+  agentTemplatesReplaced: number;
   /** Keys that flipped from local → managed in this apply. */
   newlyManagedKeys: string[];
 };
@@ -54,5 +90,8 @@ export type BumpReason =
   | 'iam.policy.bound'
   | 'iam.policy.unbound'
   | 'security_feature.toggle'
+  | 'agent.template.published'
+  | 'agent.template.unpublished'
+  | 'agent.template.updated'
   | 'config.manual_bump'
   | 'fleet.bundle.applied';

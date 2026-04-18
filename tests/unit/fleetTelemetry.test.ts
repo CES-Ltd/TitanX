@@ -32,7 +32,7 @@ const describeOrSkip = nativeAvailable ? describe : describe.skip;
 function setupDb(): ISqliteDriver {
   const driver = new BetterSqlite3Driver(':memory:');
   initSchema(driver);
-  runMigrations(driver, 0, 65);
+  runMigrations(driver, 0, 66);
   driver
     .prepare('INSERT INTO users (id, username, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
     .run('u1', 'admin', 'hash', Date.now(), Date.now());

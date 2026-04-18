@@ -25,7 +25,13 @@ import { logActivity } from '../activityLog';
 import { logNonCritical } from '@process/utils/logNonCritical';
 import type { IAMPolicy } from '../iamPolicies';
 import type { SecurityFeature } from '../securityFeatures';
-import type { ApplyBundleResult, BumpReason, FleetConfigBundle, ManagedFeatureToggle } from './types';
+import type {
+  ApplyBundleResult,
+  BumpReason,
+  FleetConfigBundle,
+  ManagedAgentTemplate,
+  ManagedFeatureToggle,
+} from './types';
 
 // ── Version management ──────────────────────────────────────────────────
 
@@ -91,6 +97,7 @@ export function buildConfigBundle(db: ISqliteDriver, sinceVersion: number): Flee
       updatedBy,
       iamPolicies: [],
       securityFeatures: [],
+      agentTemplates: [],
       upToDate: true,
     };
   }
@@ -121,12 +128,43 @@ export function buildConfigBundle(db: ISqliteDriver, sinceVersion: number): Flee
     updatedAt: r.updated_at,
   }));
 
+  // Agent templates — master admins flip `published_to_fleet=1` to push a
+  // gallery entry to all slaves. `source != 'master'` is a belt-and-
+  // suspenders filter against a slave that mistakenly runs buildBundle:
+  // we never re-broadcast rows we received from a master.
+  const agentRows = db
+    .prepare(
+      `SELECT * FROM agent_gallery
+       WHERE published_to_fleet = 1 AND (source IS NULL OR source != 'master')
+       ORDER BY name ASC`
+    )
+    .all() as Array<Record<string, unknown>>;
+  const agentTemplates: ManagedAgentTemplate[] = agentRows.map((r) => ({
+    id: r.id as string,
+    name: r.name as string,
+    agentType: r.agent_type as string,
+    category: (r.category as string) ?? 'technical',
+    description: (r.description as string) ?? undefined,
+    avatarSpriteIdx: (r.avatar_sprite_idx as number) ?? 0,
+    capabilities: JSON.parse((r.capabilities as string) || '[]'),
+    config: JSON.parse((r.config as string) || '{}'),
+    maxBudgetCents: (r.max_budget_cents as number) ?? undefined,
+    allowedTools: JSON.parse((r.allowed_tools as string) || '[]'),
+    instructionsMd: (r.instructions_md as string) ?? undefined,
+    skillsMd: (r.skills_md as string) ?? undefined,
+    heartbeatMd: (r.heartbeat_md as string) ?? undefined,
+    heartbeatIntervalSec: (r.heartbeat_interval_sec as number) ?? 0,
+    envBindings: JSON.parse((r.env_bindings as string) || '{}'),
+    createdAt: r.created_at as number,
+  }));
+
   return {
     version: currentVersion,
     updatedAt,
     updatedBy,
     iamPolicies,
     securityFeatures,
+    agentTemplates,
     upToDate: false,
   };
 }
@@ -150,7 +188,13 @@ export function buildConfigBundle(db: ISqliteDriver, sinceVersion: number): Flee
  */
 export function applyConfigBundle(db: ISqliteDriver, bundle: FleetConfigBundle): ApplyBundleResult {
   if (bundle.upToDate) {
-    return { version: bundle.version, iamPoliciesReplaced: 0, securityFeaturesUpdated: 0, newlyManagedKeys: [] };
+    return {
+      version: bundle.version,
+      iamPoliciesReplaced: 0,
+      securityFeaturesUpdated: 0,
+      agentTemplatesReplaced: 0,
+      newlyManagedKeys: [],
+    };
   }
 
   // Wipe existing master-managed IAM policies (local policies untouched).
@@ -195,11 +239,50 @@ export function applyConfigBundle(db: ISqliteDriver, bundle: FleetConfigBundle):
     newlyManagedKeys.add(`security_feature.${f.feature}`);
   }
 
+  // Agent templates (Phase E): wipe source='master' rows + re-insert
+  // from bundle. user_id is fixed to 'system_default_user' on the slave
+  // because the master-side author's id isn't meaningful here, and
+  // agent_gallery.user_id has an FK to users(id) that wouldn't resolve
+  // otherwise. Local source='local' rows are untouched.
+  db.prepare("DELETE FROM agent_gallery WHERE source = 'master'").run();
+  const insertTemplate = db.prepare(
+    `INSERT INTO agent_gallery
+     (id, user_id, name, agent_type, category, description, avatar_sprite_idx, capabilities, config,
+      whitelisted, max_budget_cents, allowed_tools, instructions_md, skills_md, heartbeat_md,
+      heartbeat_interval_sec, heartbeat_enabled, env_bindings, published, published_to_fleet,
+      source, managed_by_version, created_at, updated_at)
+     VALUES (?, 'system_default_user', ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, 0, ?, 1, 0, 'master', ?, ?, ?)`
+  );
+  const now = Date.now();
+  const agentTemplates = bundle.agentTemplates ?? [];
+  for (const a of agentTemplates) {
+    insertTemplate.run(
+      a.id,
+      a.name,
+      a.agentType,
+      a.category ?? 'technical',
+      a.description ?? null,
+      a.avatarSpriteIdx ?? 0,
+      JSON.stringify(a.capabilities ?? []),
+      JSON.stringify(a.config ?? {}),
+      a.maxBudgetCents ?? null,
+      JSON.stringify(a.allowedTools ?? []),
+      a.instructionsMd ?? null,
+      a.skillsMd ?? null,
+      a.heartbeatMd ?? null,
+      a.heartbeatIntervalSec ?? 0,
+      JSON.stringify(a.envBindings ?? {}),
+      bundle.version,
+      a.createdAt,
+      now
+    );
+    newlyManagedKeys.add(`agent.template.${a.id}`);
+  }
+
   // Register managed keys so the UI + IPC know what's IT-controlled.
   const upsertKey = db.prepare(
     `INSERT OR REPLACE INTO managed_config_keys (key, source, managed_by_version, applied_at, previous_value) VALUES (?, 'master', ?, ?, NULL)`
   );
-  const now = Date.now();
   for (const key of newlyManagedKeys) {
     upsertKey.run(key, bundle.version, now);
   }
@@ -236,6 +319,7 @@ export function applyConfigBundle(db: ISqliteDriver, bundle: FleetConfigBundle):
         version: bundle.version,
         iamPolicies: bundle.iamPolicies.length,
         securityFeatures: bundle.securityFeatures.length,
+        agentTemplates: agentTemplates.length,
         newlyManagedKeys: newlyManagedKeys.size,
       },
     });
@@ -247,6 +331,7 @@ export function applyConfigBundle(db: ISqliteDriver, bundle: FleetConfigBundle):
     version: bundle.version,
     iamPoliciesReplaced: bundle.iamPolicies.length,
     securityFeaturesUpdated: bundle.securityFeatures.length,
+    agentTemplatesReplaced: agentTemplates.length,
     newlyManagedKeys: Array.from(newlyManagedKeys),
   };
 }

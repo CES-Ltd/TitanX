@@ -85,7 +85,7 @@ const configStore = mockProcessConfig.store;
 function setupDb(): ISqliteDriver {
   const driver = new BetterSqlite3Driver(':memory:');
   initSchema(driver);
-  runMigrations(driver, 0, 63);
+  runMigrations(driver, 0, 66);
   // User row so the audit-write in applyConfigBundle doesn't fail.
   driver
     .prepare('INSERT INTO users (id, username, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
@@ -111,6 +111,7 @@ function bundleFixture(overrides?: Partial<FleetConfigBundle>): FleetConfigBundl
       },
     ],
     securityFeatures: [{ feature: 'network_policies', enabled: true, updatedAt: 1_700_000_000_000 }],
+    agentTemplates: [],
     upToDate: false,
     ...overrides,
   };
