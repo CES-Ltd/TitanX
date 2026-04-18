@@ -10,12 +10,7 @@ import { initSchema } from '@process/services/database/schema';
 import { runMigrations } from '@process/services/database/migrations';
 import { BetterSqlite3Driver } from '@process/services/database/drivers/BetterSqlite3Driver';
 import type { ISqliteDriver } from '@process/services/database/drivers/ISqliteDriver';
-import {
-  getDistinctActions,
-  getDistinctEntityTypes,
-  listActivities,
-  logActivity,
-} from '@process/services/activityLog';
+import { getDistinctActions, getDistinctEntityTypes, listActivities, logActivity } from '@process/services/activityLog';
 
 let nativeAvailable = true;
 try {
@@ -79,7 +74,7 @@ describeOrSkip('activityLog — v1.9.39 filter extensions', () => {
     seed(db, { action: 'c', createdAt: 3000 });
     const r = listActivities(db, { userId: 'u1', createdAtFrom: 2000 });
     expect(r.total).toBe(2);
-    expect(r.data.map((x) => x.action).sort()).toEqual(['b', 'c']);
+    expect(r.data.map((x) => x.action).toSorted()).toEqual(['b', 'c']);
   });
 
   it('filters by createdAtTo (exclusive)', () => {
@@ -87,7 +82,7 @@ describeOrSkip('activityLog — v1.9.39 filter extensions', () => {
     seed(db, { action: 'b', createdAt: 2000 });
     seed(db, { action: 'c', createdAt: 3000 });
     const r = listActivities(db, { userId: 'u1', createdAtTo: 3000 });
-    expect(r.data.map((x) => x.action).sort()).toEqual(['a', 'b']);
+    expect(r.data.map((x) => x.action).toSorted()).toEqual(['a', 'b']);
   });
 
   it('combines createdAtFrom + createdAtTo (half-open window)', () => {
@@ -181,10 +176,14 @@ describeOrSkip('activityLog — distinct helpers', () => {
     expect(getDistinctEntityTypes(db, 'u1')).toEqual(['agent', 'team']);
   });
 
-  it('respects user_id boundary — other users\' entries not leaked', () => {
-    db.prepare(
-      'INSERT INTO users (id, username, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
-    ).run('u2', 'other', 'hash', Date.now(), Date.now());
+  it("respects user_id boundary — other users' entries not leaked", () => {
+    db.prepare('INSERT INTO users (id, username, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run(
+      'u2',
+      'other',
+      'hash',
+      Date.now(),
+      Date.now()
+    );
     seed(db, { action: 'mine' });
     logActivity(db, {
       userId: 'u2',

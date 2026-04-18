@@ -45,15 +45,11 @@ const ChangePasswordModal: React.FC<Props> = ({ open, onClose }) => {
 
   const handleSubmit = useCallback(async () => {
     if (!current) {
-      Message.error(
-        t('settings.password.missingCurrent', { defaultValue: 'Enter your current password' })
-      );
+      Message.error(t('settings.password.missingCurrent', { defaultValue: 'Enter your current password' }));
       return;
     }
     if (!next || next.length < 8) {
-      Message.error(
-        t('settings.password.tooShort', { defaultValue: 'New password must be at least 8 characters' })
-      );
+      Message.error(t('settings.password.tooShort', { defaultValue: 'New password must be at least 8 characters' }));
       return;
     }
     if (next !== confirm) {
@@ -81,9 +77,7 @@ const ChangePasswordModal: React.FC<Props> = ({ open, onClose }) => {
       } else {
         // Server error messages cover: "Current password is incorrect",
         // password-strength failures, etc. Pass them through.
-        Message.error(
-          result.msg ?? t('settings.password.genericError', { defaultValue: 'Failed to update password' })
-        );
+        Message.error(result.msg ?? t('settings.password.genericError', { defaultValue: 'Failed to update password' }));
       }
     } catch (err) {
       Message.error(err instanceof Error ? err.message : String(err));
@@ -126,11 +120,7 @@ const ChangePasswordModal: React.FC<Props> = ({ open, onClose }) => {
           <div className='text-12px text-t-tertiary mb-1'>
             {t('settings.password.confirm', { defaultValue: 'Confirm new password' })}
           </div>
-          <Input.Password
-            value={confirm}
-            onChange={setConfirm}
-            onPressEnter={() => void handleSubmit()}
-          />
+          <Input.Password value={confirm} onChange={setConfirm} onPressEnter={() => void handleSubmit()} />
         </div>
       </div>
     </Modal>

@@ -14,10 +14,7 @@ import { initSchema } from '@process/services/database/schema';
 import { runMigrations } from '@process/services/database/migrations';
 import { BetterSqlite3Driver } from '@process/services/database/drivers/BetterSqlite3Driver';
 import type { ISqliteDriver } from '@process/services/database/drivers/ISqliteDriver';
-import {
-  __resetReauthForTests,
-  verifyAdminPassword,
-} from '@process/services/fleetCommandSigning/adminReauth';
+import { __resetReauthForTests, verifyAdminPassword } from '@process/services/fleetCommandSigning/adminReauth';
 
 let nativeAvailable = true;
 try {
@@ -93,9 +90,13 @@ describeOrSkip('fleetCommandSigning/adminReauth — verifyAdminPassword', () => 
   it('counter is per-user (one user hitting limit does NOT block another)', async () => {
     // Seed a second user
     const hash = bcrypt.hashSync('hunter2', TEST_SALT_ROUNDS);
-    db.prepare(
-      'INSERT INTO users (id, username, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
-    ).run('alice', 'alice', hash, Date.now(), Date.now());
+    db.prepare('INSERT INTO users (id, username, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run(
+      'alice',
+      'alice',
+      hash,
+      Date.now(),
+      Date.now()
+    );
 
     // Burn admin's quota
     for (let i = 0; i < 3; i++) {

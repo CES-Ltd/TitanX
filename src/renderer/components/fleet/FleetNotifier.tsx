@@ -50,7 +50,8 @@ const FleetNotifier: React.FC = () => {
             defaultValue: 'Credentials rotated by your IT administrator',
           }),
           content: t('fleet.commands.destructive.notify.credentialRotate.body', {
-            defaultValue: '{{count}} saved provider credential(s) cleared. You will be prompted to re-enter them on next use.',
+            defaultValue:
+              '{{count}} saved provider credential(s) cleared. You will be prompted to re-enter them on next use.',
             count,
           }),
           // No auto-close for credential rotation — user must acknowledge

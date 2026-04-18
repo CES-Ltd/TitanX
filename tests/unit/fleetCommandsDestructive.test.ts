@@ -16,10 +16,7 @@ import {
   getPendingCommandsForDevice,
 } from '@process/services/fleetCommands';
 import { SIGNED_ENVELOPE_PARAM_KEY } from '@process/services/fleetCommands/types';
-import {
-  getMasterSigningPublicKey,
-  verifyCommand,
-} from '@process/services/fleetCommandSigning';
+import { getMasterSigningPublicKey, verifyCommand } from '@process/services/fleetCommandSigning';
 import { __resetReauthForTests } from '@process/services/fleetCommandSigning/adminReauth';
 import type { SignedCommand } from '@process/services/fleetCommandSigning/types';
 
@@ -102,9 +99,10 @@ describeOrSkip('fleetCommands — enqueueDestructiveCommand', () => {
     if (!result.ok) return;
 
     // Row is written with the envelope embedded in params
-    const row = db
-      .prepare('SELECT params, command_type FROM fleet_commands WHERE id = ?')
-      .get(result.commandId) as { params: string; command_type: string };
+    const row = db.prepare('SELECT params, command_type FROM fleet_commands WHERE id = ?').get(result.commandId) as {
+      params: string;
+      command_type: string;
+    };
     expect(row.command_type).toBe('cache.clear');
     const params = JSON.parse(row.params) as Record<string, unknown> & { _signedEnvelope: SignedCommand };
     expect(params.scope).toBe('temp_files');
@@ -132,9 +130,9 @@ describeOrSkip('fleetCommands — enqueueDestructiveCommand', () => {
   });
 
   it('wrong password → no row, no audit, no nonce consumed', async () => {
-    const before = db
-      .prepare("SELECT COUNT(*) as c FROM fleet_commands WHERE command_type = 'cache.clear'")
-      .get() as { c: number };
+    const before = db.prepare("SELECT COUNT(*) as c FROM fleet_commands WHERE command_type = 'cache.clear'").get() as {
+      c: number;
+    };
     const result = await enqueueDestructiveCommand(db, {
       targetDeviceId: 'dev-a',
       commandType: 'cache.clear',
@@ -143,9 +141,9 @@ describeOrSkip('fleetCommands — enqueueDestructiveCommand', () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('wrong_password');
-    const after = db
-      .prepare("SELECT COUNT(*) as c FROM fleet_commands WHERE command_type = 'cache.clear'")
-      .get() as { c: number };
+    const after = db.prepare("SELECT COUNT(*) as c FROM fleet_commands WHERE command_type = 'cache.clear'").get() as {
+      c: number;
+    };
     expect(after.c).toBe(before.c);
   });
 

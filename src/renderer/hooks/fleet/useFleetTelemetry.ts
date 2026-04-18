@@ -62,13 +62,10 @@ export function useDeviceTelemetry(
   limit = 50
 ): { reports: DeviceTelemetryReport[]; isLoading: boolean; refresh: () => void } {
   const swrKey = deviceId ? (['fleet.telemetry.device', deviceId, limit] as const) : null;
-  const { data, isLoading, mutate } = useSWR<{ reports: DeviceTelemetryReport[] }>(
-    swrKey,
-    () => {
-      if (!deviceId) throw new Error('deviceId required');
-      return ipcBridge.fleet.getDeviceTelemetry.invoke({ deviceId, limit });
-    }
-  );
+  const { data, isLoading, mutate } = useSWR<{ reports: DeviceTelemetryReport[] }>(swrKey, () => {
+    if (!deviceId) throw new Error('deviceId required');
+    return ipcBridge.fleet.getDeviceTelemetry.invoke({ deviceId, limit });
+  });
   return {
     reports: data?.reports ?? [],
     isLoading,

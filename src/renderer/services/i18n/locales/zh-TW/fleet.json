@@ -106,7 +106,8 @@
       "version": "Version",
       "os": "OS",
       "enrolled": "Enrolled",
-      "lastSeen": "Last seen"
+      "lastSeen": "Last seen",
+      "historyTooltip": "View device history"
     }
   },
   "banner": {
@@ -226,7 +227,9 @@
       "forceTelemetryAll": "Telemetry all",
       "destructiveHeading": "Destructive",
       "cacheClear": "Clear cache…",
-      "credentialRotate": "Rotate credentials…"
+      "credentialRotate": "Rotate credentials…",
+      "agentRestart": "Restart agents…",
+      "forceUpgrade": "Force upgrade…"
     },
     "enqueued": {
       "configSync": "Queued config sync",
@@ -289,7 +292,80 @@
           "title": "Credentials rotated by your IT administrator",
           "body": "{{count}} saved provider credential(s) cleared. You will be prompted to re-enter them on next use."
         }
+      },
+      "agentRestart": {
+        "title": "Restart agents",
+        "warning": "This will terminate every active team session on the selected device(s). In-flight turns will be cancelled. No conversation data is deleted; teams rehydrate on the next user interaction."
+      },
+      "forceUpgrade": {
+        "title": "Force app upgrade",
+        "warning": "This will download the latest TitanX release and quit the app on the selected device(s). Users will lose unsaved work in any external tools they were running concurrently."
       }
+    },
+    "notify": {
+      "cacheClear": {
+        "title": "Cache cleared by your IT administrator",
+        "body": "Scope: {{scope}}. Affected files will be re-downloaded as needed."
+      },
+      "credentialRotate": {
+        "title": "Credentials rotated by your IT administrator",
+        "body": "{{count}} saved provider credential(s) cleared. You will be prompted to re-enter them on next use."
+      },
+      "agentRestart": {
+        "title": "Agents restarted by your IT administrator",
+        "body": "{{count}} active team session(s) terminated. Teams will rehydrate on your next interaction."
+      },
+      "forceUpgrade": {
+        "title": "App upgrade triggered by your IT administrator",
+        "body": "TitanX will quit and reinstall the latest release ({{newVersion}}) in a few seconds."
+      }
+    }
+  },
+  "templateLibrary": {
+    "title": "Template Library",
+    "subtitle": "Publish local gallery templates to the fleet. Slaves pick up changes within 30 seconds.",
+    "refresh": "Refresh",
+    "publishButton": "Publish",
+    "unpublishButton": "Unpublish",
+    "published": "Template published — slaves will pick it up on next sync.",
+    "unpublished": "Template unpublished — slaves will stop receiving it on next sync.",
+    "publishFailed": "Publishing failed. Check server logs.",
+    "unpublishFailed": "Unpublishing failed. Check server logs.",
+    "empty": "No local templates to publish. Create one in the Agents Gallery first.",
+    "unpublishConfirm": {
+      "title": "Unpublish this template?",
+      "body": "Slaves will stop receiving updates for this template on their next 30-second config sync."
+    },
+    "table": {
+      "name": "Template",
+      "category": "Category",
+      "status": "Status",
+      "publishedTag": "Published",
+      "localTag": "Local only"
+    }
+  },
+  "deviceHistory": {
+    "title": "Device history",
+    "deviceId": "Device ID",
+    "commandsTitle": "Command history (this device or fleet-wide)",
+    "telemetryTitle": "Recent telemetry windows",
+    "noCommands": "No commands have targeted this device yet.",
+    "noTelemetry": "No telemetry reports received from this device yet.",
+    "table": {
+      "type": "Command",
+      "target": "Target",
+      "created": "Created",
+      "acks": "Acks",
+      "revoked": "State",
+      "revokedTag": "Revoked",
+      "expiredTag": "Expired",
+      "activeTag": "Active"
+    },
+    "telemetry": {
+      "window": "Window",
+      "cost": "Cost",
+      "activity": "Activity",
+      "violations": "Violations"
     }
   }
 }

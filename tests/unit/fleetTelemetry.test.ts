@@ -40,7 +40,10 @@ function setupDb(): ISqliteDriver {
   return driver;
 }
 
-function seedCostEvent(db: ISqliteDriver, overrides: Partial<{ cost: number; occurredAt: number; userId: string }> = {}): void {
+function seedCostEvent(
+  db: ISqliteDriver,
+  overrides: Partial<{ cost: number; occurredAt: number; userId: string }> = {}
+): void {
   db.prepare(
     `INSERT INTO cost_events
      (id, user_id, provider, model, input_tokens, output_tokens, cached_input_tokens, cost_cents, billing_type, occurred_at)
@@ -244,9 +247,9 @@ describeOrSkip('fleetTelemetry — ingestTelemetryReport', () => {
     (db as BetterSqlite3Driver).close();
   });
 
-  function sampleReport(overrides: Partial<Parameters<typeof ingestTelemetryReport>[2]> = {}): Parameters<
-    typeof ingestTelemetryReport
-  >[2] {
+  function sampleReport(
+    overrides: Partial<Parameters<typeof ingestTelemetryReport>[2]> = {}
+  ): Parameters<typeof ingestTelemetryReport>[2] {
     return {
       windowStart: 1000,
       windowEnd: 2000,
@@ -281,22 +284,22 @@ describeOrSkip('fleetTelemetry — ingestTelemetryReport', () => {
     // happen in practice, but the code must be safe regardless).
     ingestTelemetryReport(db, 'device-abc', sampleReport({ totalCostCents: 200 }));
 
-    const rows = db.prepare('SELECT COUNT(*) as c FROM fleet_telemetry_reports WHERE device_id = ?').get('device-abc') as
-      | { c: number }
-      | undefined;
+    const rows = db
+      .prepare('SELECT COUNT(*) as c FROM fleet_telemetry_reports WHERE device_id = ?')
+      .get('device-abc') as { c: number } | undefined;
     expect(rows?.c).toBe(1); // still just one row
-    const row = db.prepare('SELECT total_cost_cents FROM fleet_telemetry_reports WHERE device_id = ?').get('device-abc') as
-      | { total_cost_cents: number }
-      | undefined;
+    const row = db
+      .prepare('SELECT total_cost_cents FROM fleet_telemetry_reports WHERE device_id = ?')
+      .get('device-abc') as { total_cost_cents: number } | undefined;
     expect(row?.total_cost_cents).toBe(200); // latest write wins
   });
 
   it('different windows for same device produce separate rows', () => {
     ingestTelemetryReport(db, 'device-abc', sampleReport({ windowStart: 1000, windowEnd: 2000 }));
     ingestTelemetryReport(db, 'device-abc', sampleReport({ windowStart: 2000, windowEnd: 3000 }));
-    const rows = db.prepare('SELECT COUNT(*) as c FROM fleet_telemetry_reports WHERE device_id = ?').get('device-abc') as
-      | { c: number }
-      | undefined;
+    const rows = db
+      .prepare('SELECT COUNT(*) as c FROM fleet_telemetry_reports WHERE device_id = ?')
+      .get('device-abc') as { c: number } | undefined;
     expect(rows?.c).toBe(2);
   });
 

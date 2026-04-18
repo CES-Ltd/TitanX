@@ -17,7 +17,9 @@ export type FleetCommandType =
   | 'force_config_sync'
   | 'force_telemetry_push'
   | 'cache.clear'
-  | 'credential.rotate';
+  | 'credential.rotate'
+  | 'agent.restart'
+  | 'force.upgrade';
 export type AckStatus = 'succeeded' | 'failed' | 'skipped';
 
 export type FleetCommandRow = {
@@ -120,9 +122,7 @@ export async function enqueueFleetCommand(input: {
   targetDeviceId: string;
   commandType: 'force_config_sync' | 'force_telemetry_push';
   ttlSeconds?: number;
-}): Promise<
-  { ok: true; commandId: string } | { ok: false; error: string; code?: 'per_device' | 'fleet_wide' }
-> {
+}): Promise<{ ok: true; commandId: string } | { ok: false; error: string; code?: 'per_device' | 'fleet_wide' }> {
   return ipcBridge.fleet.enqueueCommand.invoke(input);
 }
 

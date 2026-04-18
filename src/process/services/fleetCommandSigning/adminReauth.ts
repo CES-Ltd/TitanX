@@ -55,11 +55,7 @@ export function __resetReauthForTests(): void {
  * re-auths (repeated destructive ops) still gets rate-limited,
  * matching what a brute-forcer would see.
  */
-export async function verifyAdminPassword(
-  db: ISqliteDriver,
-  userId: string,
-  password: string
-): Promise<ReauthResult> {
+export async function verifyAdminPassword(db: ISqliteDriver, userId: string, password: string): Promise<ReauthResult> {
   // Rate check BEFORE the DB lookup so a flood of bogus userIds can't
   // scan the users table.
   if (!bumpAttempt(userId)) {
@@ -80,12 +76,7 @@ export async function verifyAdminPassword(
     // Still pay the bcrypt cost against a dummy hash so timing doesn't
     // leak "user exists" vs "password wrong". Same pattern as
     // AuthService.DUMMY_BCRYPT_HASH.
-    await bcrypt
-      .compare(
-        password,
-        '$2a$12$s5cKddFA1hp06nhAubmZa.eT3/xT9Bmve36cul7fZ6ch2mz9EITDu'
-      )
-      .catch(() => false);
+    await bcrypt.compare(password, '$2a$12$s5cKddFA1hp06nhAubmZa.eT3/xT9Bmve36cul7fZ6ch2mz9EITDu').catch(() => false);
     return { ok: false, reason: 'unknown_user' };
   }
 

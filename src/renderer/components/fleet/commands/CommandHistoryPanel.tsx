@@ -121,11 +121,7 @@ const CommandHistoryPanel: React.FC = () => {
         const canRevoke = !row.revokedAt && row.expiresAt > Date.now();
         return (
           <div className='flex gap-1'>
-            <Button
-              size='mini'
-              icon={<DocDetail theme='outline' size='12' />}
-              onClick={() => setDrillDownId(row.id)}
-            >
+            <Button size='mini' icon={<DocDetail theme='outline' size='12' />} onClick={() => setDrillDownId(row.id)}>
               {t('fleet.commands.history.inspect', { defaultValue: 'Inspect' })}
             </Button>
             {canRevoke && (

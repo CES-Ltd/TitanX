@@ -21,7 +21,13 @@
  * decide whether to auto-retry or escalate without parsing message text.
  */
 
-/** All recognized failure categories. */
+/** All recognized failure categories.
+ *
+ * Phase A (v1.9.40) added `fleet_unreachable` + `fleet_timeout` so the
+ * future farm-mode adapter (Phase B) has ready-to-use categories without
+ * widening the union later. Both are retryable — unreachable typically
+ * means transient network, timeout typically means overloaded slave.
+ */
 export type AgentFailureKind =
   | 'timeout'
   | 'parsing_error'
@@ -29,6 +35,8 @@ export type AgentFailureKind =
   | 'policy_violation'
   | 'impersonation'
   | 'wake_deadlocked'
+  | 'fleet_unreachable'
+  | 'fleet_timeout'
   | 'internal';
 
 /** Structured record of a single agent failure. */
@@ -79,6 +87,16 @@ export function internalError(message: string, cause?: Error, context?: Record<s
   return { kind: 'internal', message, retryable: true, cause, context, timestamp: Date.now() };
 }
 
+/** Farm slave couldn't be reached at all — transient, usually network. */
+export function fleetUnreachable(message: string, context?: Record<string, unknown>): AgentFailure {
+  return { kind: 'fleet_unreachable', message, retryable: true, context, timestamp: Date.now() };
+}
+
+/** Farm slave acked the command but didn't complete in time. Retryable. */
+export function fleetTimeout(message: string, context?: Record<string, unknown>): AgentFailure {
+  return { kind: 'fleet_timeout', message, retryable: true, context, timestamp: Date.now() };
+}
+
 /**
  * Normalize an arbitrary caught value into an AgentFailure.
  * Used when wrapping errors at orchestration boundaries — ensures every
@@ -89,7 +107,12 @@ export function fromUnknown(err: unknown, fallbackKind: AgentFailureKind = 'inte
     return {
       kind: fallbackKind,
       message: err.message,
-      retryable: fallbackKind === 'timeout' || fallbackKind === 'api_error' || fallbackKind === 'internal',
+      retryable:
+        fallbackKind === 'timeout' ||
+        fallbackKind === 'api_error' ||
+        fallbackKind === 'internal' ||
+        fallbackKind === 'fleet_unreachable' ||
+        fallbackKind === 'fleet_timeout',
       cause: err,
       timestamp: Date.now(),
     };

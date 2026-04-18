@@ -71,9 +71,9 @@ describeOrSkip('fleetCommandSigning — key management', () => {
 
   it('private key is encrypted at rest (not stored plaintext)', () => {
     loadOrCreateMasterSigningKey(db);
-    const row = db
-      .prepare('SELECT private_key_ciphertext FROM fleet_master_signing_key WHERE id = 1')
-      .get() as { private_key_ciphertext: string };
+    const row = db.prepare('SELECT private_key_ciphertext FROM fleet_master_signing_key WHERE id = 1').get() as {
+      private_key_ciphertext: string;
+    };
     expect(row.private_key_ciphertext).not.toContain('BEGIN PRIVATE KEY');
     // Vault blob is JSON with nonce + ciphertext — rough shape check.
     expect(row.private_key_ciphertext).toMatch(/"ct"|"nonce"/);
@@ -163,7 +163,8 @@ describeOrSkip('fleetCommandSigning — sign + verify', () => {
     // Flip one hex digit deep in the sig
     const tampered = {
       ...signed,
-      signature: signed.signature.slice(0, 10) + (signed.signature[10] === 'a' ? 'b' : 'a') + signed.signature.slice(11),
+      signature:
+        signed.signature.slice(0, 10) + (signed.signature[10] === 'a' ? 'b' : 'a') + signed.signature.slice(11),
     };
     const result = verifyCommand(db, getMasterSigningPublicKey(db), tampered);
     expect(result.ok).toBe(false);
@@ -213,7 +214,15 @@ describeOrSkip('fleetCommandSigning — sign + verify', () => {
     const cases: unknown[] = [
       null,
       {},
-      { commandId: 'x', commandType: 'cache.clear', targetDeviceId: 'd', issuedAt: 1, nonce: 'aa', params: {}, signature: 'ff' },
+      {
+        commandId: 'x',
+        commandType: 'cache.clear',
+        targetDeviceId: 'd',
+        issuedAt: 1,
+        nonce: 'aa',
+        params: {},
+        signature: 'ff',
+      },
       // nonce wrong length
       {
         commandId: 'x',
@@ -308,9 +317,7 @@ describeOrSkip('fleetCommandSigning — sweepOldReplayNonces', () => {
 
   it('deletes nonces older than NONCE_RETENTION_MS', () => {
     const now = Date.now();
-    const stmt = db.prepare(
-      'INSERT INTO fleet_command_replay_nonces (nonce, seen_at, command_id) VALUES (?, ?, ?)'
-    );
+    const stmt = db.prepare('INSERT INTO fleet_command_replay_nonces (nonce, seen_at, command_id) VALUES (?, ?, ?)');
     stmt.run('old1', now - NONCE_RETENTION_MS - 1, 'cmd-old-1');
     stmt.run('old2', now - NONCE_RETENTION_MS - 10_000, 'cmd-old-2');
     stmt.run('fresh', now - 10, 'cmd-fresh');
@@ -323,9 +330,11 @@ describeOrSkip('fleetCommandSigning — sweepOldReplayNonces', () => {
   });
 
   it('is a no-op when nothing is stale', () => {
-    db.prepare(
-      'INSERT INTO fleet_command_replay_nonces (nonce, seen_at, command_id) VALUES (?, ?, ?)'
-    ).run('fresh', Date.now(), 'cmd');
+    db.prepare('INSERT INTO fleet_command_replay_nonces (nonce, seen_at, command_id) VALUES (?, ?, ?)').run(
+      'fresh',
+      Date.now(),
+      'cmd'
+    );
     expect(sweepOldReplayNonces(db)).toBe(0);
   });
 });
@@ -369,6 +378,19 @@ describeOrSkip('fleetCommandSigning — canonicalJson', () => {
       nonce: 'nn',
     });
     const parsed = JSON.parse(json) as unknown[];
-    expect(parsed).toEqual(['commandId', 'x', 'commandType', 'cache.clear', 'params', { a: 1 }, 'targetDeviceId', 'd', 'issuedAt', 123, 'nonce', 'nn']);
+    expect(parsed).toEqual([
+      'commandId',
+      'x',
+      'commandType',
+      'cache.clear',
+      'params',
+      { a: 1 },
+      'targetDeviceId',
+      'd',
+      'issuedAt',
+      123,
+      'nonce',
+      'nn',
+    ]);
   });
 });

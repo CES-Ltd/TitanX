@@ -26,7 +26,7 @@ import { Alert, Button, Input, Message, Modal, Select } from '@arco-design/web-r
 import { Shield } from '@icon-park/react';
 import { ipcBridge } from '@/common';
 
-export type DestructiveCommandType = 'cache.clear' | 'credential.rotate';
+export type DestructiveCommandType = 'cache.clear' | 'credential.rotate' | 'agent.restart' | 'force.upgrade';
 
 type Props = {
   open: boolean;
@@ -35,6 +35,43 @@ type Props = {
   commandType: DestructiveCommandType;
   onClose: () => void;
   onSuccess: () => void;
+};
+
+/**
+ * Title + warning copy for each destructive command type. Keys are
+ * translated via t() so locale bundles can override; defaults are
+ * here so the UI still works even if i18n hasn't caught up yet.
+ */
+type CommandCopy = { titleKey: string; titleDefault: string; warningKey: string; warningDefault: string };
+const COMMAND_COPY: Record<DestructiveCommandType, CommandCopy> = {
+  'cache.clear': {
+    titleKey: 'fleet.commands.destructive.cacheClear.title',
+    titleDefault: 'Clear cache',
+    warningKey: 'fleet.commands.destructive.cacheClear.warning',
+    warningDefault:
+      'This will delete cache files on the selected device(s). Cached files are recoverable by re-downloading.',
+  },
+  'credential.rotate': {
+    titleKey: 'fleet.commands.destructive.credentialRotate.title',
+    titleDefault: 'Rotate credentials',
+    warningKey: 'fleet.commands.destructive.credentialRotate.warning',
+    warningDefault:
+      'This will wipe ALL saved provider API keys on the selected device(s). Users will re-enter keys on next use.',
+  },
+  'agent.restart': {
+    titleKey: 'fleet.commands.destructive.agentRestart.title',
+    titleDefault: 'Restart agents',
+    warningKey: 'fleet.commands.destructive.agentRestart.warning',
+    warningDefault:
+      'This will terminate every active team session on the selected device(s). In-flight turns will be cancelled. No conversation data is deleted; teams rehydrate on the next user interaction.',
+  },
+  'force.upgrade': {
+    titleKey: 'fleet.commands.destructive.forceUpgrade.title',
+    titleDefault: 'Force app upgrade',
+    warningKey: 'fleet.commands.destructive.forceUpgrade.warning',
+    warningDefault:
+      'This will download the latest TitanX release and quit the app on the selected device(s). Users will lose unsaved work in any external tools they were running concurrently.',
+  },
 };
 
 const CACHE_SCOPES: Array<{ value: string; label: string; desc: string }> = [
@@ -80,6 +117,12 @@ const DestructiveCommandModal: React.FC<Props> = ({ open, targetDeviceId, comman
     if (!password) return;
     setSubmitting(true);
     try {
+      // Params by command type:
+      //   cache.clear → { scope } (selector below)
+      //   credential.rotate / agent.restart → {} (no tunables)
+      //   force.upgrade → {} (installer manifest is slave-discovered; we
+      //     don't send SHA here because electron-updater verifies its
+      //     own signature chain. Room to add sha256 later.)
       const params = commandType === 'cache.clear' ? { scope } : {};
       const rawResult = await ipcBridge.fleet.enqueueDestructiveCommand.invoke({
         targetDeviceId,
@@ -147,6 +190,8 @@ const DestructiveCommandModal: React.FC<Props> = ({ open, targetDeviceId, comman
     }
   }, [commandType, onClose, onSuccess, password, scope, t, targetDeviceId]);
 
+  const copy = COMMAND_COPY[commandType];
+
   return (
     <Modal
       visible={open}
@@ -154,9 +199,7 @@ const DestructiveCommandModal: React.FC<Props> = ({ open, targetDeviceId, comman
       title={
         <div className='flex items-center gap-2 text-danger-6'>
           <Shield theme='outline' size='16' />
-          {commandType === 'cache.clear'
-            ? t('fleet.commands.destructive.cacheClear.title', { defaultValue: 'Clear cache' })
-            : t('fleet.commands.destructive.credentialRotate.title', { defaultValue: 'Rotate credentials' })}
+          {t(copy.titleKey, { defaultValue: copy.titleDefault })}
         </div>
       }
       footer={
@@ -172,20 +215,7 @@ const DestructiveCommandModal: React.FC<Props> = ({ open, targetDeviceId, comman
       style={{ width: 480 }}
     >
       <div className='space-y-3'>
-        <Alert
-          type='warning'
-          content={
-            commandType === 'cache.clear'
-              ? t('fleet.commands.destructive.cacheClear.warning', {
-                  defaultValue:
-                    'This will delete cache files on the selected device(s). Cached files are recoverable by re-downloading.',
-                })
-              : t('fleet.commands.destructive.credentialRotate.warning', {
-                  defaultValue:
-                    'This will wipe ALL saved provider API keys on the selected device(s). Users will re-enter keys on next use.',
-                })
-          }
-        />
+        <Alert type='warning' content={t(copy.warningKey, { defaultValue: copy.warningDefault })} />
 
         <div>
           <div className='text-12px text-t-tertiary mb-1'>

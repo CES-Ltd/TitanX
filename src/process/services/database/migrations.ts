@@ -2745,9 +2745,7 @@ const migration_v68: IMigration = {
       seen_at INTEGER NOT NULL,
       command_id TEXT NOT NULL
     )`);
-    db.exec(
-      'CREATE INDEX IF NOT EXISTS idx_fleet_command_replay_nonces_seen ON fleet_command_replay_nonces(seen_at)'
-    );
+    db.exec('CREATE INDEX IF NOT EXISTS idx_fleet_command_replay_nonces_seen ON fleet_command_replay_nonces(seen_at)');
 
     console.log('[Migration-v68] Created fleet_master_signing_key + fleet_command_replay_nonces');
   },
