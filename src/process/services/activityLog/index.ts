@@ -40,6 +40,18 @@ type ListParams = {
   entityType?: string;
   agentId?: string;
   action?: string;
+  /** Inclusive epoch-ms lower bound on created_at. */
+  createdAtFrom?: number;
+  /** Exclusive epoch-ms upper bound on created_at. */
+  createdAtTo?: number;
+  /** Filter on severity column (added in migration v32). */
+  severity?: 'info' | 'warning';
+  /**
+   * Free-text substring match on entity_id + details (JSON). Case-insensitive.
+   * SQLite LIKE with leading-%% can't use an index so keep bounded; primary filter
+   * should still narrow the row set via user_id + entity_type / action first.
+   */
+  search?: string;
   limit?: number;
   offset?: number;
 };
@@ -202,6 +214,26 @@ export function listActivities(db: ISqliteDriver, params: ListParams): { data: A
     conditions.push('action = ?');
     args.push(params.action);
   }
+  if (typeof params.createdAtFrom === 'number') {
+    conditions.push('created_at >= ?');
+    args.push(params.createdAtFrom);
+  }
+  if (typeof params.createdAtTo === 'number') {
+    conditions.push('created_at < ?');
+    args.push(params.createdAtTo);
+  }
+  if (params.severity === 'info' || params.severity === 'warning') {
+    conditions.push('severity = ?');
+    args.push(params.severity);
+  }
+  if (params.search && params.search.length > 0) {
+    // SQLite LIKE has a 500-char practical bound; trim to stay well under it.
+    // leading-% can't use an index — depend on user_id / entity_type / time
+    // filters to narrow first, then substring-match within that set.
+    const needle = `%${params.search.slice(0, 200).replace(/[%_]/g, (c) => `\\${c}`)}%`;
+    conditions.push('(LOWER(entity_id) LIKE LOWER(?) ESCAPE \'\\\' OR LOWER(details) LIKE LOWER(?) ESCAPE \'\\\' OR LOWER(action) LIKE LOWER(?) ESCAPE \'\\\')');
+    args.push(needle, needle, needle);
+  }
 
   const where = conditions.join(' AND ');
   const limit = params.limit ?? 50;
@@ -217,6 +249,34 @@ export function listActivities(db: ISqliteDriver, params: ListParams): { data: A
 
   const data = rows.map(rowToActivityEntry);
   return { data, total };
+}
+
+/**
+ * Distinct `action` values observed in this user's audit log. Feeds the
+ * admin UI's filter dropdown so new action types (fleet.command.enqueued,
+ * agent.template.published, etc.) show up automatically without touching
+ * a hardcoded enum in the renderer.
+ *
+ * SELECT DISTINCT is O(rows) without an (user_id, action) composite
+ * index. At 1M rows on a user this takes ~100ms on a cold page; at 10M
+ * it becomes noticeable (~1s). Current usage is admin-only + on-demand
+ * (Refresh button, not every render) so the trade-off is acceptable.
+ * Adding `CREATE INDEX idx_activity_log_user_action ON activity_log(
+ * user_id, action)` would fix it if needed.
+ */
+export function getDistinctActions(db: ISqliteDriver, userId: string, limit: number = 500): string[] {
+  const rows = db
+    .prepare('SELECT DISTINCT action FROM activity_log WHERE user_id = ? ORDER BY action ASC LIMIT ?')
+    .all(userId, limit) as Array<{ action: string }>;
+  return rows.map((r) => r.action);
+}
+
+/** Distinct `entity_type` values — same pattern as getDistinctActions. */
+export function getDistinctEntityTypes(db: ISqliteDriver, userId: string, limit: number = 200): string[] {
+  const rows = db
+    .prepare('SELECT DISTINCT entity_type FROM activity_log WHERE user_id = ? ORDER BY entity_type ASC LIMIT ?')
+    .all(userId, limit) as Array<{ entity_type: string }>;
+  return rows.map((r) => r.entity_type);
 }
 
 /**

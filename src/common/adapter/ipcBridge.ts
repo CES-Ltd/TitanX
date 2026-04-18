@@ -1580,6 +1580,13 @@ export type IActivityListParams = {
   entityType?: string;
   agentId?: string;
   action?: string;
+  /** Inclusive epoch-ms lower bound on created_at (v1.9.39). */
+  createdAtFrom?: number;
+  /** Exclusive epoch-ms upper bound on created_at (v1.9.39). */
+  createdAtTo?: number;
+  severity?: 'info' | 'warning';
+  /** Substring match on entity_id + details + action (case-insensitive). */
+  search?: string;
   limit?: number;
   offset?: number;
 };
@@ -1708,6 +1715,15 @@ export const activityLog = {
   forEntity: bridge.buildProvider<IActivityEntry[], { entityType: string; entityId: string }>(
     'activity-log.for-entity'
   ),
+  /**
+   * Distinct action values observed for this user. Feeds the admin
+   * audit-log filter dropdown so new action types (fleet.command.enqueued,
+   * agent.template.published, etc.) show up automatically without a
+   * hardcoded enum in the renderer. (v1.9.39)
+   */
+  distinctActions: bridge.buildProvider<string[], { userId: string }>('activity-log.distinct-actions'),
+  /** Distinct entity_type values — same pattern as distinctActions. */
+  distinctEntityTypes: bridge.buildProvider<string[], { userId: string }>('activity-log.distinct-entity-types'),
 };
 
 export const secrets = {

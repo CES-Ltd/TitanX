@@ -17,4 +17,15 @@ export function initActivityLogBridge(): void {
     const db = await getDatabase();
     return activityLogService.getActivitiesForEntity(db.getDriver(), entityType, entityId);
   });
+
+  // v1.9.39 — dynamic filter dropdowns feed
+  ipcBridge.activityLog.distinctActions.provider(async ({ userId }) => {
+    const db = await getDatabase();
+    return activityLogService.getDistinctActions(db.getDriver(), userId);
+  });
+
+  ipcBridge.activityLog.distinctEntityTypes.provider(async ({ userId }) => {
+    const db = await getDatabase();
+    return activityLogService.getDistinctEntityTypes(db.getDriver(), userId);
+  });
 }

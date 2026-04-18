@@ -26,7 +26,14 @@
     "entity": "實體",
     "details": "詳情",
     "filterEntity": "按實體篩選",
-    "empty": "尚無活動紀錄"
+    "empty": "尚無活動紀錄",
+    "filterAction": "Filter by action",
+    "filterSeverity": "Severity",
+    "searchPlaceholder": "Search entity id, action, details…",
+    "export": "Export CSV",
+    "detailsTitle": "Audit entry",
+    "detailsJson": "Details (raw)",
+    "devicelocal": "local"
   },
   "costs": {
     "agent": "智能體",

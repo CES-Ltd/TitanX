@@ -26,7 +26,14 @@
     "entity": "实体",
     "details": "详情",
     "filterEntity": "按实体筛选",
-    "empty": "暂无活动记录"
+    "empty": "暂无活动记录",
+    "filterAction": "Filter by action",
+    "filterSeverity": "Severity",
+    "searchPlaceholder": "Search entity id, action, details…",
+    "export": "Export CSV",
+    "detailsTitle": "Audit entry",
+    "detailsJson": "Details (raw)",
+    "devicelocal": "local"
   },
   "costs": {
     "agent": "智能体",

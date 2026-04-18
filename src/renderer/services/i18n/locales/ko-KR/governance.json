@@ -26,7 +26,14 @@
     "entity": "엔티티",
     "details": "상세",
     "filterEntity": "엔티티별 필터",
-    "empty": "활동 기록이 없습니다"
+    "empty": "활동 기록이 없습니다",
+    "filterAction": "Filter by action",
+    "filterSeverity": "Severity",
+    "searchPlaceholder": "Search entity id, action, details…",
+    "export": "Export CSV",
+    "detailsTitle": "Audit entry",
+    "detailsJson": "Details (raw)",
+    "devicelocal": "local"
   },
   "costs": {
     "agent": "에이전트",

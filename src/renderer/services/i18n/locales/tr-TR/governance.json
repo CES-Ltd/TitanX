@@ -26,7 +26,14 @@
     "entity": "Varlık",
     "details": "Detaylar",
     "filterEntity": "Varlığa göre filtrele",
-    "empty": "Henüz aktivite kaydı yok"
+    "empty": "Henüz aktivite kaydı yok",
+    "filterAction": "Filter by action",
+    "filterSeverity": "Severity",
+    "searchPlaceholder": "Search entity id, action, details…",
+    "export": "Export CSV",
+    "detailsTitle": "Audit entry",
+    "detailsJson": "Details (raw)",
+    "devicelocal": "local"
   },
   "costs": {
     "agent": "Ajan",

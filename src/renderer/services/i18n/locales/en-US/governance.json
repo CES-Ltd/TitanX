@@ -48,7 +48,14 @@
     "entity": "Entity",
     "details": "Details",
     "filterEntity": "Filter by entity",
-    "empty": "No activity logged yet"
+    "filterAction": "Filter by action",
+    "filterSeverity": "Severity",
+    "searchPlaceholder": "Search entity id, action, details…",
+    "export": "Export CSV",
+    "empty": "No activity logged yet",
+    "detailsTitle": "Audit entry",
+    "detailsJson": "Details (raw)",
+    "devicelocal": "local"
   },
   "costs": {
     "agent": "Agent",
