@@ -35,6 +35,7 @@ import * as activityLogService from '@process/services/activityLog';
 import { TEAM_CONFIG } from './config';
 import { logNonCritical } from '@process/utils/logNonCritical';
 import { sendShapeFor } from './conversationTypes';
+import type { AgentMessage } from './ports/IAgent';
 
 /** Available agent backend types surfaced to the leader for spawn_agent. */
 export type AvailableAgentType = { type: string; name: string };
@@ -146,6 +147,15 @@ export class WakeRunner {
     }
     this.ctx.setStatus(slotId, 'active');
 
+    // Phase B v1.10.1 — farm-backend dispatch. The farm adapter is a
+    // single-shot signed command through the fleet channel, NOT the
+    // streaming worker-task pipeline local agents use. Branching here
+    // instead of inside buildPayload() keeps the local path byte-for-
+    // byte unchanged for regression isolation.
+    if (agent.backend === 'farm' && agent.fleetBinding) {
+      return this.dispatchFarmTurn(agent, slotId);
+    }
+
     const hasMcp = this.ctx.agentHasMcpTools(agent);
     this.debug(
       `[WakeRunner] Building payload for ${agent.agentName}: hasMcpTools=${String(hasMcp)} mcpServerStarted=${String(this.ctx.mcpServerStarted())} conversationType=${agent.conversationType}`
@@ -191,6 +201,145 @@ export class WakeRunner {
         this.ctx.setStatus(slotId, 'idle', 'Wake timed out');
       }
     });
+  }
+
+  // ── Farm dispatch (Phase B v1.10.1) ──────────────────────────────────
+  //
+  // The farm path is structurally simpler than the local one:
+  //   1. Read mailbox (same as local)
+  //   2. Convert MailboxMessage[] → AgentMessage[] for the IAgent contract
+  //   3. Build a FleetAgentAdapter from the agent's fleetBinding
+  //   4. Release the wake lock BEFORE awaiting the adapter — adapter
+  //      waits for slave ack (bounded by master timeout) and we don't
+  //      want that wait to block concurrent wakes on other slots
+  //   5. Await adapter.wake() — structured AgentWakeResult, never throws
+  //   6. Translate to setStatus('completed' / 'failed', assistantText)
+  //
+  // UI integration: farm agents get their response text surfaced via
+  // the team.agent-status-changed event's `lastMessage` field — same
+  // path that shows local agent activity in the team roster UI. Richer
+  // integration (writing the response into a synthetic conversation
+  // thread for a chat-like drill-down) is a v1.10.2 concern.
+  private async dispatchFarmTurn(agent: TeamAgent, slotId: string): Promise<void> {
+    if (!agent.fleetBinding) {
+      // Defensive — should not reach here because dispatchTurn's branch
+      // checks for fleetBinding, but the helper's typing needs it.
+      this.ctx.setStatus(slotId, 'failed', 'farm agent missing fleetBinding');
+      return;
+    }
+
+    const mailboxMessages = await this.ctx.mailbox.readUnread(this.ctx.teamId, slotId);
+    const teammates = this.ctx.registry.list().filter((a) => a.slotId !== slotId);
+
+    // For farm slots the synthetic conversation (farm-<uuid>) is not
+    // something the user opens, so skip writeIncomingToConversation —
+    // it would write rows into a conversation id that has no matching
+    // chat_conversations row.
+    const messages = this.buildFarmMessages(agent, mailboxMessages, teammates);
+
+    if (messages.length <= 1) {
+      // Only a system prompt, no actual input. Mark idle so the wake
+      // state clears cleanly; the team UI shows "no new messages" via
+      // the lastMessage empty state.
+      this.ctx.wakeState.releaseActive(slotId);
+      this.ctx.setStatus(slotId, 'idle', 'no unread mailbox messages');
+      return;
+    }
+
+    // Lazy import to avoid circular dependency with FleetAgentAdapter's
+    // own imports from fleetCommands → activityLog → this module's
+    // parent tree.
+    const { createFleetAgentAdapter } = await import('./adapters/FleetAgentAdapter');
+    const adapter = createFleetAgentAdapter(
+      { slotId, displayName: agent.agentName, teamId: this.ctx.teamId },
+      {
+        deviceId: agent.fleetBinding.deviceId,
+        agentTemplateId: agent.fleetBinding.remoteSlotId,
+        toolsAllowlist: agent.fleetBinding.toolsAllowlist,
+        // Audit actor for the signed envelope. 'system_default_user'
+        // is the seeded single-user id; future multi-user support
+        // would need to thread the real admin id here.
+        createdBy: 'system_default_user',
+        getDb: async () => {
+          const db = await getDatabase();
+          return db.getDriver();
+        },
+      }
+    );
+
+    // Release the wake lock BEFORE awaiting — concurrent wakes on
+    // OTHER slots shouldn't block while we sit on the master-timeout
+    // path. The adapter's own job-row tracking keeps the pipe clean.
+    this.ctx.wakeState.releaseActive(slotId);
+
+    const result = await adapter.wake(messages);
+
+    if (result.ok === true) {
+      // TS narrowing across await boundaries from a cross-module union
+      // return is flaky — widen via explicit cast to the success arm.
+      const success = result as {
+        ok: true;
+        assistantText: string;
+        usage?: { inputTokens: number; outputTokens: number; costCents?: number };
+      };
+      const raw = success.assistantText?.trim() ?? '';
+      const preview = raw.length > 0 ? raw : '(farm agent returned empty response)';
+      this.ctx.setStatus(slotId, 'completed', preview.slice(0, 200));
+      this.auditAsync('fleet.agent.wake_completed', slotId, {
+        teamId: this.ctx.teamId,
+        deviceId: agent.fleetBinding.deviceId,
+        templateId: agent.fleetBinding.remoteSlotId,
+        inputTokens: success.usage?.inputTokens,
+        outputTokens: success.usage?.outputTokens,
+      });
+      return;
+    }
+
+    const failure = result as { ok: false; failure: { message: string; kind: string; retryable: boolean } };
+    this.ctx.setStatus(slotId, 'failed', failure.failure.message.slice(0, 200));
+    this.auditAsync('fleet.agent.wake_failed', slotId, {
+      teamId: this.ctx.teamId,
+      deviceId: agent.fleetBinding.deviceId,
+      templateId: agent.fleetBinding.remoteSlotId,
+      failureKind: failure.failure.kind,
+      retryable: failure.failure.retryable,
+    });
+  }
+
+  /**
+   * Convert MailboxMessage[] → AgentMessage[] for the farm adapter.
+   *
+   * Every mailbox entry becomes a 'user'-role message (the farm agent's
+   * mental model: "someone is sending me input"). Sender name is
+   * prefixed inline so a multi-teammate conversation still makes sense
+   * to the model without structural metadata — the LLM parses natural
+   * language better than role-tagged objects.
+   *
+   * A minimal system prompt seeds the agent's role; richer persona
+   * injection (full template config) lands in v1.10.2 when we pipe
+   * template.config through the adapter path.
+   */
+  private buildFarmMessages(
+    agent: TeamAgent,
+    mailboxMessages: MailboxMessage[],
+    teammates: TeamAgent[]
+  ): AgentMessage[] {
+    const out: AgentMessage[] = [
+      {
+        role: 'system',
+        content: `You are ${agent.agentName}, a ${agent.role} in a multi-agent team. Respond concisely to the following messages from your teammates.`,
+      },
+    ];
+    for (const msg of mailboxMessages) {
+      const sender = teammates.find((a) => a.slotId === msg.fromAgentId);
+      const senderName = sender?.agentName ?? (msg.fromAgentId === 'user' ? 'user' : msg.fromAgentId);
+      out.push({
+        role: 'user',
+        content: `[From ${senderName}]: ${msg.content}`,
+        name: senderName,
+      });
+    }
+    return out;
   }
 
   private buildPayloadParams(
