@@ -940,7 +940,8 @@ export const fleet = {
           | 'cache.clear'
           | 'credential.rotate'
           | 'agent.restart'
-          | 'force.upgrade';
+          | 'force.upgrade'
+          | 'agent.execute';
         params: Record<string, unknown>;
         createdAt: number;
         createdBy: string;
@@ -1020,6 +1021,70 @@ export const fleet = {
     },
     { deviceId: string; limit?: number }
   >('fleet:get-device-telemetry'),
+
+  // ── Phase B v1.10.0: Agent Farm ────────────────────────────────────────
+
+  /**
+   * List all enrolled devices that declared role='farm' at enrollment.
+   * Powers the admin's hire-farm-agent device picker + the farm
+   * dashboard's device roster.
+   */
+  listFarmDevices: bridge.buildProvider<
+    {
+      devices: Array<{
+        deviceId: string;
+        hostname: string;
+        osVersion: string;
+        titanxVersion: string;
+        enrolledAt: number;
+        lastHeartbeatAt?: number;
+        capabilities: Record<string, unknown>;
+      }>;
+    },
+    void
+  >('fleet:list-farm-devices'),
+
+  /**
+   * Summary of farm job activity per device over a time window.
+   * Powers the FarmDashboard tiles + per-device utilization heatmap.
+   */
+  getFarmJobSummary: bridge.buildProvider<
+    {
+      devices: Array<{
+        deviceId: string;
+        jobsTotal: number;
+        jobsCompleted: number;
+        jobsFailed: number;
+        jobsTimeout: number;
+        avgLatencyMs: number;
+        lastJobAt: number | null;
+      }>;
+    },
+    { windowStart: number; windowEnd: number }
+  >('fleet:get-farm-job-summary'),
+
+  /**
+   * Recent farm jobs (newest first). Optional deviceId filters to
+   * per-device drill-down in the dashboard.
+   */
+  listFarmJobs: bridge.buildProvider<
+    {
+      jobs: Array<{
+        id: string;
+        deviceId: string;
+        teamId: string;
+        agentSlotId: string;
+        requestPayload: Record<string, unknown>;
+        responsePayload: Record<string, unknown> | null;
+        status: 'queued' | 'dispatched' | 'running' | 'completed' | 'failed' | 'timeout';
+        error: string | null;
+        enqueuedAt: number;
+        dispatchedAt: number | null;
+        completedAt: number | null;
+      }>;
+    },
+    { deviceId?: string; limit?: number }
+  >('fleet:list-farm-jobs'),
 };
 
 // 系统通知接口 / System notification API

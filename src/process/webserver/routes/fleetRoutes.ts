@@ -114,6 +114,8 @@ export function registerFleetRoutes(app: Express): void {
         hostname?: unknown;
         osVersion?: unknown;
         titanxVersion?: unknown;
+        role?: unknown;
+        capabilities?: unknown;
       };
       if (
         typeof body.enrollmentToken !== 'string' ||
@@ -128,12 +130,22 @@ export function registerFleetRoutes(app: Express): void {
         });
         return;
       }
+      // Phase B v1.10.0: optional role + capabilities. Unknown /
+      // malformed values fall back to 'workforce' (backward-compat
+      // for pre-Phase-B slaves that don't send these fields).
+      const role = body.role === 'farm' ? 'farm' : 'workforce';
+      const capabilities =
+        body.capabilities && typeof body.capabilities === 'object' && !Array.isArray(body.capabilities)
+          ? (body.capabilities as Record<string, unknown>)
+          : {};
       const result = fleetEnrollment.enrollDevice(db.getDriver(), {
         enrollmentToken: body.enrollmentToken,
         devicePubKeyPem: body.devicePubKeyPem,
         hostname: body.hostname,
         osVersion: body.osVersion,
         titanxVersion: body.titanxVersion,
+        role,
+        capabilities,
       });
       if (result.ok === false) {
         // 401 on token auth failures, 400 on validation failures

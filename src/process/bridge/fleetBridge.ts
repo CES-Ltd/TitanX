@@ -267,6 +267,40 @@ export function initFleetBridge(): void {
     return { ok };
   });
 
+  // ── Phase B v1.10.0: Agent Farm providers ────────────────────────────
+
+  ipcBridge.fleet.listFarmDevices.provider(async () => {
+    const db = await getDatabase();
+    const rows = fleetEnrollment.listFarmDevices(db.getDriver());
+    return {
+      devices: rows.map((r) => ({
+        deviceId: r.deviceId,
+        hostname: r.hostname,
+        osVersion: r.osVersion,
+        titanxVersion: r.titanxVersion,
+        enrolledAt: r.enrolledAt,
+        lastHeartbeatAt: r.lastHeartbeatAt,
+        capabilities: r.capabilities,
+      })),
+    };
+  });
+
+  ipcBridge.fleet.getFarmJobSummary.provider(async ({ windowStart, windowEnd }) => {
+    const { summarizeFarmJobs } = await import('@process/services/fleetAgentJobs');
+    const db = await getDatabase();
+    const devices = summarizeFarmJobs(db.getDriver(), windowStart, windowEnd);
+    return { devices };
+  });
+
+  ipcBridge.fleet.listFarmJobs.provider(async ({ deviceId, limit }) => {
+    const { listFarmJobs: listAll, listFarmJobsForDevice } = await import('@process/services/fleetAgentJobs');
+    const db = await getDatabase();
+    const jobs = deviceId
+      ? listFarmJobsForDevice(db.getDriver(), deviceId, limit ?? 50)
+      : listAll(db.getDriver(), limit ?? 100);
+    return { jobs };
+  });
+
   // Re-emit ack events to the renderer so the history SWR refreshes
   // immediately on every slave ack instead of polling. Subscriber
   // lives as long as the process does — no unsubscribe path.

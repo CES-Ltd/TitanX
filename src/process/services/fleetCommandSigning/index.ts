@@ -36,11 +36,26 @@ import { logNonCritical } from '@process/utils/logNonCritical';
 import {
   NONCE_BYTES,
   NONCE_RETENTION_MS,
-  type DestructiveCommandType,
   type SignableCommandBody,
   type SignedCommand,
+  type SignedCommandType,
   type VerifyResult,
 } from './types';
+
+/**
+ * Single source of truth for the set of command types eligible to
+ * travel through the signed-envelope pipeline. Keeping it as a runtime
+ * Set (rather than scattered string literals) means Phase A/B/future
+ * extensions add types in one place; the verifier + parser stay in sync
+ * automatically.
+ */
+const SIGNED_COMMAND_TYPE_VALUES: ReadonlySet<SignedCommandType> = new Set<SignedCommandType>([
+  'cache.clear',
+  'credential.rotate',
+  'agent.restart',
+  'force.upgrade',
+  'agent.execute',
+]);
 
 // ── Canonical JSON (deterministic field order) ──────────────────────────
 
@@ -170,7 +185,7 @@ export function signCommand(
   db: ISqliteDriver,
   input: {
     commandId: string;
-    commandType: DestructiveCommandType;
+    commandType: SignedCommandType;
     params: Record<string, unknown>;
     targetDeviceId: string;
   }
@@ -289,7 +304,9 @@ function coerceSignableBody(x: unknown): SignableCommandBody | null {
   }
   // commandType whitelist — never verify a signature for a type we
   // don't even support, that's just asking for confused-deputy bugs.
-  if (o.commandType !== 'cache.clear' && o.commandType !== 'credential.rotate') {
+  // Widened in Phase A + Phase B by editing SIGNED_COMMAND_TYPE_VALUES
+  // above; the parser stays generic so future additions are one-line.
+  if (!SIGNED_COMMAND_TYPE_VALUES.has(o.commandType as SignedCommandType)) {
     return null;
   }
   // Nonce shape — hex of exactly NONCE_BYTES*2 chars.
@@ -298,7 +315,7 @@ function coerceSignableBody(x: unknown): SignableCommandBody | null {
   }
   return {
     commandId: o.commandId,
-    commandType: o.commandType as DestructiveCommandType,
+    commandType: o.commandType as SignedCommandType,
     params: o.params as Record<string, unknown>,
     targetDeviceId: o.targetDeviceId,
     issuedAt: o.issuedAt,

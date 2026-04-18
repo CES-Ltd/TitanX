@@ -30,14 +30,16 @@ import { logActivity } from '../activityLog';
 import { logNonCritical } from '@process/utils/logNonCritical';
 import { signCommand } from '../fleetCommandSigning';
 import { verifyAdminPassword } from '../fleetCommandSigning/adminReauth';
-import type { DestructiveCommandType } from '../fleetCommandSigning/types';
+import type { DestructiveCommandType, SignedNonDestructiveCommandType } from '../fleetCommandSigning/types';
 import {
   DEFAULT_COMMAND_TTL_SECONDS,
   DESTRUCTIVE_COMMAND_TYPES,
   MAX_COMMANDS_PER_HOUR_FLEET_WIDE,
   MAX_PENDING_COMMANDS_PER_DEVICE,
   SIGNED_ENVELOPE_PARAM_KEY,
+  SIGNED_NON_DESTRUCTIVE_COMMAND_TYPES,
   isDestructive,
+  isSigned,
   type AckStatus,
   type CommandAck,
   type CommandForSlave,
@@ -100,6 +102,16 @@ export function enqueueCommand(db: ISqliteDriver, input: EnqueueCommandInput): C
   if (isDestructive(input.commandType)) {
     throw new Error(
       `Command type ${input.commandType} is destructive and must be enqueued via enqueueDestructiveCommand`
+    );
+  }
+  // Phase B v1.10.0: signed-non-destructive types (agent.execute) also
+  // must go through the signed path so payloads get integrity-pinned.
+  // Divert to enqueueSignedCommand via a loud error rather than silently
+  // downgrading — the renderer's type layer should have caught this
+  // already, so a runtime trip here means something bypassed it.
+  if (SIGNED_NON_DESTRUCTIVE_COMMAND_TYPES.has(input.commandType)) {
+    throw new Error(
+      `Command type ${input.commandType} requires a signed envelope; use enqueueSignedCommand instead of enqueueCommand`
     );
   }
 
@@ -269,6 +281,117 @@ export async function enqueueDestructiveCommand(
     });
   } catch (e) {
     logNonCritical('fleet.command.audit-destructive-enqueue', e);
+  }
+
+  return { ok: true, commandId: id };
+}
+
+// ── Phase B v1.10.0: signed-non-destructive enqueue (no admin re-auth) ──
+
+/**
+ * Result of attempting to enqueue a signed non-destructive command.
+ * Narrower failure union than destructive enqueue because there's no
+ * admin-re-auth gate to fail.
+ */
+export type SignedEnqueueResult =
+  | { ok: true; commandId: string }
+  | { ok: false; error: string; code: 'per_device' | 'fleet_wide' | 'error' };
+
+/**
+ * Enqueue a signed, non-destructive command. The only caller today is
+ * the Phase B FleetAgentAdapter dispatching `agent.execute` to farm
+ * slaves. Signature integrity pins the payload (prompts + messages)
+ * so a compromised transport can't inject alternate content; no admin
+ * re-auth because agent.execute is high-frequency by design.
+ *
+ * Same ttlSeconds + rate-limit rails as the other two enqueue paths.
+ * The envelope travels in `params._signedEnvelope` just like
+ * destructive commands; slave verifies via the same `verifyCommand`
+ * and accepts via a separate handler map (no confused-deputy risk —
+ * verify rejects if the signed type doesn't match what's about to
+ * execute).
+ */
+export function enqueueSignedCommand(
+  db: ISqliteDriver,
+  input: {
+    targetDeviceId: string;
+    commandType: SignedNonDestructiveCommandType;
+    params?: Record<string, unknown>;
+    ttlSeconds?: number;
+    createdBy: string;
+  }
+): SignedEnqueueResult {
+  // Type guard: only SignedNonDestructiveCommandType is acceptable here.
+  // Destructive types route through enqueueDestructiveCommand (has the
+  // admin re-auth gate); bare non-destructive types route through
+  // enqueueCommand (no signing at all). This function's tier is the
+  // middle: signed but no re-auth.
+  if (!SIGNED_NON_DESTRUCTIVE_COMMAND_TYPES.has(input.commandType)) {
+    return {
+      ok: false,
+      error: `Command type ${input.commandType} is not signed-non-destructive; use enqueueCommand or enqueueDestructiveCommand`,
+      code: 'error',
+    };
+  }
+
+  try {
+    enforceRateLimits(db, input.targetDeviceId);
+  } catch (e) {
+    if (e instanceof FleetCommandRateLimitError) {
+      return { ok: false, error: e.message, code: e.code };
+    }
+    return { ok: false, error: e instanceof Error ? e.message : String(e), code: 'error' };
+  }
+
+  const id = crypto.randomUUID();
+  const userParams = input.params ?? {};
+  const signed = signCommand(db, {
+    commandId: id,
+    commandType: input.commandType,
+    params: userParams,
+    targetDeviceId: input.targetDeviceId,
+  });
+
+  const paramsWithEnvelope: Record<string, unknown> = {
+    ...userParams,
+    [SIGNED_ENVELOPE_PARAM_KEY]: signed,
+  };
+
+  const now = Date.now();
+  const ttlSeconds = input.ttlSeconds ?? DEFAULT_COMMAND_TTL_SECONDS;
+  const expiresAt = now + ttlSeconds * 1000;
+
+  db.prepare(
+    `INSERT INTO fleet_commands
+     (id, target_device_id, command_type, params, created_at, created_by, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    id,
+    input.targetDeviceId,
+    input.commandType,
+    JSON.stringify(paramsWithEnvelope),
+    now,
+    input.createdBy,
+    expiresAt
+  );
+
+  try {
+    logActivity(db, {
+      userId: 'system_default_user',
+      actorType: 'user',
+      actorId: input.createdBy,
+      action: 'fleet.command.signed_enqueued',
+      entityType: 'fleet_command',
+      entityId: id,
+      details: {
+        commandType: input.commandType,
+        targetDeviceId: input.targetDeviceId,
+        ttlSeconds,
+        nonce: signed.nonce,
+      },
+    });
+  } catch (e) {
+    logNonCritical('fleet.command.audit-signed-enqueue', e);
   }
 
   return { ok: true, commandId: id };

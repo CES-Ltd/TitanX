@@ -16,6 +16,33 @@ export type TeammateStatus = 'pending' | 'idle' | 'active' | 'completed' | 'fail
 /** Workspace sharing strategy for the team */
 export type WorkspaceMode = 'shared' | 'isolated';
 
+/**
+ * Where an agent actually runs. Phase B (v1.10.0) added 'farm' for
+ * Agent Farm mode — wakes dispatch via fleet command channel instead
+ * of local TeammateManager invocation.
+ *
+ * Absent / undefined backend means 'local' (backward-compat with
+ * pre-Phase-B team rows).
+ */
+export type AgentBackend = 'local' | 'farm';
+
+/**
+ * For farm-backed agents: which slave device + which local template
+ * to execute. toolsAllowlist is enforced slave-side.
+ */
+export type AgentFleetBinding = {
+  deviceId: string;
+  /** The agent_gallery row id on the slave (synced via config bundle). */
+  remoteSlotId: string;
+  /**
+   * Tool allow-list the master permits this slot to invoke. Recorded
+   * in every agent.execute envelope; v1.10.0 farm executor does NOT
+   * execute tools (empty enforcement), so this is audit-only until
+   * v1.10.x wires tool dispatch on the slave side.
+   */
+  toolsAllowlist: string[];
+};
+
 /** Persisted agent configuration within a team */
 export type TeamAgent = {
   slotId: string;
@@ -29,6 +56,10 @@ export type TeamAgent = {
   customAgentId?: string;
   /** Agent gallery ID for IAM policy bindings and runtime enforcement */
   agentGalleryId?: string;
+  /** Phase B: where this agent runs. Undefined = 'local'. */
+  backend?: AgentBackend;
+  /** Phase B: present only when backend='farm'. */
+  fleetBinding?: AgentFleetBinding;
 };
 
 /** Persisted team record (stored in SQLite `teams` table) */

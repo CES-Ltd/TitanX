@@ -37,9 +37,11 @@ import type { SignedCommand } from '@process/services/fleetCommandSigning/types'
 import {
   SIGNED_ENVELOPE_PARAM_KEY,
   isDestructive,
+  isSigned,
   type AckStatus,
   type CommandForSlave,
   type NonDestructiveCommandType,
+  type SignedNonDestructiveCommandType,
 } from './types';
 
 type HandlerOutcome = { status: AckStatus; result?: Record<string, unknown> };
@@ -95,6 +97,21 @@ const DESTRUCTIVE_HANDLERS: Record<'cache.clear' | 'credential.rotate' | 'agent.
   },
 };
 
+/**
+ * Phase B v1.10.0 — signed-non-destructive handlers. Verified by the
+ * same signed envelope path as destructive commands, but enqueued on
+ * master WITHOUT admin re-auth (see enqueueSignedCommand).
+ *
+ * Today: agent.execute (farm LLM turn dispatch). Future: agent.stop
+ * (cancel an in-flight job) will slot in here.
+ */
+const SIGNED_HANDLERS: Record<SignedNonDestructiveCommandType, Handler> = {
+  'agent.execute': async (params) => {
+    const { handleAgentExecute } = await import('./farmExecutor');
+    return handleAgentExecute(params);
+  },
+};
+
 // ── Public API ──────────────────────────────────────────────────────────
 
 /**
@@ -111,11 +128,11 @@ const DESTRUCTIVE_HANDLERS: Record<'cache.clear' | 'credential.rotate' | 'agent.
 export async function executeAndAck(cmd: CommandForSlave, masterUrl: string): Promise<void> {
   let outcome: HandlerOutcome;
 
-  if (isDestructive(cmd.commandType)) {
-    // Phase F.2: verify the signed envelope before touching the
-    // destructive handler. Failures record the reason so the admin
-    // dashboard can render "rejected: replay" or "rejected:
-    // invalid_signature" rather than a vague 'failed' status.
+  if (isSigned(cmd.commandType)) {
+    // Phase F.2 + Phase B: verify the signed envelope before dispatch.
+    // Covers destructive (admin-re-auth-gated on master) AND
+    // signed-non-destructive (farm agent.execute) tiers — both must
+    // prove the envelope was master-minted before we run anything.
     const verification = await verifyDestructiveEnvelope(cmd);
     if (verification.ok !== true) {
       const failure = verification as {
@@ -127,22 +144,31 @@ export async function executeAndAck(cmd: CommandForSlave, masterUrl: string): Pr
       return;
     }
 
-    const destructiveHandler =
-      DESTRUCTIVE_HANDLERS[cmd.commandType as 'cache.clear' | 'credential.rotate' | 'agent.restart' | 'force.upgrade'];
-    if (!destructiveHandler) {
-      // Week 2 state: no destructive handlers registered yet. Acking
-      // 'skipped' with this reason is the signal Week 3 will light up
-      // a real dispatch path.
+    // Pick the right handler map. Destructive tier first (narrower
+    // allow-list), then signed-non-destructive. A type that falls
+    // through both is an unknown signed type — ack skipped with a
+    // clear reason instead of firing a mismatched handler.
+    let signedHandler: Handler | undefined;
+    if (isDestructive(cmd.commandType)) {
+      signedHandler =
+        DESTRUCTIVE_HANDLERS[
+          cmd.commandType as 'cache.clear' | 'credential.rotate' | 'agent.restart' | 'force.upgrade'
+        ];
+    } else {
+      signedHandler = SIGNED_HANDLERS[cmd.commandType as SignedNonDestructiveCommandType];
+    }
+
+    if (!signedHandler) {
       outcome = {
         status: 'skipped',
-        result: { reason: 'destructive_handler_not_registered', commandType: cmd.commandType },
+        result: { reason: 'signed_handler_not_registered', commandType: cmd.commandType },
       };
     } else {
       try {
         // Pass the user's params MINUS the signing metadata so handlers
         // don't have to know about the envelope.
         const strippedParams = stripEnvelope(cmd.params ?? {});
-        outcome = await destructiveHandler(strippedParams, { masterUrl });
+        outcome = await signedHandler(strippedParams, { masterUrl });
       } catch (e) {
         outcome = {
           status: 'failed',

@@ -31,13 +31,34 @@
 export type DestructiveCommandType = 'cache.clear' | 'credential.rotate' | 'agent.restart' | 'force.upgrade';
 
 /**
- * Body of a destructive command — the part that gets signed. Order of
+ * Phase B (v1.10.0) — commands that require a signed envelope but
+ * DON'T require admin re-auth on enqueue. The driving use case is
+ * `agent.execute` dispatching user prompts to a farm slave: signature
+ * pins payload integrity (master-only issuance, replay-guarded) while
+ * not gating every high-frequency farm call behind a password prompt.
+ *
+ * Adding a type here means: it verifies via `verifyCommand` on the
+ * slave but is enqueued through `enqueueSignedCommand` (no re-auth),
+ * not `enqueueDestructiveCommand`.
+ */
+export type SignedNonDestructiveCommandType = 'agent.execute';
+
+/**
+ * Union of every command type that ships in a signed envelope — both
+ * destructive (admin-gated) and signed-non-destructive tiers. This is
+ * what the signing module actually signs/verifies; the split between
+ * tiers is an enqueue-side concern.
+ */
+export type SignedCommandType = DestructiveCommandType | SignedNonDestructiveCommandType;
+
+/**
+ * Body of a signed command — the part that gets signed. Order of
  * fields matters for canonical serialization (see canonicalize in index.ts)
  * because we JSON-stringify with a deterministic key order before signing.
  */
 export type SignableCommandBody = {
   commandId: string;
-  commandType: DestructiveCommandType;
+  commandType: SignedCommandType;
   params: Record<string, unknown>;
   targetDeviceId: string;
   /** Epoch ms on master when the command was signed. */

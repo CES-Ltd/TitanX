@@ -2756,6 +2756,65 @@ const migration_v68: IMigration = {
   },
 };
 
+/**
+ * v69 — Phase B (Agent Farm) data model (v1.10.0).
+ *
+ * fleet_farm_devices (master + slave):
+ *   Extends fleet_enrollments with a role declaration. Role is set at
+ *   enroll time and locked thereafter (re-enrollment required to swap).
+ *   Keeping this in a side table rather than a column on fleet_enrollments
+ *   means the original enrollment row stays untouched by the migration —
+ *   minimizes regression surface on the already-shipped workforce path.
+ *
+ * fleet_agent_jobs (master + slave):
+ *   A log of every agent.execute dispatch. Master uses it as the
+ *   source-of-truth for job state (queued → dispatched → running →
+ *   completed/failed/timeout). Slave mirrors the row so telemetry
+ *   aggregation can run locally without requiring master replay.
+ *
+ *   Both sides use the same schema so the same queries work on both
+ *   without a split code path.
+ */
+const migration_v69: IMigration = {
+  version: 69,
+  name: 'Create fleet_farm_devices + fleet_agent_jobs for Phase B Agent Farm (v1.10.0)',
+  up(db: ISqliteDriver) {
+    db.exec(`CREATE TABLE IF NOT EXISTS fleet_farm_devices (
+      device_id TEXT PRIMARY KEY,
+      role TEXT NOT NULL CHECK(role IN ('workforce','farm')) DEFAULT 'workforce',
+      capabilities TEXT NOT NULL DEFAULT '{}',
+      compute_budget_cents INTEGER DEFAULT 0,
+      updated_at INTEGER NOT NULL
+    )`);
+
+    db.exec(`CREATE TABLE IF NOT EXISTS fleet_agent_jobs (
+      id TEXT PRIMARY KEY,
+      device_id TEXT NOT NULL,
+      team_id TEXT NOT NULL,
+      agent_slot_id TEXT NOT NULL,
+      request_payload TEXT NOT NULL,
+      response_payload TEXT,
+      status TEXT NOT NULL CHECK(status IN ('queued','dispatched','running','completed','failed','timeout')),
+      error TEXT,
+      enqueued_at INTEGER NOT NULL,
+      dispatched_at INTEGER,
+      completed_at INTEGER
+    )`);
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_fleet_jobs_device_status ON fleet_agent_jobs(device_id, status, enqueued_at)'
+    );
+    db.exec('CREATE INDEX IF NOT EXISTS idx_fleet_jobs_team ON fleet_agent_jobs(team_id, agent_slot_id)');
+
+    console.log('[Migration-v69] Created fleet_farm_devices + fleet_agent_jobs for Agent Farm');
+  },
+  down(db: ISqliteDriver) {
+    db.exec('DROP INDEX IF EXISTS idx_fleet_jobs_team');
+    db.exec('DROP INDEX IF EXISTS idx_fleet_jobs_device_status');
+    db.exec('DROP TABLE IF EXISTS fleet_agent_jobs');
+    db.exec('DROP TABLE IF EXISTS fleet_farm_devices');
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -2770,7 +2829,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v45, migration_v46, migration_v47, migration_v48, migration_v49, migration_v50, migration_v51, migration_v52, migration_v53,
   migration_v54, migration_v55, migration_v56, migration_v57, migration_v58, migration_v59,
   migration_v60, migration_v61, migration_v62, migration_v63, migration_v64, migration_v65,
-  migration_v66, migration_v67, migration_v68,
+  migration_v66, migration_v67, migration_v68, migration_v69,
 ];
 
 /**
