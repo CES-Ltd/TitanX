@@ -129,7 +129,7 @@ function rowsToCsv(rows: IActivityEntry[]): string {
         r.entityId ?? '',
         r.agentId ?? '',
         // severity is on the row but optional per IActivityEntry shape — coalesce.
-        ((r as unknown as { severity?: string }).severity ?? 'info'),
+        (r as unknown as { severity?: string }).severity ?? 'info',
         r.details ? JSON.stringify(r.details) : '',
       ]
         .map(csvField)

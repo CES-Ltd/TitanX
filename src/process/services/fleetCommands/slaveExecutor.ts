@@ -71,8 +71,10 @@ const HANDLERS: Record<NonDestructiveCommandType, Handler> = {
  * destructiveHandlers.ts) and path-validates its own inputs so a
  * malicious master can't coerce the slave into destroying adjacent
  * data.
+ *
+ * Phase A v1.9.40 added: agent.restart, force.upgrade.
  */
-const DESTRUCTIVE_HANDLERS: Record<'cache.clear' | 'credential.rotate', Handler> = {
+const DESTRUCTIVE_HANDLERS: Record<'cache.clear' | 'credential.rotate' | 'agent.restart' | 'force.upgrade', Handler> = {
   'cache.clear': async (params) => {
     const { handleCacheClear } = await import('./destructiveHandlers');
     return handleCacheClear(params);
@@ -82,6 +84,14 @@ const DESTRUCTIVE_HANDLERS: Record<'cache.clear' | 'credential.rotate', Handler>
     const { getDatabase } = await import('@process/services/database');
     const db = await getDatabase();
     return handleCredentialRotate(db.getDriver());
+  },
+  'agent.restart': async () => {
+    const { handleAgentRestart } = await import('./destructiveHandlers');
+    return handleAgentRestart();
+  },
+  'force.upgrade': async (params) => {
+    const { handleForceUpgrade } = await import('./destructiveHandlers');
+    return handleForceUpgrade(params);
   },
 };
 
@@ -117,7 +127,8 @@ export async function executeAndAck(cmd: CommandForSlave, masterUrl: string): Pr
       return;
     }
 
-    const destructiveHandler = DESTRUCTIVE_HANDLERS[cmd.commandType as 'cache.clear' | 'credential.rotate'];
+    const destructiveHandler =
+      DESTRUCTIVE_HANDLERS[cmd.commandType as 'cache.clear' | 'credential.rotate' | 'agent.restart' | 'force.upgrade'];
     if (!destructiveHandler) {
       // Week 2 state: no destructive handlers registered yet. Acking
       // 'skipped' with this reason is the signal Week 3 will light up
@@ -172,12 +183,9 @@ export async function executeAndAck(cmd: CommandForSlave, masterUrl: string): Pr
 async function verifyDestructiveEnvelope(
   cmd: CommandForSlave
 ): Promise<
-  | { ok: true }
-  | { ok: false; reason: 'no_pubkey' | 'malformed' | 'replay' | 'invalid_signature' | 'missing_envelope' }
+  { ok: true } | { ok: false; reason: 'no_pubkey' | 'malformed' | 'replay' | 'invalid_signature' | 'missing_envelope' }
 > {
-  const envelope = (cmd.params as Record<string, unknown>)[SIGNED_ENVELOPE_PARAM_KEY] as
-    | SignedCommand
-    | undefined;
+  const envelope = (cmd.params as Record<string, unknown>)[SIGNED_ENVELOPE_PARAM_KEY] as SignedCommand | undefined;
   if (!envelope) {
     return { ok: false, reason: 'missing_envelope' };
   }

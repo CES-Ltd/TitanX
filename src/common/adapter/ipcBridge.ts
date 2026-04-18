@@ -869,7 +869,7 @@ export const fleet = {
    * silent to avoid spamming the user for upstream flaps.
    */
   destructiveExecuted: bridge.buildEmitter<{
-    commandType: 'cache.clear' | 'credential.rotate';
+    commandType: 'cache.clear' | 'credential.rotate' | 'agent.restart' | 'force.upgrade';
     result: Record<string, unknown>;
   }>('fleet:destructive-executed'),
 
@@ -921,7 +921,7 @@ export const fleet = {
       },
     {
       targetDeviceId: string;
-      commandType: 'cache.clear' | 'credential.rotate';
+      commandType: 'cache.clear' | 'credential.rotate' | 'agent.restart' | 'force.upgrade';
       params?: Record<string, unknown>;
       ttlSeconds?: number;
       /** Admin's cleartext password, verified against bcrypt hash master-side. */
@@ -934,7 +934,13 @@ export const fleet = {
       commands: Array<{
         id: string;
         targetDeviceId: string;
-        commandType: 'force_config_sync' | 'force_telemetry_push' | 'cache.clear' | 'credential.rotate';
+        commandType:
+          | 'force_config_sync'
+          | 'force_telemetry_push'
+          | 'cache.clear'
+          | 'credential.rotate'
+          | 'agent.restart'
+          | 'force.upgrade';
         params: Record<string, unknown>;
         createdAt: number;
         createdBy: string;
@@ -972,9 +978,11 @@ export const fleet = {
    * once per ack (if a batch of 10 devices acks in 100ms, 10 events
    * reach the renderer; it coalesces via SWR's mutate debounce).
    */
-  commandAcked: bridge.buildEmitter<{ commandId: string; deviceId: string; status: 'succeeded' | 'failed' | 'skipped' }>(
-    'fleet:command-acked'
-  ),
+  commandAcked: bridge.buildEmitter<{
+    commandId: string;
+    deviceId: string;
+    status: 'succeeded' | 'failed' | 'skipped';
+  }>('fleet:command-acked'),
 
   /**
    * Per-template adoption rollup (Phase E Week 3). Lists every

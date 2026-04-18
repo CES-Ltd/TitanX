@@ -85,9 +85,9 @@ describeOrSkip('fleetCommands — enqueueCommand', () => {
 
   it('writes an audit row on every enqueue', () => {
     enqueueCommand(db, { targetDeviceId: 'dev-a', commandType: 'force_config_sync', createdBy: 'admin' });
-    const audits = db
-      .prepare("SELECT * FROM activity_log WHERE action = 'fleet.command.enqueued'")
-      .all() as Array<{ entity_id: string }>;
+    const audits = db.prepare("SELECT * FROM activity_log WHERE action = 'fleet.command.enqueued'").all() as Array<{
+      entity_id: string;
+    }>;
     expect(audits).toHaveLength(1);
   });
 });
@@ -197,7 +197,12 @@ describeOrSkip('fleetCommands — getPendingCommandsForDevice', () => {
   });
 
   it('excludes expired commands', () => {
-    enqueueCommand(db, { targetDeviceId: 'dev-a', commandType: 'force_config_sync', createdBy: 'admin', ttlSeconds: -10 });
+    enqueueCommand(db, {
+      targetDeviceId: 'dev-a',
+      commandType: 'force_config_sync',
+      createdBy: 'admin',
+      ttlSeconds: -10,
+    });
     expect(getPendingCommandsForDevice(db, 'dev-a')).toEqual([]);
   });
 

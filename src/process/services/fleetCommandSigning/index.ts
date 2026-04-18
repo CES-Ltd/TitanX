@@ -230,9 +230,9 @@ export function verifyCommand(
   // Replay guard. Worth this check BEFORE the expensive signature verify
   // because a replay attacker can craft an infinite stream of identical
   // valid signatures; early rejection keeps CPU bounded.
-  const existing = db
-    .prepare('SELECT nonce FROM fleet_command_replay_nonces WHERE nonce = ?')
-    .get(body.nonce) as { nonce: string } | undefined;
+  const existing = db.prepare('SELECT nonce FROM fleet_command_replay_nonces WHERE nonce = ?').get(body.nonce) as
+    | { nonce: string }
+    | undefined;
   if (existing) {
     return { ok: false, reason: 'replay' };
   }
@@ -257,9 +257,11 @@ export function verifyCommand(
   // one wins, the other would have returned 'replay' on its read above
   // but could slip through in a millisecond race.
   try {
-    db.prepare(
-      'INSERT OR IGNORE INTO fleet_command_replay_nonces (nonce, seen_at, command_id) VALUES (?, ?, ?)'
-    ).run(body.nonce, Date.now(), body.commandId);
+    db.prepare('INSERT OR IGNORE INTO fleet_command_replay_nonces (nonce, seen_at, command_id) VALUES (?, ?, ?)').run(
+      body.nonce,
+      Date.now(),
+      body.commandId
+    );
   } catch (e) {
     // Table missing / DB locked — the verify succeeded so let it
     // through, but log. The risk is a single replay during a DB

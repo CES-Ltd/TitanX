@@ -16,8 +16,13 @@
 /** Phase F non-destructive subset — no signed envelope required. */
 export type NonDestructiveCommandType = 'force_config_sync' | 'force_telemetry_push';
 
-/** Phase F.2 destructive subset — signed envelope + admin re-auth required. */
-export type DestructiveCommandTypeT = 'cache.clear' | 'credential.rotate';
+/**
+ * Destructive subset — signed envelope + admin re-auth required.
+ *
+ * Phase F.2 shipped: cache.clear, credential.rotate.
+ * Phase A (v1.9.40) added: agent.restart, force.upgrade.
+ */
+export type DestructiveCommandTypeT = 'cache.clear' | 'credential.rotate' | 'agent.restart' | 'force.upgrade';
 
 export type CommandType = NonDestructiveCommandType | DestructiveCommandTypeT;
 
@@ -28,6 +33,8 @@ export type CommandType = NonDestructiveCommandType | DestructiveCommandTypeT;
 export const DESTRUCTIVE_COMMAND_TYPES: ReadonlySet<CommandType> = new Set([
   'cache.clear',
   'credential.rotate',
+  'agent.restart',
+  'force.upgrade',
 ]);
 
 export function isDestructive(t: CommandType): boolean {

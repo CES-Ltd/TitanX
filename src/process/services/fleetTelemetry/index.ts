@@ -42,17 +42,15 @@ const DEFAULT_TOP_DEVICES_LIMIT = 10;
  * fresh install before some seed data lands) the missing field defaults
  * to 0 instead of crashing the push.
  */
-export function buildTelemetryReport(
-  db: ISqliteDriver,
-  since: number,
-  until: number = Date.now()
-): TelemetryReport {
+export function buildTelemetryReport(db: ISqliteDriver, since: number, until: number = Date.now()): TelemetryReport {
   const windowStart = Math.max(0, since);
   const windowEnd = Math.max(windowStart, until);
 
   const totalCostCents = safeCount(db, () => {
     const row = db
-      .prepare('SELECT COALESCE(SUM(cost_cents), 0) as total FROM cost_events WHERE occurred_at >= ? AND occurred_at < ?')
+      .prepare(
+        'SELECT COALESCE(SUM(cost_cents), 0) as total FROM cost_events WHERE occurred_at >= ? AND occurred_at < ?'
+      )
       .get(windowStart, windowEnd) as { total: number } | undefined;
     return row?.total ?? 0;
   });
@@ -140,7 +138,9 @@ export function getTelemetryState(db: ISqliteDriver): TelemetryState {
   try {
     const row = db
       .prepare('SELECT last_report_window_end, last_push_at, last_push_error FROM fleet_telemetry_state WHERE id = 1')
-      .get() as { last_report_window_end: number; last_push_at: number | null; last_push_error: string | null } | undefined;
+      .get() as
+      | { last_report_window_end: number; last_push_at: number | null; last_push_error: string | null }
+      | undefined;
     if (!row) {
       return { lastReportWindowEnd: 0 };
     }
@@ -167,10 +167,7 @@ export function getTelemetryState(db: ISqliteDriver): TelemetryState {
  * meaning an error set once could never be cleared. That made Machine B's
  * UI report a stale "HTTP 401" even after push had recovered to 200 OK.
  */
-export function setTelemetryState(
-  db: ISqliteDriver,
-  patch: Partial<TelemetryState> & { updatedAt?: number }
-): void {
+export function setTelemetryState(db: ISqliteDriver, patch: Partial<TelemetryState> & { updatedAt?: number }): void {
   const now = patch.updatedAt ?? Date.now();
   // INSERT OR REPLACE keeps the singleton at id=1 regardless of prior state.
   const existing = getTelemetryState(db);
@@ -205,11 +202,7 @@ export function setTelemetryState(
  * Returns `nextWindowStart = report.windowEnd` so slaves can advance
  * their cursor atomically on the response.
  */
-export function ingestTelemetryReport(
-  db: ISqliteDriver,
-  deviceId: string,
-  report: TelemetryReport
-): IngestResult {
+export function ingestTelemetryReport(db: ISqliteDriver, deviceId: string, report: TelemetryReport): IngestResult {
   if (report.windowEnd <= report.windowStart) {
     throw new Error('invalid telemetry window: end must be > start');
   }
@@ -307,11 +300,7 @@ export function getFleetCostSummary(
 }
 
 /** All stored reports for one device, newest first. Drill-down view. */
-export function getDeviceTelemetry(
-  db: ISqliteDriver,
-  deviceId: string,
-  limit: number = 50
-): StoredTelemetryReport[] {
+export function getDeviceTelemetry(db: ISqliteDriver, deviceId: string, limit: number = 50): StoredTelemetryReport[] {
   const rows = db
     .prepare(
       `SELECT * FROM fleet_telemetry_reports

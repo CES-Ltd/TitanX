@@ -85,14 +85,9 @@ describe('slaveExecutor — command dispatch', () => {
   });
 
   it('unknown command type acks as skipped, not failed', async () => {
-    await executeAndAck(
-      cmd({ id: 'mystery', commandType: 'totally_unknown' as 'force_config_sync' }),
-      MASTER_URL
-    );
+    await executeAndAck(cmd({ id: 'mystery', commandType: 'totally_unknown' as 'force_config_sync' }), MASTER_URL);
     // Ack POST was made — assert body
-    const ackCall = mockFetch.mock.calls.find(([url]) =>
-      String(url).endsWith('/api/fleet/commands/mystery/ack')
-    );
+    const ackCall = mockFetch.mock.calls.find(([url]) => String(url).endsWith('/api/fleet/commands/mystery/ack'));
     expect(ackCall).toBeDefined();
     const body = JSON.parse((ackCall![1] as RequestInit & { body: string }).body) as {
       status: string;

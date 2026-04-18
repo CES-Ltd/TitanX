@@ -296,9 +296,9 @@ function enforceRateLimits(db: ISqliteDriver, targetDeviceId: string): void {
   }
 
   // Fleet-wide rolling hour (all commands, including 'all' targets).
-  const hourlyRow = db
-    .prepare('SELECT COUNT(*) as c FROM fleet_commands WHERE created_at > ?')
-    .get(oneHourAgo) as { c: number } | undefined;
+  const hourlyRow = db.prepare('SELECT COUNT(*) as c FROM fleet_commands WHERE created_at > ?').get(oneHourAgo) as
+    | { c: number }
+    | undefined;
   if ((hourlyRow?.c ?? 0) >= MAX_COMMANDS_PER_HOUR_FLEET_WIDE) {
     throw new FleetCommandRateLimitError(
       'fleet_wide',
@@ -319,7 +319,11 @@ function enforceRateLimits(db: ISqliteDriver, targetDeviceId: string): void {
  * composite index on (target_device_id, expires_at DESC) makes the
  * scan bounded even with thousands of historical commands.
  */
-export function getPendingCommandsForDevice(db: ISqliteDriver, deviceId: string, limit: number = 20): CommandForSlave[] {
+export function getPendingCommandsForDevice(
+  db: ISqliteDriver,
+  deviceId: string,
+  limit: number = 20
+): CommandForSlave[] {
   const now = Date.now();
   const rows = db
     .prepare(
@@ -373,9 +377,9 @@ export function ackCommand(
   db: ISqliteDriver,
   params: { commandId: string; deviceId: string; status: AckStatus; result?: Record<string, unknown> }
 ): boolean {
-  const row = db
-    .prepare('SELECT target_device_id FROM fleet_commands WHERE id = ?')
-    .get(params.commandId) as { target_device_id: string } | undefined;
+  const row = db.prepare('SELECT target_device_id FROM fleet_commands WHERE id = ?').get(params.commandId) as
+    | { target_device_id: string }
+    | undefined;
   if (!row) return false;
   if (row.target_device_id !== 'all' && row.target_device_id !== params.deviceId) {
     return false;
@@ -470,12 +474,13 @@ export function listCommandsWithAcks(db: ISqliteDriver, limit: number = 50): Com
   const ids = cmdRows.map((r) => r.id);
   const placeholders = ids.map(() => '?').join(',');
   const ackRows = db
-    .prepare(
-      `SELECT command_id, status, acked_at FROM fleet_command_acks WHERE command_id IN (${placeholders})`
-    )
+    .prepare(`SELECT command_id, status, acked_at FROM fleet_command_acks WHERE command_id IN (${placeholders})`)
     .all(...ids) as Array<{ command_id: string; status: string; acked_at: number }>;
 
-  const ackBucket = new Map<string, { succeeded: number; failed: number; skipped: number; total: number; lastAckedAt?: number }>();
+  const ackBucket = new Map<
+    string,
+    { succeeded: number; failed: number; skipped: number; total: number; lastAckedAt?: number }
+  >();
   for (const id of ids) ackBucket.set(id, { succeeded: 0, failed: 0, skipped: 0, total: 0 });
   for (const a of ackRows) {
     const b = ackBucket.get(a.command_id);

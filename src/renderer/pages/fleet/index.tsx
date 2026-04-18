@@ -14,14 +14,27 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Dropdown, Menu, Message, Modal, Table, Tag, Input, InputNumber, Popconfirm } from '@arco-design/web-react';
-import { Copy, Delete, Refresh, Plus, Lightning, Download } from '@icon-park/react';
+import {
+  Button,
+  Dropdown,
+  Menu,
+  Message,
+  Modal,
+  Table,
+  Tag,
+  Input,
+  InputNumber,
+  Popconfirm,
+} from '@arco-design/web-react';
+import { Copy, Delete, Refresh, Plus, Lightning, Download, DocDetail } from '@icon-park/react';
 import { ipcBridge } from '@/common';
 import FleetDashboard from '@renderer/components/fleet/FleetDashboard';
-import CommandHistoryPanel from '@renderer/components/fleet/CommandHistoryPanel';
+import CommandHistoryPanel from '@renderer/components/fleet/commands/CommandHistoryPanel';
 import DestructiveCommandModal, {
   type DestructiveCommandType,
-} from '@renderer/components/fleet/DestructiveCommandModal';
+} from '@renderer/components/fleet/commands/DestructiveCommandModal';
+import TemplateLibraryPanel from '@renderer/components/fleet/TemplateLibraryPanel';
+import DeviceHistoryModal from '@renderer/components/fleet/DeviceHistoryModal';
 import { enqueueFleetCommand, type FleetCommandType } from '@renderer/hooks/fleet/useFleetCommands';
 
 type EnrolledDevice = {
@@ -54,9 +67,13 @@ const FleetPage: React.FC = () => {
   // Phase F.2: a single modal handles all destructive commands. We stash
   // the (target, type) pair when the user clicks a destructive action
   // and clear it when the modal closes.
-  const [destructiveAction, setDestructiveAction] = useState<
-    { targetDeviceId: string; commandType: DestructiveCommandType } | null
-  >(null);
+  const [destructiveAction, setDestructiveAction] = useState<{
+    targetDeviceId: string;
+    commandType: DestructiveCommandType;
+  } | null>(null);
+  // Phase A v1.9.40 — device history modal. null when closed; set to the
+  // deviceId (incl. revoked ones) when the admin clicks the History icon.
+  const [historyDeviceId, setHistoryDeviceId] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -127,10 +144,7 @@ const FleetPage: React.FC = () => {
 
   // ── Phase F Week 3: remote commands (per-device + fleet-wide) ──────
   const handleEnqueueCommand = useCallback(
-    async (
-      targetDeviceId: string,
-      commandType: 'force_config_sync' | 'force_telemetry_push'
-    ): Promise<void> => {
+    async (targetDeviceId: string, commandType: 'force_config_sync' | 'force_telemetry_push'): Promise<void> => {
       try {
         // The IPC bridge generic defeats TS's narrowing on `result.ok`,
         // so read the fields through an inline structural cast rather
@@ -149,8 +163,7 @@ const FleetPage: React.FC = () => {
               : 'fleet.commands.enqueued.telemetryPush';
           Message.success(
             t(labelKey, {
-              defaultValue:
-                commandType === 'force_config_sync' ? 'Queued config sync' : 'Queued telemetry push',
+              defaultValue: commandType === 'force_config_sync' ? 'Queued config sync' : 'Queued telemetry push',
             })
           );
           return;
@@ -226,15 +239,24 @@ const FleetPage: React.FC = () => {
     {
       title: '',
       key: 'actions',
-      width: 200,
+      width: 240,
       render: (_: unknown, row: EnrolledDevice) => {
-        if (row.status !== 'enrolled') return null;
+        // History button is ALWAYS visible, including for revoked devices —
+        // that's the most common forensics use case.
+        const historyButton = (
+          <Button
+            size='small'
+            icon={<DocDetail theme='outline' size='14' />}
+            onClick={() => setHistoryDeviceId(row.deviceId)}
+            title={t('fleet.master.table.historyTooltip', { defaultValue: 'View device history' })}
+          />
+        );
+        if (row.status !== 'enrolled') {
+          return <div className='flex items-center gap-2'>{historyButton}</div>;
+        }
         const actionsMenu = (
           <Menu>
-            <Menu.Item
-              key='force-sync'
-              onClick={() => void handleEnqueueCommand(row.deviceId, 'force_config_sync')}
-            >
+            <Menu.Item key='force-sync' onClick={() => void handleEnqueueCommand(row.deviceId, 'force_config_sync')}>
               {t('fleet.commands.actions.forceSync', { defaultValue: 'Force config sync' })}
             </Menu.Item>
             <Menu.Item
@@ -251,9 +273,7 @@ const FleetPage: React.FC = () => {
             </Menu.Item>
             <Menu.Item
               key='cache-clear'
-              onClick={() =>
-                setDestructiveAction({ targetDeviceId: row.deviceId, commandType: 'cache.clear' })
-              }
+              onClick={() => setDestructiveAction({ targetDeviceId: row.deviceId, commandType: 'cache.clear' })}
             >
               <span className='text-danger-6'>
                 {t('fleet.commands.actions.cacheClear', { defaultValue: 'Clear cache…' })}
@@ -261,18 +281,33 @@ const FleetPage: React.FC = () => {
             </Menu.Item>
             <Menu.Item
               key='credential-rotate'
-              onClick={() =>
-                setDestructiveAction({ targetDeviceId: row.deviceId, commandType: 'credential.rotate' })
-              }
+              onClick={() => setDestructiveAction({ targetDeviceId: row.deviceId, commandType: 'credential.rotate' })}
             >
               <span className='text-danger-6'>
                 {t('fleet.commands.actions.credentialRotate', { defaultValue: 'Rotate credentials…' })}
+              </span>
+            </Menu.Item>
+            <Menu.Item
+              key='agent-restart'
+              onClick={() => setDestructiveAction({ targetDeviceId: row.deviceId, commandType: 'agent.restart' })}
+            >
+              <span className='text-danger-6'>
+                {t('fleet.commands.actions.agentRestart', { defaultValue: 'Restart agents…' })}
+              </span>
+            </Menu.Item>
+            <Menu.Item
+              key='force-upgrade'
+              onClick={() => setDestructiveAction({ targetDeviceId: row.deviceId, commandType: 'force.upgrade' })}
+            >
+              <span className='text-danger-6'>
+                {t('fleet.commands.actions.forceUpgrade', { defaultValue: 'Force upgrade…' })}
               </span>
             </Menu.Item>
           </Menu>
         );
         return (
           <div className='flex items-center gap-2'>
+            {historyButton}
             <Dropdown droplist={actionsMenu} trigger='click' position='br'>
               <Button size='small' icon={<Lightning theme='outline' size='14' />}>
                 {t('fleet.commands.actions.button', { defaultValue: 'Actions' })}
@@ -349,6 +384,15 @@ const FleetPage: React.FC = () => {
           <FleetDashboard />
         </div>
 
+        {/* Phase A v1.9.40 — template publish/curate admin surface.
+            Lives between the dashboard (read-only adoption view) and
+            the command history (action audit) — natural reading order:
+            "here's what's live → curate what to publish → audit what's
+            been fired". */}
+        <div className='mt-4 px-6'>
+          <TemplateLibraryPanel />
+        </div>
+
         {/* Phase F Week 3 — recent remote commands + per-device acks */}
         <div className='mt-4 px-6 pb-6'>
           <CommandHistoryPanel />
@@ -364,6 +408,10 @@ const FleetPage: React.FC = () => {
         onClose={() => setDestructiveAction(null)}
         onSuccess={() => setDestructiveAction(null)}
       />
+
+      {/* Phase A v1.9.40 — device forensics drill-down (works for
+          revoked devices too; their audit history is preserved). */}
+      <DeviceHistoryModal deviceId={historyDeviceId} onClose={() => setHistoryDeviceId(null)} />
 
       <Modal
         visible={generateModalOpen}

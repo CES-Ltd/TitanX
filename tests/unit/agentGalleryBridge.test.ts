@@ -125,7 +125,9 @@ describe('agentGallery.remove — Phase E assertNotManaged gate', () => {
   it('rejects with controlled_by_master error when agent is master-managed', async () => {
     managedKeys.add('agent.template.managed-id');
     const handler = providerMap.get('agentGallery.remove')!;
-    await expect(handler({ agentId: 'managed-id' })).rejects.toThrow(/controlled_by_master:agent\.template\.managed-id/);
+    await expect(handler({ agentId: 'managed-id' })).rejects.toThrow(
+      /controlled_by_master:agent\.template\.managed-id/
+    );
     // Service deleteAgent MUST NOT be called once the gate throws
     expect(mockDeleteAgent).not.toHaveBeenCalled();
   });

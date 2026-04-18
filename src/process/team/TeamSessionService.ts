@@ -693,4 +693,14 @@ export class TeamSessionService {
   async stopAllSessions(): Promise<void> {
     await Promise.all(Array.from(this.sessions.keys()).map((id) => this.stopSession(id)));
   }
+
+  /**
+   * Count of currently-live (in-memory, hydrated) team sessions. Used by
+   * the `agent.restart` fleet destructive-command handler to report back
+   * how many sessions were torn down — so the master admin dashboard
+   * can render "3 sessions restarted on device X" instead of a naked ok.
+   */
+  getActiveSessionCount(): number {
+    return this.sessions.size;
+  }
 }

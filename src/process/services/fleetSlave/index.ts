@@ -351,9 +351,9 @@ async function persistMasterCommandSigningPubKey(pem: string): Promise<void> {
  * the executor treats null as "refuse every destructive command".
  */
 export async function getCachedMasterCommandSigningPubKey(): Promise<string | null> {
-  const ciphertext = (await ProcessConfig.get(
-    'fleet.slave.masterCommandSigningPubKeyCiphertext'
-  )) as string | undefined;
+  const ciphertext = (await ProcessConfig.get('fleet.slave.masterCommandSigningPubKeyCiphertext')) as
+    | string
+    | undefined;
   if (!ciphertext || ciphertext.length === 0) return null;
   try {
     const key = loadOrCreateMasterKey();

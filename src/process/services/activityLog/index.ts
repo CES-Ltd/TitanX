@@ -231,7 +231,9 @@ export function listActivities(db: ISqliteDriver, params: ListParams): { data: A
     // leading-% can't use an index — depend on user_id / entity_type / time
     // filters to narrow first, then substring-match within that set.
     const needle = `%${params.search.slice(0, 200).replace(/[%_]/g, (c) => `\\${c}`)}%`;
-    conditions.push('(LOWER(entity_id) LIKE LOWER(?) ESCAPE \'\\\' OR LOWER(details) LIKE LOWER(?) ESCAPE \'\\\' OR LOWER(action) LIKE LOWER(?) ESCAPE \'\\\')');
+    conditions.push(
+      "(LOWER(entity_id) LIKE LOWER(?) ESCAPE '\\' OR LOWER(details) LIKE LOWER(?) ESCAPE '\\' OR LOWER(action) LIKE LOWER(?) ESCAPE '\\')"
+    );
     args.push(needle, needle, needle);
   }
 

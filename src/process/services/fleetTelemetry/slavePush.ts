@@ -150,8 +150,7 @@ export async function pushOnce(masterUrl: string): Promise<void> {
     }
 
     const payload = (await response.json()) as Partial<IngestResult>;
-    const nextWindowStart =
-      typeof payload.nextWindowStart === 'number' ? payload.nextWindowStart : windowEnd;
+    const nextWindowStart = typeof payload.nextWindowStart === 'number' ? payload.nextWindowStart : windowEnd;
 
     setTelemetryState(db.getDriver(), {
       lastReportWindowEnd: nextWindowStart,

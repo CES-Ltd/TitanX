@@ -97,7 +97,11 @@ const FleetDashboard: React.FC = () => {
       key: 'actions',
       width: 80,
       render: (_: unknown, row: NonNullable<typeof data>['topDevices'][number]) => (
-        <Button size='mini' icon={<DocDetail theme='outline' size='12' />} onClick={() => setDrillDownDeviceId(row.deviceId)}>
+        <Button
+          size='mini'
+          icon={<DocDetail theme='outline' size='12' />}
+          onClick={() => setDrillDownDeviceId(row.deviceId)}
+        >
           {t('fleet.dashboard.table.inspect', { defaultValue: 'Inspect' })}
         </Button>
       ),
@@ -111,11 +115,7 @@ const FleetDashboard: React.FC = () => {
           {t('fleet.dashboard.title', { defaultValue: 'Fleet Dashboard' })}
         </h2>
         <Space>
-          <Radio.Group
-            type='button'
-            value={windowName}
-            onChange={(val) => setWindowName(val as DashboardWindow)}
-          >
+          <Radio.Group type='button' value={windowName} onChange={(val) => setWindowName(val as DashboardWindow)}>
             {WINDOW_OPTIONS.map((o) => (
               <Radio key={o.value} value={o.value}>
                 {t(o.labelKey, { defaultValue: o.labelDefault })}
@@ -149,9 +149,7 @@ const FleetDashboard: React.FC = () => {
         />
         <SummaryTile
           label={t('fleet.dashboard.totalActivity', { defaultValue: 'Total activity' })}
-          value={String(
-            (data?.topDevices ?? []).reduce((sum, d) => sum + d.activityCount, 0)
-          )}
+          value={String((data?.topDevices ?? []).reduce((sum, d) => sum + d.activityCount, 0))}
           loading={isLoading}
         />
       </div>
@@ -248,10 +246,7 @@ const FleetDashboard: React.FC = () => {
         </div>
       )}
 
-      <DeviceTelemetryModal
-        deviceId={drillDownDeviceId}
-        onClose={() => setDrillDownDeviceId(null)}
-      />
+      <DeviceTelemetryModal deviceId={drillDownDeviceId} onClose={() => setDrillDownDeviceId(null)} />
     </div>
   );
 };

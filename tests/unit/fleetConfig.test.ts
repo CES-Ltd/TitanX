@@ -578,7 +578,7 @@ describeOrSkip('fleetConfig — applyConfigBundle agentTemplates', () => {
     });
     const ids = (db.prepare("SELECT id FROM agent_gallery WHERE source = 'master'").all() as Array<{ id: string }>)
       .map((r) => r.id)
-      .sort();
+      .toSorted();
     expect(ids).toEqual(['new-1']);
   });
 

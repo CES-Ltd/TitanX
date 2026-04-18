@@ -111,3 +111,16 @@ export function initTeamBridge(teamSessionService: TeamSessionService): void {
 export function disposeAllTeamSessions(): Promise<void> {
   return _teamSessionService?.stopAllSessions() ?? Promise.resolve();
 }
+
+/**
+ * Accessor for out-of-band consumers that need to reach the singleton
+ * after `initTeamBridge` has run — e.g. the fleet destructive-command
+ * handler `agent.restart`, which lives in a separate module graph and
+ * must not pull teamBridge's IPC side-effects via a top-level import.
+ *
+ * Returns null if the service hasn't been initialized yet (e.g. during
+ * early boot or in a test harness), so callers MUST null-check.
+ */
+export function getTeamSessionService(): TeamSessionService | null {
+  return _teamSessionService;
+}
