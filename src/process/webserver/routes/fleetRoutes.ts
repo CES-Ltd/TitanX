@@ -22,6 +22,8 @@ import * as fleetEnrollment from '@process/services/fleetEnrollment';
 import { buildConfigBundle } from '@process/services/fleetConfig';
 import { ingestTelemetryReport } from '@process/services/fleetTelemetry';
 import type { TelemetryReport } from '@process/services/fleetTelemetry/types';
+import { ackCommand, getPendingCommandsForDevice } from '@process/services/fleetCommands';
+import type { AckStatus } from '@process/services/fleetCommands/types';
 import { createAuthMiddleware } from '@process/webserver/auth/middleware/TokenMiddleware';
 import { apiRateLimiter } from '../middleware/security';
 
@@ -164,7 +166,65 @@ export function registerFleetRoutes(app: Express): void {
         res.status(410).json(result); // 410 Gone — device is known but no longer enrolled
         return;
       }
-      res.json({ ok: true, deviceId: auth.deviceId, recordedAt: Date.now() });
+      // Phase F Week 2: piggyback pending commands so the 60 s heartbeat
+      // doubles as a command-dispatch poll (no separate loop). Throws
+      // are swallowed in favor of an empty list — a heartbeat ack is
+      // more important than a command delivery, and slaves will see the
+      // commands on their next beat 60 s later.
+      let commands: ReturnType<typeof getPendingCommandsForDevice> = [];
+      try {
+        commands = getPendingCommandsForDevice(db.getDriver(), auth.deviceId);
+      } catch (cmdErr) {
+        // eslint-disable-next-line no-console
+        console.warn('[FleetMaster] getPendingCommandsForDevice failed:', cmdErr);
+      }
+      res.json({ ok: true, deviceId: auth.deviceId, recordedAt: Date.now(), commands });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // ── Device-JWT: ack a command after execution (Phase F Week 2) ───────
+  // Slave POSTs here after running a command piggybacked on a heartbeat
+  // response. Body: { status: 'succeeded'|'failed'|'skipped', result?: {} }.
+  // ackCommand returns false if the command id is unknown OR was
+  // targeted at a different device — surface that as 404 so a buggy
+  // slave can't spam the table with rejected writes.
+  app.post('/api/fleet/commands/:commandId/ack', apiRateLimiter, async (req: Request, res: Response) => {
+    try {
+      const bearer = extractBearer(req);
+      if (!bearer) {
+        res.status(401).json({ error: 'Authorization: Bearer <device-jwt> required' });
+        return;
+      }
+      const db = await getDatabase();
+      const auth = fleetEnrollment.verifyDeviceRequest(db.getDriver(), bearer);
+      if ('error' in auth) {
+        res.status(401).json({ error: auth.error });
+        return;
+      }
+
+      const commandId = paramStr(req.params.commandId);
+      const body = (req.body ?? {}) as { status?: unknown; result?: unknown };
+      const status = body.status;
+      if (status !== 'succeeded' && status !== 'failed' && status !== 'skipped') {
+        res.status(400).json({ ok: false, error: "status must be 'succeeded' | 'failed' | 'skipped'" });
+        return;
+      }
+      const resultPayload =
+        body.result != null && typeof body.result === 'object' ? (body.result as Record<string, unknown>) : undefined;
+
+      const ok = ackCommand(db.getDriver(), {
+        commandId,
+        deviceId: auth.deviceId,
+        status: status as AckStatus,
+        result: resultPayload,
+      });
+      if (!ok) {
+        res.status(404).json({ ok: false, error: 'command not found or not addressed to this device' });
+        return;
+      }
+      res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ ok: false, error: String(err) });
     }

@@ -30,6 +30,8 @@ import { encrypt, decrypt, loadOrCreateMasterKey } from '@process/services/secre
 import { logNonCritical } from '@process/utils/logNonCritical';
 import { startConfigSyncPoller, stopConfigSyncPoller } from '@process/services/fleetConfig/slaveSync';
 import { startTelemetryPushLoop, stopTelemetryPushLoop } from '@process/services/fleetTelemetry/slavePush';
+import { executeBatch } from '@process/services/fleetCommands/slaveExecutor';
+import type { CommandForSlave } from '@process/services/fleetCommands/types';
 import os from 'os';
 
 /** Read app version from Electron's `app` when available; fall back to
@@ -258,6 +260,21 @@ async function heartbeatOnce(masterUrl: string): Promise<void> {
       lastHeartbeatAt: Date.now(),
       lastErrorMessage: undefined,
     });
+
+    // Phase F Week 2: heartbeat response may include a piggybacked
+    // command batch from master. Dispatch + ack fire-and-forget so a
+    // slow handler doesn't delay the next heartbeat tick.
+    try {
+      const payload = (await response.json().catch(() => ({}))) as { commands?: CommandForSlave[] };
+      const commands = Array.isArray(payload.commands) ? payload.commands : [];
+      if (commands.length > 0) {
+        void executeBatch(commands, masterUrl);
+      }
+    } catch (cmdErr) {
+      // Heartbeat already succeeded — a command-dispatch parse failure
+      // shouldn't flip the slave to offline. Log + move on.
+      logNonCritical('fleet.command.dispatch', cmdErr);
+    }
   } catch (e) {
     // Network failure → offline but DON'T flip enrolled status — slave is
     // still enrolled, just can't reach master right now.

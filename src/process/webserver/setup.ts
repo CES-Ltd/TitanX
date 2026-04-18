@@ -116,15 +116,17 @@ export function setupBasicMiddleware(app: Express): void {
         '/api/upload',
         // Fleet mode endpoints — slaves have no browser session + no CSRF
         // token to send. Their auth is:
-        //   /enroll     → one-time enrollment token in body (tokenHash lookup)
-        //   /heartbeat  → device JWT in Authorization: Bearer header
-        //   /config     → device JWT in Authorization: Bearer header
-        //   /telemetry  → device JWT in Authorization: Bearer header
+        //   /enroll         → one-time enrollment token in body (tokenHash lookup)
+        //   /heartbeat      → device JWT in Authorization: Bearer header
+        //   /config         → device JWT in Authorization: Bearer header
+        //   /telemetry      → device JWT in Authorization: Bearer header
+        //   /commands/*/ack → device JWT in Authorization: Bearer header
         // Each is stronger than session-based CSRF would be here.
         '/api/fleet/enroll',
         '/api/fleet/heartbeat',
         '/api/fleet/config',
         '/api/fleet/telemetry',
+        /^\/api\/fleet\/commands\/[^/]+\/ack$/,
       ],
       [] // No service worker URLs
     )
