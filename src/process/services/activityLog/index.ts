@@ -84,7 +84,8 @@ function getHmacKey(): string {
       fs.writeFileSync(keyPath, newKey, { mode: 0o600 });
     } catch (err) {
       throw new Error(
-        `[AuditLog] Failed to persist HMAC signing key to ${keyPath}. Refusing to proceed with in-memory-only key: ${err instanceof Error ? err.message : String(err)}`
+        `[AuditLog] Failed to persist HMAC signing key to ${keyPath}. Refusing to proceed with in-memory-only key: ${err instanceof Error ? err.message : String(err)}`,
+        { cause: err }
       );
     }
     _hmacKey = newKey;

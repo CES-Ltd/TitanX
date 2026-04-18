@@ -83,9 +83,11 @@ const mockGetConfigSyncStatus = vi.hoisted(() => vi.fn());
 const mockOnConfigApplied = vi.hoisted(() =>
   vi.fn<(listener: (r: unknown) => void) => () => void>((_l) => () => undefined)
 );
+const mockSyncNow = vi.hoisted(() => vi.fn());
 vi.mock('@process/services/fleetConfig/slaveSync', () => ({
   getConfigSyncStatus: mockGetConfigSyncStatus,
   onConfigApplied: mockOnConfigApplied,
+  syncNow: mockSyncNow,
 }));
 
 import { initFleetBridge } from '@/process/bridge/fleetBridge';
@@ -111,6 +113,8 @@ beforeEach(() => {
   mockIsManaged.mockReturnValue(false);
   mockGetConfigSyncStatus.mockReturnValue({ running: false });
   mockOnConfigApplied.mockImplementation(() => () => undefined);
+  mockSyncNow.mockReset();
+  mockSyncNow.mockResolvedValue({ ok: true });
   initFleetBridge();
 });
 
@@ -285,6 +289,24 @@ describe('fleet.getConfigSyncStatus', () => {
     const result = (await handler()) as { running: boolean; lastAppliedVersion?: number };
     expect(result.running).toBe(true);
     expect(result.lastAppliedVersion).toBe(4);
+  });
+});
+
+describe('fleet.syncConfigNow', () => {
+  it('delegates to slaveSync.syncNow and returns its result', async () => {
+    mockSyncNow.mockResolvedValueOnce({ ok: true });
+    const handler = providerMap.get('fleet.syncConfigNow')!;
+    const result = await handler();
+    expect(result).toEqual({ ok: true });
+    expect(mockSyncNow).toHaveBeenCalledOnce();
+  });
+
+  it('surfaces the { ok: false, error } shape when slave is not running', async () => {
+    mockSyncNow.mockResolvedValueOnce({ ok: false, error: 'slave is not running' });
+    const handler = providerMap.get('fleet.syncConfigNow')!;
+    const result = (await handler()) as { ok: boolean; error?: string };
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('slave is not running');
   });
 });
 

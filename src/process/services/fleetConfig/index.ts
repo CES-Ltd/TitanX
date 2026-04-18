@@ -272,3 +272,37 @@ export function listManagedKeys(
     appliedAt: r.applied_at,
   }));
 }
+
+/**
+ * Error thrown when a slave tries to mutate a key the master controls.
+ *
+ * Shape is intentionally stable across the wire — the renderer's error
+ * handler matches on `error.message.startsWith('controlled_by_master:')`
+ * to tell this apart from generic failures so it can render the
+ * "Controlled by IT" toast instead of a scary error dialog.
+ */
+export class FleetManagedKeyError extends Error {
+  readonly key: string;
+  constructor(key: string) {
+    super(`controlled_by_master:${key}`);
+    this.name = 'FleetManagedKeyError';
+    this.key = key;
+  }
+}
+
+/**
+ * Throw FleetManagedKeyError if the given key is currently governed by
+ * master (i.e. in `managed_config_keys`). No-op otherwise. Bridges call
+ * this before mutations to stop slaves from drifting out of sync —
+ * without it, the next master bundle would silently overwrite the local
+ * change, which is worse UX than a crisp rejection.
+ *
+ * Deliberately does NOT check fleet mode here: caller decides when to
+ * guard (master installs never have managed_config_keys rows anyway, so
+ * this is safe to call unconditionally).
+ */
+export function assertNotManaged(db: ISqliteDriver, key: string): void {
+  if (isManaged(db, key)) {
+    throw new FleetManagedKeyError(key);
+  }
+}

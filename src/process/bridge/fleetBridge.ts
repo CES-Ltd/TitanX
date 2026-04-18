@@ -29,7 +29,7 @@ import * as fleetEnrollment from '@process/services/fleetEnrollment';
 import { getDatabase } from '@process/services/database';
 import * as securityFeaturesService from '@process/services/securityFeatures';
 import { isManaged, listManagedKeys } from '@process/services/fleetConfig';
-import { getConfigSyncStatus, onConfigApplied } from '@process/services/fleetConfig/slaveSync';
+import { getConfigSyncStatus, onConfigApplied, syncNow } from '@process/services/fleetConfig/slaveSync';
 import { logNonCritical } from '@process/utils/logNonCritical';
 import type { FleetMode, FleetSetupInput, FleetSetupResult } from '@/common/types/fleetTypes';
 
@@ -167,6 +167,10 @@ export function initFleetBridge(): void {
 
   ipcBridge.fleet.getConfigSyncStatus.provider(async () => {
     return getConfigSyncStatus();
+  });
+
+  ipcBridge.fleet.syncConfigNow.provider(async () => {
+    return syncNow();
   });
 
   // Re-emit successful config-apply events to the renderer so SWR caches

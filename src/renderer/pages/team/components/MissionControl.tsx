@@ -168,7 +168,7 @@ TeamHealthStrip.displayName = 'TeamHealthStrip';
 const TaskTimeline: React.FC<{ tasks: ISprintTask[]; agents: TeamAgent[] }> = React.memo(({ tasks, agents }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const sorted = [...tasks].sort((a, b) => (STATUS_ORDER[a.status] ?? 5) - (STATUS_ORDER[b.status] ?? 5));
+  const sorted = [...tasks].toSorted((a, b) => (STATUS_ORDER[a.status] ?? 5) - (STATUS_ORDER[b.status] ?? 5));
 
   // Collapse done tasks beyond first 3
   const activeTasks = sorted.filter((t) => t.status !== 'done');

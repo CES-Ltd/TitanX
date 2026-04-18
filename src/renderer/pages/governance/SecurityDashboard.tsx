@@ -40,6 +40,8 @@ import {
   inferenceRouting,
   type ISecurityFeatureToggle,
 } from '@/common/adapter/ipcBridge';
+import { useIsKeyManaged } from '@renderer/hooks/fleet/useManagedKeys';
+import ManagedBadge from '@renderer/components/fleet/ManagedBadge';
 
 const userId = 'system_default_user';
 
@@ -154,7 +156,15 @@ const SecurityDashboard: React.FC = () => {
       await securityFeatures.toggle.invoke({ feature, enabled });
       setToggles((prev) => prev.map((t) => (t.feature === feature ? { ...t, enabled } : t)));
       Message.success(`${FEATURE_META[feature]?.label ?? feature} ${enabled ? 'enabled' : 'disabled'}`);
-    } catch {
+    } catch (err) {
+      // Bridge rejects master-managed toggles with a FleetManagedKeyError
+      // whose message starts with "controlled_by_master:". Translate to a
+      // friendly toast here rather than show the raw error string.
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.startsWith('controlled_by_master')) {
+        Message.warning('This feature is managed by your IT administrator and cannot be changed locally.');
+        return;
+      }
       Message.error('Failed to update feature toggle');
     }
   }, []);
@@ -191,6 +201,7 @@ const SecurityDashboard: React.FC = () => {
   };
 
   const enabledCount = toggles.filter((t) => t.enabled).length;
+  const isKeyManaged = useIsKeyManaged();
 
   return (
     <div className='py-4' style={{ height: 'calc(100vh - 180px)', overflow: 'auto' }}>
@@ -213,95 +224,103 @@ const SecurityDashboard: React.FC = () => {
 
         {/* Feature cards */}
         <div className='flex flex-col gap-12px'>
-          {Object.entries(FEATURE_META).map(([feature, meta]) => (
-            <Card
-              key={feature}
-              size='small'
-              className='border-l-4'
-              style={{ borderLeftColor: `var(--color-${meta.color}-6, #165dff)` }}
-            >
-              <div className='flex items-start justify-between'>
-                <div className='flex items-start gap-12px flex-1'>
-                  <div className='mt-2px'>{meta.icon}</div>
-                  <div className='flex-1'>
-                    <div className='flex items-center gap-8px mb-4px'>
-                      <span className='text-14px font-medium'>{meta.label}</span>
-                      <Tag size='small' color={getToggleState(feature) ? 'green' : 'gray'}>
-                        {getToggleState(feature) ? 'Active' : 'Off'}
-                      </Tag>
-                    </div>
-                    <div className='text-12px text-t-tertiary'>{meta.description}</div>
+          {Object.entries(FEATURE_META).map(([feature, meta]) => {
+            const managed = isKeyManaged(`security_feature.${feature}`);
+            return (
+              <Card
+                key={feature}
+                size='small'
+                className='border-l-4'
+                style={{ borderLeftColor: `var(--color-${meta.color}-6, #165dff)` }}
+              >
+                <div className='flex items-start justify-between'>
+                  <div className='flex items-start gap-12px flex-1'>
+                    <div className='mt-2px'>{meta.icon}</div>
+                    <div className='flex-1'>
+                      <div className='flex items-center gap-8px mb-4px'>
+                        <span className='text-14px font-medium'>{meta.label}</span>
+                        <Tag size='small' color={getToggleState(feature) ? 'green' : 'gray'}>
+                          {getToggleState(feature) ? 'Active' : 'Off'}
+                        </Tag>
+                        {managed && <ManagedBadge />}
+                      </div>
+                      <div className='text-12px text-t-tertiary'>{meta.description}</div>
 
-                    {/* Inline actions per feature */}
-                    {feature === 'network_policies' && getToggleState(feature) && (
-                      <div className='mt-8px flex items-center gap-8px'>
-                        <span className='text-12px text-t-secondary'>{networkPolicyCount} policies configured</span>
-                        <Select
-                          placeholder='Add preset...'
-                          value={selectedPreset}
-                          onChange={setSelectedPreset}
-                          size='mini'
-                          style={{ width: 150 }}
-                          showSearch
-                        >
-                          {presets.map((p) => (
-                            <Select.Option key={p} value={p}>
-                              {p}
-                            </Select.Option>
-                          ))}
-                        </Select>
-                        {selectedPreset && (
-                          <Button size='mini' type='primary' onClick={handleApplyPreset}>
-                            Apply
+                      {/* Inline actions per feature */}
+                      {feature === 'network_policies' && getToggleState(feature) && (
+                        <div className='mt-8px flex items-center gap-8px'>
+                          <span className='text-12px text-t-secondary'>{networkPolicyCount} policies configured</span>
+                          <Select
+                            placeholder='Add preset...'
+                            value={selectedPreset}
+                            onChange={setSelectedPreset}
+                            size='mini'
+                            style={{ width: 150 }}
+                            showSearch
+                          >
+                            {presets.map((p) => (
+                              <Select.Option key={p} value={p}>
+                                {p}
+                              </Select.Option>
+                            ))}
+                          </Select>
+                          {selectedPreset && (
+                            <Button size='mini' type='primary' onClick={handleApplyPreset}>
+                              Apply
+                            </Button>
+                          )}
+                        </div>
+                      )}
+
+                      {feature === 'blueprints' && getToggleState(feature) && (
+                        <div className='mt-8px flex items-center gap-8px'>
+                          <span className='text-12px text-t-secondary'>{blueprintCount} blueprints configured</span>
+                          <Button size='mini' onClick={handleSeedBlueprints}>
+                            Seed Built-ins
                           </Button>
-                        )}
-                      </div>
-                    )}
+                        </div>
+                      )}
 
-                    {feature === 'blueprints' && getToggleState(feature) && (
-                      <div className='mt-8px flex items-center gap-8px'>
-                        <span className='text-12px text-t-secondary'>{blueprintCount} blueprints configured</span>
-                        <Button size='mini' onClick={handleSeedBlueprints}>
-                          Seed Built-ins
-                        </Button>
-                      </div>
-                    )}
+                      {feature === 'inference_routing' && getToggleState(feature) && (
+                        <div className='mt-8px'>
+                          <span className='text-12px text-t-secondary'>{routeCount} routing rules configured</span>
+                        </div>
+                      )}
 
-                    {feature === 'inference_routing' && getToggleState(feature) && (
-                      <div className='mt-8px'>
-                        <span className='text-12px text-t-secondary'>{routeCount} routing rules configured</span>
-                      </div>
-                    )}
+                      {feature === 'filesystem_tiers' && getToggleState(feature) && (
+                        <div className='mt-8px'>
+                          <span className='text-12px text-t-secondary'>
+                            Tiers: none | read-only | workspace | full. Set per-agent via IAM policy permissions.
+                          </span>
+                        </div>
+                      )}
 
-                    {feature === 'filesystem_tiers' && getToggleState(feature) && (
-                      <div className='mt-8px'>
-                        <span className='text-12px text-t-secondary'>
-                          Tiers: none | read-only | workspace | full. Set per-agent via IAM policy permissions.
-                        </span>
-                      </div>
-                    )}
+                      {feature === 'ssrf_protection' && getToggleState(feature) && (
+                        <div className='mt-8px'>
+                          <span className='text-12px text-t-secondary'>
+                            Blocking: RFC1918, loopback, link-local, CGNAT, IPv6 private, cloud metadata endpoints.
+                          </span>
+                        </div>
+                      )}
 
-                    {feature === 'ssrf_protection' && getToggleState(feature) && (
-                      <div className='mt-8px'>
-                        <span className='text-12px text-t-secondary'>
-                          Blocking: RFC1918, loopback, link-local, CGNAT, IPv6 private, cloud metadata endpoints.
-                        </span>
-                      </div>
-                    )}
-
-                    {feature === 'agent_snapshots' && getToggleState(feature) && (
-                      <div className='mt-8px'>
-                        <span className='text-12px text-t-secondary'>
-                          Snapshots auto-sanitize credentials on export. Create via Agent Gallery.
-                        </span>
-                      </div>
-                    )}
+                      {feature === 'agent_snapshots' && getToggleState(feature) && (
+                        <div className='mt-8px'>
+                          <span className='text-12px text-t-secondary'>
+                            Snapshots auto-sanitize credentials on export. Create via Agent Gallery.
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </div>
+                  <Switch
+                    checked={getToggleState(feature)}
+                    disabled={managed}
+                    onChange={(val) => handleToggle(feature, val)}
+                  />
                 </div>
-                <Switch checked={getToggleState(feature)} onChange={(val) => handleToggle(feature, val)} />
-              </div>
-            </Card>
-          ))}
+              </Card>
+            );
+          })}
         </div>
       </Spin>
     </div>

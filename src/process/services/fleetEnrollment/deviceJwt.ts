@@ -69,7 +69,8 @@ function getDeviceJwtKey(): string {
     throw new Error(
       `[FleetJwt] Failed to persist signing key to ${keyPath}. Refusing to proceed with in-memory-only key: ${
         err instanceof Error ? err.message : String(err)
-      }`
+      }`,
+      { cause: err }
     );
   }
   _jwtKey = newKey;

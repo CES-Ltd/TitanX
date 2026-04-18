@@ -39,6 +39,12 @@ let _lastAppliedVersion: number | undefined;
 let _lastErrorMessage: string | undefined;
 let _inFlight = false;
 let _appliedListeners: Array<(r: ApplyBundleResult) => void> = [];
+/**
+ * Last master URL seen by startConfigSyncPoller. Cached so `syncNow()`
+ * (triggered from the UI's "Sync Now" button) can reuse it without
+ * making the caller re-read ProcessConfig.
+ */
+let _lastMasterUrl: string | undefined;
 
 /**
  * Subscribe to successful-apply events. Returns an unsubscribe function.
@@ -74,6 +80,7 @@ export function getConfigSyncStatus(): ConfigSyncStatus {
  * picks up the current master state without waiting the first interval.
  */
 export function startConfigSyncPoller(masterUrl: string): void {
+  _lastMasterUrl = masterUrl;
   if (_pollTimer) return;
   void pollOnce(masterUrl);
   _pollTimer = setInterval(() => void pollOnce(masterUrl), POLL_INTERVAL_MS);
@@ -95,6 +102,21 @@ export function __resetConfigSyncForTests(): void {
   _lastErrorMessage = undefined;
   _inFlight = false;
   _appliedListeners = [];
+  _lastMasterUrl = undefined;
+}
+
+/**
+ * User-triggered "Sync Now" — runs one poll immediately against the
+ * cached master URL. Returns { ok: false } if we don't have a URL yet
+ * (slave wasn't booted / mode isn't slave), which the UI surfaces as a
+ * disabled button state.
+ */
+export async function syncNow(): Promise<{ ok: boolean; error?: string }> {
+  if (!_lastMasterUrl) {
+    return { ok: false, error: 'slave is not running' };
+  }
+  await pollOnce(_lastMasterUrl);
+  return { ok: true };
 }
 
 /**

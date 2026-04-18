@@ -13,8 +13,10 @@ import { BetterSqlite3Driver } from '@process/services/database/drivers/BetterSq
 import type { ISqliteDriver } from '@process/services/database/drivers/ISqliteDriver';
 import {
   applyConfigBundle,
+  assertNotManaged,
   buildConfigBundle,
   bumpConfigVersion,
+  FleetManagedKeyError,
   getConfigVersion,
   isManaged,
   listManagedKeys,
@@ -262,7 +264,9 @@ describeOrSkip('fleetConfig — applyConfigBundle (slave side)', () => {
       securityFeatures: [{ feature: 'network_policies', enabled: true, updatedAt: Date.now() }],
     });
     const result = applyConfigBundle(db, bundle);
-    expect(result.newlyManagedKeys.sort()).toEqual(['iam.policy.p1', 'security_feature.network_policies'].sort());
+    expect(result.newlyManagedKeys.toSorted()).toEqual(
+      ['iam.policy.p1', 'security_feature.network_policies'].toSorted()
+    );
 
     expect(isManaged(db, 'iam.policy.p1')).toBe(true);
     expect(isManaged(db, 'iam.policy.does-not-exist')).toBe(false);
@@ -333,5 +337,73 @@ describeOrSkip('fleetConfig — integration with IAM service', () => {
     expect(getConfigVersion(db)).toBe(1);
     iam.deletePolicy(db, p.id, 'u1');
     expect(getConfigVersion(db)).toBe(2);
+  });
+});
+
+// ── Phase C Week 3 — IPC reject layer ───────────────────────────────────
+
+describeOrSkip('fleetConfig — assertNotManaged + FleetManagedKeyError', () => {
+  let db: ISqliteDriver;
+  beforeEach(() => {
+    db = setupDb();
+  });
+  afterEach(() => {
+    (db as BetterSqlite3Driver).close();
+  });
+
+  it('no-op when key is not in managed_config_keys', () => {
+    expect(() => assertNotManaged(db, 'iam.policy.foo')).not.toThrow();
+    expect(() => assertNotManaged(db, 'security_feature.network_policies')).not.toThrow();
+  });
+
+  it('throws FleetManagedKeyError when key IS managed', () => {
+    db.prepare(
+      "INSERT INTO managed_config_keys (key, source, managed_by_version, applied_at, previous_value) VALUES (?, 'master', ?, ?, NULL)"
+    ).run('iam.policy.guarded', 5, Date.now());
+
+    let caught: unknown;
+    try {
+      assertNotManaged(db, 'iam.policy.guarded');
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(FleetManagedKeyError);
+    expect((caught as FleetManagedKeyError).message).toBe('controlled_by_master:iam.policy.guarded');
+    expect((caught as FleetManagedKeyError).key).toBe('iam.policy.guarded');
+  });
+
+  it('FleetManagedKeyError message is a stable wire format the renderer can prefix-match', () => {
+    const err = new FleetManagedKeyError('security_feature.filesystem_tiers');
+    expect(err.message.startsWith('controlled_by_master:')).toBe(true);
+    expect(err.name).toBe('FleetManagedKeyError');
+  });
+
+  it('applyConfigBundle writes managed keys that assertNotManaged then blocks', () => {
+    // Simulate a slave receiving a bundle that adds one IAM policy + one toggle.
+    const bundle: FleetConfigBundle = {
+      version: 1,
+      updatedAt: Date.now(),
+      updatedBy: 'admin',
+      iamPolicies: [
+        {
+          id: 'pol-managed',
+          userId: 'u1',
+          name: 'Managed',
+          permissions: {},
+          agentIds: [],
+          credentialIds: [],
+          createdAt: Date.now(),
+        },
+      ],
+      securityFeatures: [{ feature: 'network_policies', enabled: true, updatedAt: Date.now() }],
+      upToDate: false,
+    };
+    applyConfigBundle(db, bundle);
+
+    // Both keys are now governed by master.
+    expect(() => assertNotManaged(db, 'iam.policy.pol-managed')).toThrow(FleetManagedKeyError);
+    expect(() => assertNotManaged(db, 'security_feature.network_policies')).toThrow(FleetManagedKeyError);
+    // Unmanaged key still unaffected.
+    expect(() => assertNotManaged(db, 'iam.policy.local-one')).not.toThrow();
   });
 });

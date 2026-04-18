@@ -34,7 +34,7 @@ function assertSafeIdSlug(value: string, label: string): string {
   if (typeof value !== 'string' || value.length === 0 || value.length > 128) {
     throw new Error(`Invalid ${label}: must be a non-empty string of at most 128 chars`);
   }
-  if (!/^[a-zA-Z0-9_.\-]+$/.test(value)) {
+  if (!/^[a-zA-Z0-9_.-]+$/.test(value)) {
     throw new Error(`Invalid ${label}: must match [a-zA-Z0-9_.-]+. Got ${JSON.stringify(value.slice(0, 64))}`);
   }
   if (value === '.' || value === '..' || value.includes('..')) {

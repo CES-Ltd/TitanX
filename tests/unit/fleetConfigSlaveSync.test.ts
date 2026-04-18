@@ -75,6 +75,7 @@ import {
   stopConfigSyncPoller,
   getConfigSyncStatus,
   onConfigApplied,
+  syncNow,
   __resetConfigSyncForTests,
 } from '@process/services/fleetConfig/slaveSync';
 import { getConfigVersion } from '@process/services/fleetConfig';
@@ -109,9 +110,7 @@ function bundleFixture(overrides?: Partial<FleetConfigBundle>): FleetConfigBundl
         createdAt: 1_600_000_000_000,
       },
     ],
-    securityFeatures: [
-      { feature: 'network_policies', enabled: true, updatedAt: 1_700_000_000_000 },
-    ],
+    securityFeatures: [{ feature: 'network_policies', enabled: true, updatedAt: 1_700_000_000_000 }],
     upToDate: false,
     ...overrides,
   };
@@ -338,5 +337,52 @@ describeOrSkip('fleetConfig slaveSync — poll loop lifecycle', () => {
 
     stopConfigSyncPoller();
     expect(getConfigSyncStatus().running).toBe(false);
+  });
+});
+
+// ── Phase C Week 3 — syncNow() user-triggered manual poll ─────────────────
+
+describeOrSkip('fleetConfig slaveSync — syncNow', () => {
+  beforeEach(() => {
+    for (const k of Object.keys(configStore)) delete configStore[k];
+    mockFetch.mockReset();
+    broadcastSpy.mockReset();
+    __resetConfigSyncForTests();
+    testDb = setupDb();
+  });
+
+  afterEach(() => {
+    stopConfigSyncPoller();
+    if (testDb) {
+      (testDb as BetterSqlite3Driver).close();
+      testDb = null;
+    }
+  });
+
+  it('returns { ok: false } when poller was never started (no cached URL)', async () => {
+    const result = await syncNow();
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/not running/);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('triggers a poll against the cached URL after startConfigSyncPoller', async () => {
+    configStore['fleet.slave.deviceJwtCiphertext'] = 'ct:device-jwt-xyz';
+    mockFetch.mockResolvedValue(
+      new Response(JSON.stringify({ bundle: { ...bundleFixture(), upToDate: true } }), { status: 200 })
+    );
+
+    startConfigSyncPoller('https://master.local:8888');
+    // Drain the immediate auto-poll
+    await new Promise((r) => setTimeout(r, 0));
+    mockFetch.mockClear();
+
+    const result = await syncNow();
+    expect(result.ok).toBe(true);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url] = mockFetch.mock.calls[0]!;
+    expect(url).toBe('https://master.local:8888/api/fleet/config?since=0');
+
+    stopConfigSyncPoller();
   });
 });

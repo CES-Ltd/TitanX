@@ -98,7 +98,8 @@ export function getDeviceIdentity(): DeviceKeyPair {
           privateKey = decrypt(privateKeyRaw, masterKey);
         } catch (err) {
           throw new Error(
-            `[DeviceIdentity] Failed to decrypt private key. File corruption or master key mismatch: ${err instanceof Error ? err.message : String(err)}`
+            `[DeviceIdentity] Failed to decrypt private key. File corruption or master key mismatch: ${err instanceof Error ? err.message : String(err)}`,
+            { cause: err }
           );
         }
       } else {

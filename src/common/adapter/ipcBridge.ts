@@ -830,6 +830,12 @@ export const fleet = {
     void
   >('fleet:get-config-sync-status'),
   /**
+   * Trigger a manual poll — renderer "Sync Now" button. Returns
+   * `{ ok: false }` when the slave poller isn't running (wrong mode or
+   * not enrolled yet), letting the UI disable/hide the button.
+   */
+  syncConfigNow: bridge.buildProvider<{ ok: boolean; error?: string }, void>('fleet:sync-config-now'),
+  /**
    * Emitted after a slave successfully applies a config bundle from master.
    * Renderer listens + re-fetches IAM policies / feature toggles so the UI
    * reflects the new state without the user hitting refresh.

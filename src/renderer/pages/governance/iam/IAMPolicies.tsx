@@ -26,6 +26,8 @@ import {
 } from '@arco-design/web-react';
 import { Plus, Delete, Shield } from '@icon-park/react';
 import { iamPolicies, team as teamBridge, type IIAMPolicy } from '@/common/adapter/ipcBridge';
+import { useIsKeyManaged } from '@renderer/hooks/fleet/useManagedKeys';
+import ManagedBadge from '@renderer/components/fleet/ManagedBadge';
 
 const userId = 'system_default_user';
 
@@ -210,11 +212,26 @@ const IAMPolicies: React.FC = () => {
 
   const handleDelete = useCallback(
     async (policyId: string) => {
-      await iamPolicies.remove.invoke({ policyId });
-      void loadData();
+      try {
+        await iamPolicies.remove.invoke({ policyId });
+        void loadData();
+      } catch (err) {
+        // Bridge throws FleetManagedKeyError when the policy is master-
+        // controlled on a slave install. Message format is
+        // "controlled_by_master:<key>" — surface a friendly toast
+        // instead of the raw error string.
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.startsWith('controlled_by_master')) {
+          Message.warning('This policy is managed by your IT administrator and cannot be deleted locally.');
+          return;
+        }
+        Message.error(msg || 'Failed to delete policy');
+      }
     },
     [loadData]
   );
+
+  const isKeyManaged = useIsKeyManaged();
 
   if (loading) return <Spin className='flex justify-center mt-8' />;
 
@@ -272,12 +289,15 @@ const IAMPolicies: React.FC = () => {
                 title: 'Name',
                 dataIndex: 'name',
                 render: (v: string, r: IIAMPolicy) => (
-                  <span
-                    className='font-medium cursor-pointer'
-                    onClick={() => setExpandedPolicy(expandedPolicy === r.id ? null : r.id)}
-                  >
-                    {v}
-                  </span>
+                  <div className='flex items-center gap-2'>
+                    <span
+                      className='font-medium cursor-pointer'
+                      onClick={() => setExpandedPolicy(expandedPolicy === r.id ? null : r.id)}
+                    >
+                      {v}
+                    </span>
+                    {isKeyManaged(`iam.policy.${r.id}`) && <ManagedBadge variant='icon-only' />}
+                  </div>
                 ),
               },
               {
@@ -359,9 +379,19 @@ const IAMPolicies: React.FC = () => {
               {
                 title: '',
                 width: 50,
-                render: (_: unknown, r: IIAMPolicy) => (
-                  <Button size='mini' status='danger' icon={<Delete size={12} />} onClick={() => handleDelete(r.id)} />
-                ),
+                render: (_: unknown, r: IIAMPolicy) => {
+                  const managed = isKeyManaged(`iam.policy.${r.id}`);
+                  return (
+                    <Button
+                      size='mini'
+                      status='danger'
+                      icon={<Delete size={12} />}
+                      disabled={managed}
+                      title={managed ? 'Controlled by IT — cannot delete locally' : undefined}
+                      onClick={() => handleDelete(r.id)}
+                    />
+                  );
+                },
               },
             ]}
             data={policies}

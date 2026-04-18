@@ -125,5 +125,30 @@
     "lastSeen": "Last synced",
     "errorPrefix": "Error",
     "never": "never"
+  },
+  "managed": {
+    "label": "Controlled by IT",
+    "tooltip": "This setting is managed by your IT administrator and cannot be changed locally.",
+    "tooltipVersion": "Controlled by your IT administrator (bundle v{{version}}). Local edits are rejected.",
+    "iamDeleteBlocked": "This policy is managed by your IT administrator and cannot be deleted locally.",
+    "featureToggleBlocked": "This feature is managed by your IT administrator and cannot be changed locally."
+  },
+  "sync": {
+    "title": "Config sync",
+    "syncNow": "Sync now",
+    "syncSuccess": "Sync complete",
+    "syncFailed": "Sync failed",
+    "statusRunning": "Running",
+    "statusStopped": "Stopped",
+    "lastPoll": "Last poll",
+    "lastApplied": "Last applied",
+    "never": "never",
+    "managedKeysTitle": "Keys controlled by your IT administrator ({{count}})",
+    "noManagedKeys": "No keys are currently managed. Local edits are unrestricted.",
+    "column": {
+      "key": "Key",
+      "version": "Version",
+      "appliedAt": "Applied"
+    }
   }
 }
