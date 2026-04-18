@@ -6,6 +6,7 @@
 import { ipcBridge } from '@/common';
 import { getDatabase } from '@process/services/database';
 import * as galleryService from '@process/services/agentGallery';
+import { assertNotManaged } from '@process/services/fleetConfig';
 
 export function initAgentGalleryBridge(): void {
   ipcBridge.agentGallery.list.provider(async ({ userId, whitelistedOnly }) => {
@@ -30,7 +31,25 @@ export function initAgentGalleryBridge(): void {
 
   ipcBridge.agentGallery.remove.provider(async ({ agentId }) => {
     const db = await getDatabase();
+    // Block deletion of master-pushed templates on slaves. Next config
+    // poll would re-insert them anyway, so rejecting up-front is less
+    // confusing than silent reappearance. Mirrors Phase C's iamPolicies
+    // delete guard — no-op on master installs (no managed keys there).
+    assertNotManaged(db.getDriver(), `agent.template.${agentId}`);
     return galleryService.deleteAgent(db.getDriver(), agentId);
+  });
+
+  // ── Phase E: fleet publishing (master-side curation) ────────────────
+  ipcBridge.agentGallery.publishToFleet.provider(async ({ agentId }) => {
+    const db = await getDatabase();
+    const ok = galleryService.publishToFleet(db.getDriver(), agentId);
+    return { ok };
+  });
+
+  ipcBridge.agentGallery.unpublishFromFleet.provider(async ({ agentId }) => {
+    const db = await getDatabase();
+    const ok = galleryService.unpublishFromFleet(db.getDriver(), agentId);
+    return { ok };
   });
 
   ipcBridge.agentGallery.checkName.provider(async ({ userId, name }) => {

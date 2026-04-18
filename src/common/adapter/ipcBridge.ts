@@ -1724,6 +1724,12 @@ export type IGalleryAgent = {
   envBindings: Record<string, unknown>;
   createdAt: number;
   updatedAt: number;
+  /** Phase E: 'local' | 'master' | 'builtin'. Same vocabulary as iam_policies. */
+  source?: 'local' | 'master' | 'builtin';
+  /** Bundle version that installed this row (only for source='master'). */
+  managedByVersion?: number;
+  /** Master-side curation flag: has the admin pushed this to the fleet? */
+  publishedToFleet?: boolean;
 };
 
 export type ICreateGalleryAgentInput = {
@@ -1751,6 +1757,16 @@ export const agentGallery = {
     Array<{ name: string; description: string; model?: string; tools?: string[]; prompt: string; source: string }>,
     { workspacePath?: string }
   >('gallery.load-filesystem'),
+
+  // ── Phase E: fleet publishing ────────────────────────────────────────
+  /**
+   * Master-side admin action: mark a gallery template as published to
+   * the fleet. The next fleet config bundle will ship it to all
+   * enrolled slaves as a source='master' row.
+   */
+  publishToFleet: bridge.buildProvider<{ ok: boolean }, { agentId: string }>('gallery.publish-to-fleet'),
+  /** Reverse: remove the template from fleet distribution. */
+  unpublishFromFleet: bridge.buildProvider<{ ok: boolean }, { agentId: string }>('gallery.unpublish-from-fleet'),
 };
 
 // ─── Caveman Mode ──────────────────────────────────────────────────────────

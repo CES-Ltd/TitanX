@@ -26,7 +26,7 @@ import {
   Popconfirm,
   Checkbox,
 } from '@arco-design/web-react';
-import { Plus, Left, Delete, Setting, AddUser, Edit, Peoples } from '@icon-park/react';
+import { Plus, Left, Delete, Setting, AddUser, Edit, Peoples, ShareTwo, CloseOne } from '@icon-park/react';
 import { agentGallery, team as teamBridge, type IGalleryAgent } from '@/common/adapter/ipcBridge';
 import type { TTeam } from '@/common/types/teamTypes';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
@@ -34,6 +34,8 @@ import { useTeamList } from '@renderer/pages/team/hooks/useTeamList';
 import { getAgentLogo } from '@/renderer/utils/model/agentLogo';
 import { ALL_AGENT_TEMPLATES, AGENT_CATEGORIES, CATEGORY_LABELS, type AgentCategory } from './agentTemplates';
 import { TEAM_TEMPLATES, type TeamTemplate } from './teamTemplates';
+import { useFleetMode } from '@renderer/hooks/fleet/useFleetMode';
+import ManagedBadge from '@renderer/components/fleet/ManagedBadge';
 
 const { Row, Col } = Grid;
 const { Option } = Select;
@@ -328,6 +330,10 @@ const AgentGallery: React.FC = () => {
     }
   }, [hireTeamTemplate, hireTeamForm]);
 
+  const fleetMode = useFleetMode();
+  const isMaster = fleetMode === 'master';
+  const isSlave = fleetMode === 'slave';
+
   // ─── Delete Agent ──────────────────────────────────────────────────
   const handleDelete = useCallback(
     async (agentId: string) => {
@@ -336,7 +342,15 @@ const AgentGallery: React.FC = () => {
         Message.success('Agent removed from gallery');
         void loadData();
       } catch (err) {
-        Message.error(String(err));
+        // Phase E: the bridge throws FleetManagedKeyError for master-
+        // pushed templates on slaves. Surface a friendly toast instead
+        // of the raw "controlled_by_master:<key>" wire string.
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.startsWith('controlled_by_master')) {
+          Message.warning('This template is managed by your IT administrator and cannot be deleted locally.');
+          return;
+        }
+        Message.error(msg);
       }
     },
     [loadData]
@@ -355,47 +369,121 @@ const AgentGallery: React.FC = () => {
     [loadData]
   );
 
+  // ─── Publish to / unpublish from fleet (Phase E, master-only) ──────
+  const handlePublishToFleet = useCallback(
+    async (agent: IGalleryAgent) => {
+      try {
+        const result = await agentGallery.publishToFleet.invoke({ agentId: agent.id });
+        if (result.ok) {
+          Message.success(`Published "${agent.name}" to the fleet`);
+          void loadData();
+        } else {
+          Message.warning('Template not found — refresh and try again');
+        }
+      } catch (err) {
+        Message.error(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [loadData]
+  );
+
+  const handleUnpublishFromFleet = useCallback(
+    async (agent: IGalleryAgent) => {
+      try {
+        const result = await agentGallery.unpublishFromFleet.invoke({ agentId: agent.id });
+        if (result.ok) {
+          Message.success(`Removed "${agent.name}" from the fleet`);
+          void loadData();
+        }
+      } catch (err) {
+        Message.error(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [loadData]
+  );
+
   // ─── Render Agent Card ─────────────────────────────────────────────
   const renderAgentCard = (agent: IGalleryAgent) => {
     const logo = getAgentLogo(agent.agentType);
     const spriteColor = SPRITE_COLORS[agent.avatarSpriteIdx % SPRITE_COLORS.length];
+    const isMasterManaged = agent.source === 'master';
+    const isPublishedToFleet = agent.publishedToFleet === true;
+
+    // Card-level actions differ by role:
+    //   - Master install: Hire + Edit + Publish/Unpublish to fleet + Delete
+    //   - Slave install, master-pushed row: Hire only (Edit/Delete hidden
+    //     since the bridge would reject them anyway; hiding is clearer UX)
+    //   - Slave install, local row: Hire + Edit + Delete
+    //   - Regular install: Hire + Edit + Delete (no fleet controls)
+    const actions: React.ReactNode[] = [
+      <Button
+        key='hire'
+        type='primary'
+        size='small'
+        icon={<AddUser theme='outline' size='12' />}
+        disabled={!agent.whitelisted}
+        onClick={() => setHireAgent(agent)}
+      >
+        Hire Me
+      </Button>,
+    ];
+
+    if (!isSlave || !isMasterManaged) {
+      actions.push(
+        <Button
+          key='edit'
+          type='text'
+          size='small'
+          icon={<Edit theme='outline' size='12' />}
+          onClick={() => setEditAgent(agent)}
+        >
+          Edit
+        </Button>
+      );
+    }
+
+    if (isMaster) {
+      actions.push(
+        isPublishedToFleet ? (
+          <Button
+            key='unpublish'
+            type='text'
+            size='small'
+            icon={<CloseOne theme='outline' size='12' />}
+            onClick={() => void handleUnpublishFromFleet(agent)}
+          >
+            Unpublish
+          </Button>
+        ) : (
+          <Button
+            key='publish'
+            type='text'
+            size='small'
+            icon={<ShareTwo theme='outline' size='12' />}
+            onClick={() => void handlePublishToFleet(agent)}
+          >
+            Publish
+          </Button>
+        )
+      );
+    }
+
+    if (!isSlave || !isMasterManaged) {
+      actions.push(
+        <Popconfirm
+          key='delete'
+          title='Remove this agent?'
+          onOk={() => void handleDelete(agent.id)}
+          okButtonProps={{ status: 'danger' }}
+        >
+          <Button type='text' size='small' status='danger' icon={<Delete theme='outline' size='12' />} />
+        </Popconfirm>
+      );
+    }
 
     return (
       <Col key={agent.id} span={8} style={{ minWidth: 300 }}>
-        <Card
-          hoverable
-          className='h-full'
-          style={{ borderRadius: 12 }}
-          actions={[
-            <Button
-              key='hire'
-              type='primary'
-              size='small'
-              icon={<AddUser theme='outline' size='12' />}
-              disabled={!agent.whitelisted}
-              onClick={() => setHireAgent(agent)}
-            >
-              Hire Me
-            </Button>,
-            <Button
-              key='edit'
-              type='text'
-              size='small'
-              icon={<Edit theme='outline' size='12' />}
-              onClick={() => setEditAgent(agent)}
-            >
-              Edit
-            </Button>,
-            <Popconfirm
-              key='delete'
-              title='Remove this agent?'
-              onOk={() => void handleDelete(agent.id)}
-              okButtonProps={{ status: 'danger' }}
-            >
-              <Button type='text' size='small' status='danger' icon={<Delete theme='outline' size='12' />} />
-            </Popconfirm>,
-          ]}
-        >
+        <Card hoverable className='h-full' style={{ borderRadius: 12 }} actions={actions}>
           <div className='flex items-start gap-12px'>
             <div
               className='w-40px h-40px rd-10px flex items-center justify-center shrink-0'
@@ -408,11 +496,19 @@ const AgentGallery: React.FC = () => {
               )}
             </div>
             <div className='flex-1 min-w-0'>
-              <div className='flex items-center gap-6px mb-2px'>
+              <div className='flex items-center gap-6px mb-2px flex-wrap'>
                 <span className='text-14px font-semibold truncate'>{agent.name}</span>
                 <Tag size='small' color='arcoblue'>
                   {agent.agentType}
                 </Tag>
+                {isMaster && isPublishedToFleet && (
+                  <Tag size='small' color='green'>
+                    Published
+                  </Tag>
+                )}
+                {isSlave && isMasterManaged && (
+                  <ManagedBadge variant='icon-only' managedByVersion={agent.managedByVersion} />
+                )}
               </div>
               <div className='text-12px text-t-secondary line-clamp-2 mb-8px'>{agent.description}</div>
               <div className='flex flex-wrap gap-4px'>
@@ -423,7 +519,15 @@ const AgentGallery: React.FC = () => {
                 ))}
               </div>
             </div>
-            <Switch size='small' checked={agent.whitelisted} onChange={(v) => void handleToggleWhitelist(agent, v)} />
+            {/* Whitelist toggle stays for local rows; disabled on slave-
+                side master-pushed rows so the user can't re-enable a
+                template IT revoked (the next poll would flip it back). */}
+            <Switch
+              size='small'
+              checked={agent.whitelisted}
+              disabled={isSlave && isMasterManaged}
+              onChange={(v) => void handleToggleWhitelist(agent, v)}
+            />
           </div>
         </Card>
       </Col>
