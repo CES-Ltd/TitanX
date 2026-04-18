@@ -890,10 +890,32 @@ export const fleet = {
     { ok: true; commandId: string } | { ok: false; error: string; code?: 'per_device' | 'fleet_wide' },
     {
       targetDeviceId: string; // deviceId or 'all'
-      commandType: 'force_config_sync' | 'force_telemetry_push' | 'cache.clear' | 'credential.rotate';
+      commandType: 'force_config_sync' | 'force_telemetry_push';
       ttlSeconds?: number;
     }
   >('fleet:enqueue-command'),
+  /**
+   * Phase F.2: enqueue a DESTRUCTIVE command. Gated by admin re-auth
+   * (bcrypt compare server-side) and signed with master's Ed25519
+   * key before storing. Rate-limited on both command-level (10/device,
+   * 100/hour fleet-wide) and re-auth-level (3 attempts / 5 min per user).
+   */
+  enqueueDestructiveCommand: bridge.buildProvider<
+    | { ok: true; commandId: string }
+    | {
+        ok: false;
+        error: string;
+        code: 'rate_limited' | 'unknown_user' | 'wrong_password' | 'per_device' | 'fleet_wide' | 'error';
+      },
+    {
+      targetDeviceId: string;
+      commandType: 'cache.clear' | 'credential.rotate';
+      params?: Record<string, unknown>;
+      ttlSeconds?: number;
+      /** Admin's cleartext password, verified against bcrypt hash master-side. */
+      confirmPassword: string;
+    }
+  >('fleet:enqueue-destructive-command'),
   /** Admin: recent commands + per-status ack counts for the history table. */
   listCommands: bridge.buildProvider<
     {

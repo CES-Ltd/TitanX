@@ -19,6 +19,9 @@ import { Copy, Delete, Refresh, Plus, Lightning, Download } from '@icon-park/rea
 import { ipcBridge } from '@/common';
 import FleetDashboard from '@renderer/components/fleet/FleetDashboard';
 import CommandHistoryPanel from '@renderer/components/fleet/CommandHistoryPanel';
+import DestructiveCommandModal, {
+  type DestructiveCommandType,
+} from '@renderer/components/fleet/DestructiveCommandModal';
 import { enqueueFleetCommand, type FleetCommandType } from '@renderer/hooks/fleet/useFleetCommands';
 
 type EnrolledDevice = {
@@ -48,6 +51,12 @@ const FleetPage: React.FC = () => {
   const [ttlHours, setTtlHours] = useState<number>(24);
   const [note, setNote] = useState('');
   const [generating, setGenerating] = useState(false);
+  // Phase F.2: a single modal handles all destructive commands. We stash
+  // the (target, type) pair when the user clicks a destructive action
+  // and clear it when the modal closes.
+  const [destructiveAction, setDestructiveAction] = useState<
+    { targetDeviceId: string; commandType: DestructiveCommandType } | null
+  >(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -118,7 +127,10 @@ const FleetPage: React.FC = () => {
 
   // ── Phase F Week 3: remote commands (per-device + fleet-wide) ──────
   const handleEnqueueCommand = useCallback(
-    async (targetDeviceId: string, commandType: FleetCommandType): Promise<void> => {
+    async (
+      targetDeviceId: string,
+      commandType: 'force_config_sync' | 'force_telemetry_push'
+    ): Promise<void> => {
       try {
         // The IPC bridge generic defeats TS's narrowing on `result.ok`,
         // so read the fields through an inline structural cast rather
@@ -231,6 +243,32 @@ const FleetPage: React.FC = () => {
             >
               {t('fleet.commands.actions.forceTelemetry', { defaultValue: 'Force telemetry push' })}
             </Menu.Item>
+            {/* Destructive — separator + red-styled labels so they can't be
+                clicked accidentally mid-scroll. Both open the password
+                confirmation modal; neither fires the command directly. */}
+            <Menu.Item key='divider-destructive' disabled className='text-10px text-t-tertiary'>
+              ── {t('fleet.commands.actions.destructiveHeading', { defaultValue: 'Destructive' })} ──
+            </Menu.Item>
+            <Menu.Item
+              key='cache-clear'
+              onClick={() =>
+                setDestructiveAction({ targetDeviceId: row.deviceId, commandType: 'cache.clear' })
+              }
+            >
+              <span className='text-danger-6'>
+                {t('fleet.commands.actions.cacheClear', { defaultValue: 'Clear cache…' })}
+              </span>
+            </Menu.Item>
+            <Menu.Item
+              key='credential-rotate'
+              onClick={() =>
+                setDestructiveAction({ targetDeviceId: row.deviceId, commandType: 'credential.rotate' })
+              }
+            >
+              <span className='text-danger-6'>
+                {t('fleet.commands.actions.credentialRotate', { defaultValue: 'Rotate credentials…' })}
+              </span>
+            </Menu.Item>
           </Menu>
         );
         return (
@@ -316,6 +354,16 @@ const FleetPage: React.FC = () => {
           <CommandHistoryPanel />
         </div>
       </div>
+
+      {/* Phase F.2 Week 3 — password-gated destructive command modal.
+          One instance for the whole page; state drives what it shows. */}
+      <DestructiveCommandModal
+        open={destructiveAction != null}
+        targetDeviceId={destructiveAction?.targetDeviceId ?? ''}
+        commandType={destructiveAction?.commandType ?? 'cache.clear'}
+        onClose={() => setDestructiveAction(null)}
+        onSuccess={() => setDestructiveAction(null)}
+      />
 
       <Modal
         visible={generateModalOpen}

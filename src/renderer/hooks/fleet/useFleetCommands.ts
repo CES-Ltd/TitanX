@@ -118,7 +118,7 @@ export function useCommandAcks(commandId: string | null): {
  */
 export async function enqueueFleetCommand(input: {
   targetDeviceId: string;
-  commandType: FleetCommandType;
+  commandType: 'force_config_sync' | 'force_telemetry_push';
   ttlSeconds?: number;
 }): Promise<
   { ok: true; commandId: string } | { ok: false; error: string; code?: 'per_device' | 'fleet_wide' }

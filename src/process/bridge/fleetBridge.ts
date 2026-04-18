@@ -38,6 +38,7 @@ import {
 } from '@process/services/fleetTelemetry';
 import {
   enqueueCommand,
+  enqueueDestructiveCommand,
   FleetCommandRateLimitError,
   listAcksForCommand,
   listCommandsWithAcks,
@@ -233,6 +234,20 @@ export function initFleetBridge(): void {
       return { ok: false as const, error: err instanceof Error ? err.message : String(err) };
     }
   });
+
+  ipcBridge.fleet.enqueueDestructiveCommand.provider(
+    async ({ targetDeviceId, commandType, params, ttlSeconds, confirmPassword }) => {
+      const db = await getDatabase();
+      return enqueueDestructiveCommand(db.getDriver(), {
+        targetDeviceId,
+        commandType,
+        params,
+        ttlSeconds,
+        createdBy: 'system_default_user',
+        confirmPassword,
+      });
+    }
+  );
 
   ipcBridge.fleet.listCommands.provider(async ({ limit }) => {
     const db = await getDatabase();

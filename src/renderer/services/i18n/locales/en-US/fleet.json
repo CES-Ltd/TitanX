@@ -223,7 +223,34 @@
       "forceSync": "Force config sync",
       "forceTelemetry": "Force telemetry push",
       "forceSyncAll": "Sync all",
-      "forceTelemetryAll": "Telemetry all"
+      "forceTelemetryAll": "Telemetry all",
+      "destructiveHeading": "Destructive",
+      "cacheClear": "Clear cache…",
+      "credentialRotate": "Rotate credentials…"
+    },
+    "destructive": {
+      "enqueued": "Destructive command queued. Slaves will execute on next heartbeat.",
+      "wrongPassword": "Incorrect password. Please try again.",
+      "reauthRateLimit": "Too many failed password attempts. Wait 5 minutes before trying again.",
+      "target": "Target",
+      "passwordLabel": "Confirm your password to authorize this action",
+      "cancel": "Cancel",
+      "confirm": "Confirm",
+      "cacheClear": {
+        "title": "Clear cache",
+        "scope": "Scope",
+        "warning": "This will delete cache files on the selected device(s). Cached files are recoverable by re-downloading.",
+        "scopes": {
+          "temp_files": "Downloaded files & screenshots",
+          "model_cache": "LLM response history",
+          "skill_cache": "Skill execution cache",
+          "all": "All of the above"
+        }
+      },
+      "credentialRotate": {
+        "title": "Rotate credentials",
+        "warning": "This will wipe ALL saved provider API keys on the selected device(s). Users will re-enter keys on next use."
+      }
     },
     "enqueued": {
       "configSync": "Queued config sync",

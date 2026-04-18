@@ -66,15 +66,24 @@ const HANDLERS: Record<NonDestructiveCommandType, Handler> = {
 };
 
 /**
- * Destructive handlers — each one gated by the signed-envelope verify
- * in executeAndAck(). Empty in Week 2 on purpose: shipping Week 2
- * without live destructive handlers means the signing infrastructure
- * can be validated end-to-end (enqueue → sign → ship → verify → ack
- * as 'skipped') against unknown-command-type on the slave. Week 3
- * fills this in with actual fs.rm / credential wipe.
+ * Destructive handlers — gated by the signed-envelope verify in
+ * executeAndAck(). Each handler is narrow-scoped (see
+ * destructiveHandlers.ts) and path-validates its own inputs so a
+ * malicious master can't coerce the slave into destroying adjacent
+ * data.
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-const DESTRUCTIVE_HANDLERS: Partial<Record<'cache.clear' | 'credential.rotate', Handler>> = {};
+const DESTRUCTIVE_HANDLERS: Record<'cache.clear' | 'credential.rotate', Handler> = {
+  'cache.clear': async (params) => {
+    const { handleCacheClear } = await import('./destructiveHandlers');
+    return handleCacheClear(params);
+  },
+  'credential.rotate': async () => {
+    const { handleCredentialRotate } = await import('./destructiveHandlers');
+    const { getDatabase } = await import('@process/services/database');
+    const db = await getDatabase();
+    return handleCredentialRotate(db.getDriver());
+  },
+};
 
 // ── Public API ──────────────────────────────────────────────────────────
 
