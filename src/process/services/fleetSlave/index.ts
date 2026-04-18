@@ -172,8 +172,20 @@ async function attemptEnrollment(masterUrl: string): Promise<void> {
       return;
     }
 
-    const data = (await response.json()) as { deviceJwt: string; deviceId: string; jwtExpiresAt: number };
+    const data = (await response.json()) as {
+      deviceJwt: string;
+      deviceId: string;
+      jwtExpiresAt: number;
+      masterCommandSigningPubKey?: string;
+    };
     await persistDeviceJwt(data.deviceJwt);
+    // Phase F.2: master pubkey arrives here (optional for pre-F.2
+    // masters). Store encrypted so a filesystem read doesn't leak
+    // the fleet's signing anchor. A missing pubkey means every
+    // destructive command later fails with reason='no_pubkey'.
+    if (data.masterCommandSigningPubKey) {
+      await persistMasterCommandSigningPubKey(data.masterCommandSigningPubKey);
+    }
     await ProcessConfig.set('fleet.slave.enrollmentStatus', 'enrolled');
     // Token is now consumed — clear the stored ciphertext so it's not reusable.
     await ProcessConfig.set('fleet.slave.enrollmentTokenCiphertext', '');
@@ -316,6 +328,38 @@ async function getCachedDeviceJwt(): Promise<string | null> {
     return decrypt(ciphertext, key);
   } catch (e) {
     logNonCritical('fleet.slave.decrypt-jwt', e);
+    return null;
+  }
+}
+
+/**
+ * Persist the master's Ed25519 command-signing pubkey (Phase F.2).
+ * Encrypted at rest — not because the pubkey itself is sensitive
+ * (it's public by definition), but because a bit-flip or tamper on
+ * the stored value would silently break signature verification,
+ * and AES-GCM's auth tag surfaces that as a decrypt failure instead.
+ */
+async function persistMasterCommandSigningPubKey(pem: string): Promise<void> {
+  const key = loadOrCreateMasterKey();
+  const ciphertext = encrypt(pem, key);
+  await ProcessConfig.set('fleet.slave.masterCommandSigningPubKeyCiphertext', ciphertext);
+}
+
+/**
+ * Read the cached master pubkey. Returns null when the slave was
+ * enrolled by a pre-F.2 master (or the pubkey entry is corrupt) —
+ * the executor treats null as "refuse every destructive command".
+ */
+export async function getCachedMasterCommandSigningPubKey(): Promise<string | null> {
+  const ciphertext = (await ProcessConfig.get(
+    'fleet.slave.masterCommandSigningPubKeyCiphertext'
+  )) as string | undefined;
+  if (!ciphertext || ciphertext.length === 0) return null;
+  try {
+    const key = loadOrCreateMasterKey();
+    return decrypt(ciphertext, key);
+  } catch (e) {
+    logNonCritical('fleet.slave.decrypt-pubkey', e);
     return null;
   }
 }

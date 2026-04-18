@@ -30,7 +30,17 @@ import { decrypt, loadOrCreateMasterKey } from '@process/services/secrets/encryp
 import { logNonCritical } from '@process/utils/logNonCritical';
 import { pollOnce as configPollOnce } from '@process/services/fleetConfig/slaveSync';
 import { pushOnce as telemetryPushOnce } from '@process/services/fleetTelemetry/slavePush';
-import type { AckStatus, CommandForSlave, CommandType } from './types';
+import { verifyCommand } from '@process/services/fleetCommandSigning';
+import { getCachedMasterCommandSigningPubKey } from '@process/services/fleetSlave';
+import { getDatabase } from '@process/services/database';
+import type { SignedCommand } from '@process/services/fleetCommandSigning/types';
+import {
+  SIGNED_ENVELOPE_PARAM_KEY,
+  isDestructive,
+  type AckStatus,
+  type CommandForSlave,
+  type NonDestructiveCommandType,
+} from './types';
 
 type HandlerOutcome = { status: AckStatus; result?: Record<string, unknown> };
 type Handler = (params: Record<string, unknown>, ctx: { masterUrl: string }) => Promise<HandlerOutcome>;
@@ -38,12 +48,13 @@ type Handler = (params: Record<string, unknown>, ctx: { masterUrl: string }) => 
 // ── Registry ────────────────────────────────────────────────────────────
 
 /**
- * Handler table. Adding a new command type = add a const handler
- * function + an entry here. Phase F v1 ships two non-destructive
- * commands; anything that could brick a slave or lose data goes
- * through Phase F.2's signed-envelope gate first.
+ * Handler table for NON-destructive commands. Adding a new non-
+ * destructive type = add a const handler function + an entry here.
+ * Destructive handlers live in DESTRUCTIVE_HANDLERS (below, empty
+ * in Phase F.2 Week 2 — populated in Week 3 when the actual
+ * cache.clear + credential.rotate implementations land).
  */
-const HANDLERS: Record<CommandType, Handler> = {
+const HANDLERS: Record<NonDestructiveCommandType, Handler> = {
   force_config_sync: async (_params, ctx) => {
     await configPollOnce(ctx.masterUrl);
     return { status: 'succeeded', result: { action: 'pollOnce-dispatched' } };
@@ -54,21 +65,78 @@ const HANDLERS: Record<CommandType, Handler> = {
   },
 };
 
+/**
+ * Destructive handlers — each one gated by the signed-envelope verify
+ * in executeAndAck(). Empty in Week 2 on purpose: shipping Week 2
+ * without live destructive handlers means the signing infrastructure
+ * can be validated end-to-end (enqueue → sign → ship → verify → ack
+ * as 'skipped') against unknown-command-type on the slave. Week 3
+ * fills this in with actual fs.rm / credential wipe.
+ */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+const DESTRUCTIVE_HANDLERS: Partial<Record<'cache.clear' | 'credential.rotate', Handler>> = {};
+
 // ── Public API ──────────────────────────────────────────────────────────
 
 /**
  * Execute a single command and ack the result to master. Never throws
  * — handler failures become `{ status: 'failed', result: { error } }`
  * acks so the admin dashboard surfaces the reason instead of silence.
+ *
+ * Destructive commands (cache.clear, credential.rotate) take a side
+ * trip through verifyDestructiveEnvelope() before dispatch. A
+ * verification failure (bad signature, replay, missing pubkey) acks
+ * as 'skipped' with the specific reason, NOT 'failed' — the master
+ * admin sees "hey my command got rejected, here's why".
  */
 export async function executeAndAck(cmd: CommandForSlave, masterUrl: string): Promise<void> {
-  const handler = HANDLERS[cmd.commandType as CommandType];
   let outcome: HandlerOutcome;
 
+  if (isDestructive(cmd.commandType)) {
+    // Phase F.2: verify the signed envelope before touching the
+    // destructive handler. Failures record the reason so the admin
+    // dashboard can render "rejected: replay" or "rejected:
+    // invalid_signature" rather than a vague 'failed' status.
+    const verification = await verifyDestructiveEnvelope(cmd);
+    if (verification.ok !== true) {
+      const failure = verification as {
+        ok: false;
+        reason: 'invalid_signature' | 'replay' | 'malformed' | 'no_pubkey' | 'missing_envelope';
+      };
+      outcome = { status: 'skipped', result: { reason: failure.reason, commandType: cmd.commandType } };
+      await postAck(masterUrl, cmd.id, outcome);
+      return;
+    }
+
+    const destructiveHandler = DESTRUCTIVE_HANDLERS[cmd.commandType as 'cache.clear' | 'credential.rotate'];
+    if (!destructiveHandler) {
+      // Week 2 state: no destructive handlers registered yet. Acking
+      // 'skipped' with this reason is the signal Week 3 will light up
+      // a real dispatch path.
+      outcome = {
+        status: 'skipped',
+        result: { reason: 'destructive_handler_not_registered', commandType: cmd.commandType },
+      };
+    } else {
+      try {
+        // Pass the user's params MINUS the signing metadata so handlers
+        // don't have to know about the envelope.
+        const strippedParams = stripEnvelope(cmd.params ?? {});
+        outcome = await destructiveHandler(strippedParams, { masterUrl });
+      } catch (e) {
+        outcome = {
+          status: 'failed',
+          result: { error: e instanceof Error ? e.message : String(e) },
+        };
+      }
+    }
+    await postAck(masterUrl, cmd.id, outcome);
+    return;
+  }
+
+  // Non-destructive path — unchanged from Phase F.
+  const handler = HANDLERS[cmd.commandType as NonDestructiveCommandType];
   if (!handler) {
-    // Unknown command type — ack as 'skipped' so master can audit that
-    // this slave rejected it, without marking it 'failed' (which would
-    // suggest a retry makes sense).
     outcome = {
       status: 'skipped',
       result: { reason: 'unknown_command_type', commandType: cmd.commandType },
@@ -85,6 +153,49 @@ export async function executeAndAck(cmd: CommandForSlave, masterUrl: string): Pr
   }
 
   await postAck(masterUrl, cmd.id, outcome);
+}
+
+/**
+ * Load the cached master pubkey + call verifyCommand on the signed
+ * envelope in params._signedEnvelope. Ack reason codes are stable
+ * across F.2 versions so admin dashboards can localize them.
+ */
+async function verifyDestructiveEnvelope(
+  cmd: CommandForSlave
+): Promise<
+  | { ok: true }
+  | { ok: false; reason: 'no_pubkey' | 'malformed' | 'replay' | 'invalid_signature' | 'missing_envelope' }
+> {
+  const envelope = (cmd.params as Record<string, unknown>)[SIGNED_ENVELOPE_PARAM_KEY] as
+    | SignedCommand
+    | undefined;
+  if (!envelope) {
+    return { ok: false, reason: 'missing_envelope' };
+  }
+  const pubKey = await getCachedMasterCommandSigningPubKey();
+  if (!pubKey) {
+    return { ok: false, reason: 'no_pubkey' };
+  }
+  try {
+    const db = await getDatabase();
+    const result = verifyCommand(db.getDriver(), pubKey, envelope);
+    if (result.ok === true) return { ok: true };
+    // verifyCommand's failure union is the same reason codes we
+    // surface upward, minus `missing_envelope` which is our own guard.
+    const failure = result as {
+      ok: false;
+      reason: 'invalid_signature' | 'replay' | 'malformed' | 'no_pubkey';
+    };
+    return { ok: false, reason: failure.reason };
+  } catch (e) {
+    logNonCritical('fleet.command.destructive-verify', e);
+    return { ok: false, reason: 'invalid_signature' };
+  }
+}
+
+function stripEnvelope(params: Record<string, unknown>): Record<string, unknown> {
+  const { [SIGNED_ENVELOPE_PARAM_KEY]: _removed, ...rest } = params;
+  return rest;
 }
 
 /** Convenience for the heartbeat loop: dispatch the whole batch. */

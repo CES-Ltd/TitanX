@@ -13,9 +13,29 @@
  * admin re-auth + signed envelopes; the schema is already ready for
  * them, the service + UI are not.
  */
-export type CommandType =
-  | 'force_config_sync' // Trigger an immediate pollOnce() on fleetConfig/slaveSync
-  | 'force_telemetry_push'; // Trigger an immediate pushNow() on fleetTelemetry/slavePush
+/** Phase F non-destructive subset — no signed envelope required. */
+export type NonDestructiveCommandType = 'force_config_sync' | 'force_telemetry_push';
+
+/** Phase F.2 destructive subset — signed envelope + admin re-auth required. */
+export type DestructiveCommandTypeT = 'cache.clear' | 'credential.rotate';
+
+export type CommandType = NonDestructiveCommandType | DestructiveCommandTypeT;
+
+/**
+ * Subset that requires the signing + admin-re-auth gate. Helper
+ * so callers don't scatter the list; single source of truth.
+ */
+export const DESTRUCTIVE_COMMAND_TYPES: ReadonlySet<CommandType> = new Set([
+  'cache.clear',
+  'credential.rotate',
+]);
+
+export function isDestructive(t: CommandType): boolean {
+  return DESTRUCTIVE_COMMAND_TYPES.has(t);
+}
+
+/** Key under params where the signed envelope travels to the slave. */
+export const SIGNED_ENVELOPE_PARAM_KEY = '_signedEnvelope';
 
 /** Target for a command. A specific deviceId, or 'all' for fleet-wide. */
 export type CommandTarget = string;

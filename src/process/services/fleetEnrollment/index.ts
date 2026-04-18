@@ -27,6 +27,7 @@ import type { ISqliteDriver } from '../database/drivers/ISqliteDriver';
 import { logActivity } from '../activityLog';
 import { logNonCritical } from '@process/utils/logNonCritical';
 import { signDeviceJwt, verifyDeviceJwt } from './deviceJwt';
+import { getMasterSigningPublicKey } from '../fleetCommandSigning';
 import type {
   EnrollDeviceInput,
   EnrollDeviceResult,
@@ -209,7 +210,19 @@ export function enrollDevice(db: ISqliteDriver, input: EnrollDeviceInput): Enrol
     },
   });
 
-  return { ok: true, deviceId, deviceJwt, jwtExpiresAt };
+  // Phase F.2: ship master's Ed25519 command-signing pubkey to the
+  // slave. Lazy-loads (mints on first enrollment after install).
+  // Errors are swallowed so a signing-key-service hiccup doesn't
+  // block enrollment — the slave will simply refuse destructive
+  // commands until its next re-enrollment catches the key.
+  let masterCommandSigningPubKey: string | undefined;
+  try {
+    masterCommandSigningPubKey = getMasterSigningPublicKey(db);
+  } catch (e) {
+    logNonCritical('fleet.enrollment.signing-pubkey', e);
+  }
+
+  return { ok: true, deviceId, deviceJwt, jwtExpiresAt, masterCommandSigningPubKey };
 }
 
 // ── Roster + heartbeat ──────────────────────────────────────────────────

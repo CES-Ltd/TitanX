@@ -65,6 +65,15 @@ export type EnrollDeviceSuccess = {
   deviceJwt: string;
   /** Epoch ms — when the slave should start trying to refresh. */
   jwtExpiresAt: number;
+  /**
+   * Phase F.2: master's Ed25519 public key in PEM, used by the slave
+   * to verify signed destructive commands (cache.clear,
+   * credential.rotate). Slaves store this encrypted alongside the
+   * device JWT. Optional on wire so pre-F.2 masters remain
+   * compatible — a slave receiving an undefined pubkey simply
+   * refuses every destructive command with reason='no_pubkey'.
+   */
+  masterCommandSigningPubKey?: string;
 };
 
 /** Failure result from enrollDevice() with a human-readable reason. */

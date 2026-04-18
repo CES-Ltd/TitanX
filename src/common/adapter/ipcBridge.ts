@@ -890,7 +890,7 @@ export const fleet = {
     { ok: true; commandId: string } | { ok: false; error: string; code?: 'per_device' | 'fleet_wide' },
     {
       targetDeviceId: string; // deviceId or 'all'
-      commandType: 'force_config_sync' | 'force_telemetry_push';
+      commandType: 'force_config_sync' | 'force_telemetry_push' | 'cache.clear' | 'credential.rotate';
       ttlSeconds?: number;
     }
   >('fleet:enqueue-command'),
@@ -900,7 +900,7 @@ export const fleet = {
       commands: Array<{
         id: string;
         targetDeviceId: string;
-        commandType: 'force_config_sync' | 'force_telemetry_push';
+        commandType: 'force_config_sync' | 'force_telemetry_push' | 'cache.clear' | 'credential.rotate';
         params: Record<string, unknown>;
         createdAt: number;
         createdBy: string;

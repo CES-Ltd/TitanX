@@ -134,6 +134,14 @@ export interface IConfigStorageRefer {
   // at rest with the same secrets-vault key. Presented as a Bearer token
   // on every heartbeat. Unset = not enrolled. Clearing = forced re-enroll.
   'fleet.slave.deviceJwtCiphertext'?: string;
+  // Slave-mode (Phase F.2): master's Ed25519 command-signing pubkey PEM,
+  // received in enrollment response, encrypted at rest via the secrets
+  // vault. The pubkey is not itself sensitive — encryption protects
+  // integrity (AES-GCM auth tag catches tamper) so silent bit-flips
+  // don't break signature verify invisibly. Unset = pre-F.2 master
+  // that never sent one; slave rejects every destructive command
+  // with reason='no_pubkey'.
+  'fleet.slave.masterCommandSigningPubKeyCiphertext'?: string;
   // Slave-mode: enrollment lifecycle. Phase A: always 'pending' after wizard.
   'fleet.slave.enrollmentStatus'?: 'pending' | 'enrolled' | 'revoked';
   // Telegram assistant default model / Telegram 助手默认模型

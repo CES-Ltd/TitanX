@@ -28,14 +28,21 @@ import crypto from 'crypto';
 import type { ISqliteDriver } from '../database/drivers/ISqliteDriver';
 import { logActivity } from '../activityLog';
 import { logNonCritical } from '@process/utils/logNonCritical';
+import { signCommand } from '../fleetCommandSigning';
+import { verifyAdminPassword } from '../fleetCommandSigning/adminReauth';
+import type { DestructiveCommandType } from '../fleetCommandSigning/types';
 import {
   DEFAULT_COMMAND_TTL_SECONDS,
+  DESTRUCTIVE_COMMAND_TYPES,
   MAX_COMMANDS_PER_HOUR_FLEET_WIDE,
   MAX_PENDING_COMMANDS_PER_DEVICE,
+  SIGNED_ENVELOPE_PARAM_KEY,
+  isDestructive,
   type AckStatus,
   type CommandAck,
   type CommandForSlave,
   type CommandRecord,
+  type CommandType,
   type CommandWithAcks,
   type EnqueueCommandInput,
 } from './types';
@@ -80,12 +87,22 @@ export class FleetCommandRateLimitError extends Error {
 }
 
 /**
- * Enqueue a command. Returns the persisted record. Rate-limited on two
- * axes — per-target-device (at most 10 pending) and fleet-wide
- * (at most 100 per rolling hour) — to keep a runaway admin script or
- * UI bug from flooding slaves.
+ * Enqueue a NON-destructive command. Guard-rails:
+ *   - Rate-limited per-device (10 pending) + fleet-wide (100/hour)
+ *   - Rejects destructive types with an exception — those must go
+ *     through `enqueueDestructiveCommand` instead
+ *
+ * Returns the persisted record. Caller is expected to pass a validated
+ * CommandType; TypeScript's union narrowing handles the non-destructive
+ * vs destructive branch at the type level too.
  */
 export function enqueueCommand(db: ISqliteDriver, input: EnqueueCommandInput): CommandRecord {
+  if (isDestructive(input.commandType)) {
+    throw new Error(
+      `Command type ${input.commandType} is destructive and must be enqueued via enqueueDestructiveCommand`
+    );
+  }
+
   enforceRateLimits(db, input.targetDeviceId);
 
   const id = crypto.randomUUID();
@@ -127,6 +144,134 @@ export function enqueueCommand(db: ISqliteDriver, input: EnqueueCommandInput): C
     createdBy: input.createdBy,
     expiresAt,
   };
+}
+
+// ── Phase F.2: destructive enqueue with signing + re-auth ───────────────
+
+/**
+ * Result of attempting to enqueue a destructive command. Discriminated
+ * union so the IPC boundary can map each failure to a specific toast
+ * (wrong password vs rate-limited vs whatever).
+ */
+export type DestructiveEnqueueResult =
+  | { ok: true; commandId: string }
+  | {
+      ok: false;
+      error: string;
+      code:
+        | 'rate_limited' // admin re-auth throttle kicked in
+        | 'unknown_user'
+        | 'wrong_password'
+        | 'per_device' // command-level rate limit
+        | 'fleet_wide'
+        | 'error';
+    };
+
+/**
+ * Destructive enqueue path. Gated on two independent controls:
+ *
+ *   1. Admin re-auth (fleetCommandSigning/adminReauth) — proves the
+ *      human at the keyboard is the admin, not just someone sitting
+ *      at an unlocked session
+ *   2. Ed25519 signature (fleetCommandSigning.signCommand) — proves
+ *      the envelope was minted by THIS master, not spoofed by a MITM
+ *
+ * Both must pass. Either failing aborts without touching
+ * fleet_commands (zero state leakage from the gate).
+ *
+ * The signed envelope is stored inside `params._signedEnvelope`
+ * rather than a new column — the bundle-apply + heartbeat-piggyback
+ * wire shapes already ship `params` intact, so this threads through
+ * existing transport without a schema change.
+ */
+export async function enqueueDestructiveCommand(
+  db: ISqliteDriver,
+  input: {
+    targetDeviceId: string;
+    commandType: DestructiveCommandType;
+    params?: Record<string, unknown>;
+    ttlSeconds?: number;
+    createdBy: string;
+    /** Admin's cleartext password for re-auth. Never persisted. */
+    confirmPassword: string;
+  }
+): Promise<DestructiveEnqueueResult> {
+  // 1. Admin re-auth gate — runs BEFORE any DB mutation, so a wrong
+  //    password leaves zero residue in fleet_commands or activity_log.
+  const reauth = await verifyAdminPassword(db, input.createdBy, input.confirmPassword);
+  if (reauth.ok !== true) {
+    // Pull `reason` from the failure arm via an explicit non-success cast —
+    // TS's narrowing on `!reauth.ok` across await boundaries is flaky.
+    const failure = reauth as { ok: false; reason: 'rate_limited' | 'unknown_user' | 'wrong_password' | 'error' };
+    return { ok: false, error: `admin re-auth failed: ${failure.reason}`, code: failure.reason };
+  }
+
+  // 2. Command-level rate limits (same as non-destructive path).
+  try {
+    enforceRateLimits(db, input.targetDeviceId);
+  } catch (e) {
+    if (e instanceof FleetCommandRateLimitError) {
+      return { ok: false, error: e.message, code: e.code };
+    }
+    return { ok: false, error: e instanceof Error ? e.message : String(e), code: 'error' };
+  }
+
+  // 3. Sign + persist. UUID generated first so we can embed it in the
+  //    signed body — same id travels through signature + DB row + ack.
+  const id = crypto.randomUUID();
+  const userParams = input.params ?? {};
+  const signed = signCommand(db, {
+    commandId: id,
+    commandType: input.commandType,
+    params: userParams,
+    targetDeviceId: input.targetDeviceId,
+  });
+
+  // Store envelope alongside user params — slave's executor extracts
+  // `_signedEnvelope`, verifies it, then hands the handler the rest.
+  const paramsWithEnvelope: Record<string, unknown> = {
+    ...userParams,
+    [SIGNED_ENVELOPE_PARAM_KEY]: signed,
+  };
+
+  const now = Date.now();
+  const ttlSeconds = input.ttlSeconds ?? DEFAULT_COMMAND_TTL_SECONDS;
+  const expiresAt = now + ttlSeconds * 1000;
+
+  db.prepare(
+    `INSERT INTO fleet_commands
+     (id, target_device_id, command_type, params, created_at, created_by, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    id,
+    input.targetDeviceId,
+    input.commandType,
+    JSON.stringify(paramsWithEnvelope),
+    now,
+    input.createdBy,
+    expiresAt
+  );
+
+  try {
+    logActivity(db, {
+      userId: 'system_default_user',
+      actorType: 'user',
+      actorId: input.createdBy,
+      action: 'fleet.command.destructive_enqueued',
+      entityType: 'fleet_command',
+      entityId: id,
+      details: {
+        commandType: input.commandType,
+        targetDeviceId: input.targetDeviceId,
+        ttlSeconds,
+        nonce: signed.nonce,
+      },
+    });
+  } catch (e) {
+    logNonCritical('fleet.command.audit-destructive-enqueue', e);
+  }
+
+  return { ok: true, commandId: id };
 }
 
 function enforceRateLimits(db: ISqliteDriver, targetDeviceId: string): void {

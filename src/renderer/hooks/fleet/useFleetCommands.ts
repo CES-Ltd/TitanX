@@ -13,7 +13,11 @@ import { ipcBridge } from '@/common';
 
 const REFRESH_INTERVAL_MS = 30_000;
 
-export type FleetCommandType = 'force_config_sync' | 'force_telemetry_push';
+export type FleetCommandType =
+  | 'force_config_sync'
+  | 'force_telemetry_push'
+  | 'cache.clear'
+  | 'credential.rotate';
 export type AckStatus = 'succeeded' | 'failed' | 'skipped';
 
 export type FleetCommandRow = {
