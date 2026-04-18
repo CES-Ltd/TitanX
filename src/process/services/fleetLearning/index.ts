@@ -395,6 +395,72 @@ export function ingestLearningEnvelope(
 // ── Master-side: consolidated learnings accessor ────────────────────────
 
 /**
+ * Phase C v1.11.2 — per-pattern drill-down.
+ *
+ * For a given (trajectoryHash, consolidatedVersion) pair, return the
+ * slave devices that contributed to the consolidation + their
+ * success-score and usage-count on the slave side. Powers the
+ * FleetLearning governance tab's "view contributors" modal: the
+ * admin clicks a consolidated pattern and sees which devices actually
+ * learned it.
+ *
+ * Filter happens in JS after the SQL narrow because `trajectoryHash`
+ * lives inside the `payload` JSON blob — indexing it would mean
+ * either a generated column or a separate hash table, both
+ * disproportionate to the query's low frequency (single-digit calls
+ * per admin session).
+ */
+export function listPatternContributors(
+  db: ISqliteDriver,
+  trajectoryHash: string,
+  consolidatedVersion: number
+): Array<{
+  deviceId: string;
+  successScore: number;
+  usageCountLocal: number;
+  receivedAt: number;
+}> {
+  const rows = db
+    .prepare(
+      `SELECT device_id, payload, success_score, usage_count_local, received_at
+       FROM fleet_learnings
+       WHERE consolidated_version = ? AND learning_type = 'trajectory'
+       ORDER BY received_at DESC`
+    )
+    .all(consolidatedVersion) as Array<{
+    device_id: string;
+    payload: string;
+    success_score: number | null;
+    usage_count_local: number | null;
+    received_at: number;
+  }>;
+
+  const out: Array<{
+    deviceId: string;
+    successScore: number;
+    usageCountLocal: number;
+    receivedAt: number;
+  }> = [];
+
+  for (const row of rows) {
+    let payload: { trajectoryHash?: string };
+    try {
+      payload = JSON.parse(row.payload) as typeof payload;
+    } catch {
+      continue;
+    }
+    if (payload.trajectoryHash !== trajectoryHash) continue;
+    out.push({
+      deviceId: row.device_id,
+      successScore: row.success_score ?? 0,
+      usageCountLocal: row.usage_count_local ?? 0,
+      receivedAt: row.received_at,
+    });
+  }
+  return out;
+}
+
+/**
  * Read the latest published consolidated-learnings payload. Travels
  * in the next fleet config bundle so every slave that polls after a
  * dream pass sees the new version.

@@ -371,8 +371,27 @@ export function initFleetBridge(): void {
     };
   });
 
-  ipcBridge.fleet.runDreamNow.provider(async () => {
+  ipcBridge.fleet.runDreamNow.provider(async ({ adminPassword }) => {
+    // v1.11.2: admin re-auth gate. Dream pass touches every pending
+    // fleet_learnings row AND runs LLM calls that cost money — we
+    // don't want a stolen session cookie + unlocked laptop to be
+    // enough to trigger it. Password verify reuses the same bcrypt
+    // + rate-limit infra the destructive-command path already uses.
+    if (typeof adminPassword !== 'string' || adminPassword.length === 0) {
+      return { ok: false, error: 'admin password required', code: 'wrong_password' };
+    }
     try {
+      const db = await getDatabase();
+      const { verifyAdminPassword } = await import('@process/services/fleetCommandSigning/adminReauth');
+      const reauth = await verifyAdminPassword(db.getDriver(), 'system_default_user', adminPassword);
+      if (reauth.ok !== true) {
+        const failure = reauth as {
+          ok: false;
+          reason: 'rate_limited' | 'unknown_user' | 'wrong_password' | 'error';
+        };
+        return { ok: false, error: `re-auth failed: ${failure.reason}`, code: failure.reason };
+      }
+
       const { runDreamNow } = await import('@process/services/fleetLearning/dreamScheduler');
       const result = await runDreamNow();
       return {
@@ -383,8 +402,15 @@ export function initFleetBridge(): void {
         elapsedMs: result.elapsedMs,
       };
     } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      return { ok: false, error: e instanceof Error ? e.message : String(e), code: 'error' };
     }
+  });
+
+  ipcBridge.fleet.listPatternContributors.provider(async ({ trajectoryHash, consolidatedVersion }) => {
+    const { listPatternContributors } = await import('@process/services/fleetLearning');
+    const db = await getDatabase();
+    const contributors = listPatternContributors(db.getDriver(), trajectoryHash, consolidatedVersion);
+    return { contributors };
   });
 
   ipcBridge.fleet.getLearningPushStatus.provider(async () => {

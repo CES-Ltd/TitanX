@@ -18,6 +18,7 @@ import {
   buildLearningEnvelope,
   getLatestConsolidated,
   ingestLearningEnvelope,
+  listPatternContributors,
   markEnvelopePushed,
 } from '@process/services/fleetLearning';
 
@@ -282,6 +283,155 @@ describeOrSkip('ingestLearningEnvelope', () => {
 });
 
 // ── getLatestConsolidated ──────────────────────────────────────────────
+
+// ── End-to-end redaction validator (v1.11.2) ───────────────────────────
+
+describeOrSkip('buildLearningEnvelope — end-to-end redaction validator', () => {
+  let db: ISqliteDriver;
+  beforeEach(() => {
+    db = setupDb();
+  });
+  afterEach(() => {
+    (db as BetterSqlite3Driver).close();
+  });
+
+  it('scrubs secrets embedded in trajectory step results (not just task_description)', () => {
+    // Seed a trajectory whose STEP RESULT contains a secret — this
+    // simulates an agent whose tool output accidentally echoed a key.
+    // If the redactor only ran on task_description, this leak would
+    // reach master uncaught.
+    const secretInStep = 'Found API key: sk-abcdef0123456789abcdef0123456789';
+    db.prepare(
+      `INSERT INTO reasoning_bank
+       (id, trajectory_hash, task_description, trajectory, success_score, usage_count, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      't1',
+      'hash-A',
+      'safe task description',
+      JSON.stringify([
+        { toolName: 'http.get', args: { url: 'https://safe.example.com' }, result: secretInStep, durationMs: 42 },
+      ]),
+      0.9,
+      5,
+      Date.now(),
+      Date.now()
+    );
+
+    const env = buildLearningEnvelope(db, 0, Date.now() + 1000);
+    expect(env).not.toBeNull();
+    const trajectoryJson = env!.trajectories[0]!.trajectoryJson;
+
+    // The key should be gone from the serialized payload.
+    expect(trajectoryJson).not.toContain('sk-abcdef');
+    expect(trajectoryJson).toContain('***REDACTED***');
+  });
+
+  it('scrubs email addresses in tool args (PII minimization)', () => {
+    db.prepare(
+      `INSERT INTO reasoning_bank
+       (id, trajectory_hash, task_description, trajectory, success_score, usage_count, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      't1',
+      'hash-A',
+      'send reminder',
+      JSON.stringify([{ toolName: 'mail.send', args: { to: 'alice@example.com' }, result: 'sent', durationMs: 50 }]),
+      0.9,
+      1,
+      Date.now(),
+      Date.now()
+    );
+
+    const env = buildLearningEnvelope(db, 0, Date.now() + 1000);
+    const trajectoryJson = env!.trajectories[0]!.trajectoryJson;
+    expect(trajectoryJson).not.toContain('alice@example.com');
+    expect(trajectoryJson).toContain('***REDACTED***');
+  });
+
+  it('preserves non-sensitive trajectory content unchanged', () => {
+    db.prepare(
+      `INSERT INTO reasoning_bank
+       (id, trajectory_hash, task_description, trajectory, success_score, usage_count, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      't1',
+      'hash-A',
+      'format a JSON document',
+      JSON.stringify([{ toolName: 'json.format', args: { indent: 2 }, result: '{"ok": true}', durationMs: 5 }]),
+      0.95,
+      3,
+      Date.now(),
+      Date.now()
+    );
+
+    const env = buildLearningEnvelope(db, 0, Date.now() + 1000);
+    const trajectoryJson = env!.trajectories[0]!.trajectoryJson;
+    expect(trajectoryJson).toContain('json.format');
+    expect(trajectoryJson).not.toContain('***REDACTED***');
+  });
+});
+
+// ── Drill-down contributors (v1.11.2) ──────────────────────────────────
+
+describeOrSkip('listPatternContributors', () => {
+  let db: ISqliteDriver;
+  beforeEach(() => {
+    db = setupDb();
+  });
+  afterEach(() => {
+    (db as BetterSqlite3Driver).close();
+  });
+
+  function seedFleetLearning(
+    id: string,
+    deviceId: string,
+    trajectoryHash: string,
+    score: number,
+    usage: number,
+    consolidatedVersion: number | null = null
+  ): void {
+    db.prepare(
+      `INSERT INTO fleet_learnings
+       (id, device_id, learning_type, payload, success_score, usage_count_local, received_at, consolidated_version)
+       VALUES (?, ?, 'trajectory', ?, ?, ?, ?, ?)`
+    ).run(
+      id,
+      deviceId,
+      JSON.stringify({ trajectoryHash, taskDescription: 'x', trajectoryJson: '[]' }),
+      score,
+      usage,
+      Date.now(),
+      consolidatedVersion
+    );
+  }
+
+  it('returns the slaves that contributed to a given consolidated pattern', () => {
+    seedFleetLearning('f1', 'dev-a', 'hash-A', 0.8, 3, 1);
+    seedFleetLearning('f2', 'dev-b', 'hash-A', 0.9, 5, 1);
+    seedFleetLearning('f3', 'dev-c', 'hash-B', 0.7, 2, 1); // different pattern
+    seedFleetLearning('f4', 'dev-a', 'hash-A', 0.8, 3, 2); // different version
+
+    const contributors = listPatternContributors(db, 'hash-A', 1);
+    expect(contributors).toHaveLength(2);
+    const deviceIds = contributors.map((c) => c.deviceId).toSorted();
+    expect(deviceIds).toEqual(['dev-a', 'dev-b']);
+  });
+
+  it('returns empty when no contributors match', () => {
+    seedFleetLearning('f1', 'dev-a', 'hash-A', 0.8, 3, 1);
+    expect(listPatternContributors(db, 'non-existent-hash', 1)).toEqual([]);
+    expect(listPatternContributors(db, 'hash-A', 999)).toEqual([]);
+  });
+
+  it('carries per-device score + usage into the response', () => {
+    seedFleetLearning('f1', 'dev-a', 'hash-A', 0.75, 4, 1);
+    const contributors = listPatternContributors(db, 'hash-A', 1);
+    expect(contributors).toHaveLength(1);
+    expect(contributors[0]!.successScore).toBe(0.75);
+    expect(contributors[0]!.usageCountLocal).toBe(4);
+  });
+});
 
 describeOrSkip('getLatestConsolidated', () => {
   let db: ISqliteDriver;

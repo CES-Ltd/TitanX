@@ -150,7 +150,27 @@
       "task": "Task pattern",
       "devices": "Devices",
       "usage": "Usage",
-      "score": "Score"
+      "score": "Score",
+      "contributors": "Contributors"
+    },
+    "contributors": {
+      "title": "Pattern contributors",
+      "pattern": "Pattern",
+      "device": "Device",
+      "localUsage": "Local usage",
+      "localScore": "Local score",
+      "received": "Received",
+      "empty": "No contributor rows match this pattern (may have been pruned)."
+    },
+    "reauth": {
+      "title": "Authorize dream pass",
+      "body": "Dream pass touches every unprocessed slave learning AND runs LLM calls that cost money. Confirm your admin password to proceed.",
+      "passwordLabel": "Admin password",
+      "passwordRequired": "Enter your admin password",
+      "wrongPassword": "Incorrect password.",
+      "rateLimited": "Too many failed attempts. Wait 5 minutes before retrying.",
+      "cancel": "Cancel",
+      "confirm": "Run dream"
     }
   }
 }
