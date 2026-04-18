@@ -271,7 +271,11 @@ const createWindow = ({ showOnReady = true }: { showOnReady?: boolean } = {}): v
       webSecurity: true, // enforce same-origin policy
       allowRunningInsecureContent: false,
       webviewTag: true, // required for HTML preview; see WebviewHost for validation
-    },
+      // Explicit audit-safe posture: modern Electron (>=14) defaults to false,
+      // but setting it here makes the security review unambiguous and future-proofs
+      // against an Electron downgrade ever flipping the default.
+      enableRemoteModule: false,
+    } as Electron.WebPreferences & { enableRemoteModule?: boolean },
   });
   console.log(`[AionUi] Main window created (id=${mainWindow.id})`);
 
