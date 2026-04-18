@@ -385,4 +385,62 @@ describe('Database migrations', () => {
       expect(() => v63!.down(driver)).not.toThrow();
     });
   });
+
+  describe('migration v64 — fleet_telemetry_reports (master)', () => {
+    const v64 = ALL_MIGRATIONS.find((m) => m.version === 64);
+
+    it('creates fleet_telemetry_reports with composite PK on (device_id, window_end)', () => {
+      expect(v64).toBeDefined();
+      const { driver, captured } = makeRecordingDriver();
+      v64!.up(driver);
+      const joined = captured.execs.join('\n');
+      expect(joined).toContain('CREATE TABLE IF NOT EXISTS fleet_telemetry_reports');
+      expect(joined).toContain('PRIMARY KEY (device_id, window_end)');
+    });
+
+    it('creates both query indexes — per-device and fleet-wide', () => {
+      const { driver, captured } = makeRecordingDriver();
+      v64!.up(driver);
+      const joined = captured.execs.join('\n');
+      expect(joined).toContain('idx_fleet_telemetry_reports_device');
+      expect(joined).toContain('idx_fleet_telemetry_reports_window');
+    });
+
+    it('down() drops table + indexes without throwing', () => {
+      const { driver, captured } = makeRecordingDriver();
+      v64!.down(driver);
+      const joined = captured.execs.join('\n');
+      expect(joined).toContain('DROP TABLE IF EXISTS fleet_telemetry_reports');
+      expect(joined).toContain('DROP INDEX IF EXISTS idx_fleet_telemetry_reports_device');
+      expect(joined).toContain('DROP INDEX IF EXISTS idx_fleet_telemetry_reports_window');
+    });
+  });
+
+  describe('migration v65 — fleet_telemetry_state singleton (slave)', () => {
+    const v65 = ALL_MIGRATIONS.find((m) => m.version === 65);
+
+    it('creates fleet_telemetry_state with CHECK (id = 1) singleton guard', () => {
+      expect(v65).toBeDefined();
+      const { driver, captured } = makeRecordingDriver();
+      v65!.up(driver);
+      const joined = captured.execs.join('\n');
+      expect(joined).toContain('CREATE TABLE IF NOT EXISTS fleet_telemetry_state');
+      expect(joined).toContain('CHECK (id = 1)');
+    });
+
+    it('seeds the singleton row with last_report_window_end = 0', () => {
+      const { driver, captured } = makeRecordingDriver();
+      v65!.up(driver);
+      // The seed goes through `prepare(...).run(...)`, so check captured prepares
+      const joined = captured.prepares.join('\n');
+      expect(joined).toContain('INSERT OR IGNORE INTO fleet_telemetry_state');
+      expect(joined).toContain('VALUES (1, 0, ?)');
+    });
+
+    it('down() drops the table without throwing', () => {
+      const { driver, captured } = makeRecordingDriver();
+      v65!.down(driver);
+      expect(captured.execs.join('\n')).toContain('DROP TABLE IF EXISTS fleet_telemetry_state');
+    });
+  });
 });

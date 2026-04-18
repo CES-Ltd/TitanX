@@ -2516,6 +2516,76 @@ const migration_v63: IMigration = {
   },
 };
 
+// ────────────────────────────────────────────────────────────────────────
+// Phase D Week 1 — Fleet telemetry aggregation (v1.9.32)
+// ────────────────────────────────────────────────────────────────────────
+
+/**
+ * Master-side table holding reports pushed by slaves. One row per
+ * (device, report window). Idempotent upsert keyed on those two columns
+ * lets slaves safely retry a push without double-counting.
+ *
+ * `report_payload` holds the full JSON for future fields we haven't
+ * promoted to top-level columns yet — forward-compat for richer dashboards.
+ */
+const migration_v64: IMigration = {
+  version: 64,
+  name: 'Create fleet_telemetry_reports for Phase D telemetry aggregation',
+  up(db: ISqliteDriver) {
+    db.exec(`CREATE TABLE IF NOT EXISTS fleet_telemetry_reports (
+      device_id TEXT NOT NULL,
+      window_start INTEGER NOT NULL,
+      window_end INTEGER NOT NULL,
+      total_cost_cents INTEGER NOT NULL DEFAULT 0,
+      activity_count INTEGER NOT NULL DEFAULT 0,
+      tool_call_count INTEGER NOT NULL DEFAULT 0,
+      policy_violation_count INTEGER NOT NULL DEFAULT 0,
+      agent_count INTEGER NOT NULL DEFAULT 0,
+      report_payload TEXT NOT NULL DEFAULT '{}',
+      received_at INTEGER NOT NULL,
+      PRIMARY KEY (device_id, window_end)
+    )`);
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_fleet_telemetry_reports_device ON fleet_telemetry_reports(device_id, window_end DESC)'
+    );
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_fleet_telemetry_reports_window ON fleet_telemetry_reports(window_end DESC)'
+    );
+    console.log('[Migration-v64] Created fleet_telemetry_reports');
+  },
+  down(db: ISqliteDriver) {
+    db.exec('DROP INDEX IF EXISTS idx_fleet_telemetry_reports_window');
+    db.exec('DROP INDEX IF EXISTS idx_fleet_telemetry_reports_device');
+    db.exec('DROP TABLE IF EXISTS fleet_telemetry_reports');
+  },
+};
+
+/**
+ * Slave-side singleton tracking the last report window successfully
+ * acked by master. Used by the push loop to pick the next `since`
+ * boundary without reporting overlapping windows.
+ */
+const migration_v65: IMigration = {
+  version: 65,
+  name: 'Create fleet_telemetry_state (slave singleton) for Phase D',
+  up(db: ISqliteDriver) {
+    db.exec(`CREATE TABLE IF NOT EXISTS fleet_telemetry_state (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      last_report_window_end INTEGER NOT NULL DEFAULT 0,
+      last_push_at INTEGER,
+      last_push_error TEXT,
+      updated_at INTEGER NOT NULL
+    )`);
+    db.prepare(
+      'INSERT OR IGNORE INTO fleet_telemetry_state (id, last_report_window_end, updated_at) VALUES (1, 0, ?)'
+    ).run(Date.now());
+    console.log('[Migration-v65] Created fleet_telemetry_state singleton');
+  },
+  down(db: ISqliteDriver) {
+    db.exec('DROP TABLE IF EXISTS fleet_telemetry_state');
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -2529,7 +2599,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v40, migration_v41, migration_v42, migration_v43, migration_v44,
   migration_v45, migration_v46, migration_v47, migration_v48, migration_v49, migration_v50, migration_v51, migration_v52, migration_v53,
   migration_v54, migration_v55, migration_v56, migration_v57, migration_v58, migration_v59,
-  migration_v60, migration_v61, migration_v62, migration_v63,
+  migration_v60, migration_v61, migration_v62, migration_v63, migration_v64, migration_v65,
 ];
 
 /**

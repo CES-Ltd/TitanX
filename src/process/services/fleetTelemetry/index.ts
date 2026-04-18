@@ -1,0 +1,345 @@
+/**
+ * @license Apache-2.0
+ * Fleet telemetry aggregation service (Phase D Week 1).
+ *
+ * Two symmetric roles, mirror of fleetConfig:
+ *   - Slave: `buildTelemetryReport(db, since)` aggregates local
+ *     activity_log + cost_events + agent_gallery into a compact JSON
+ *     report. `getTelemetryState` / `setTelemetryState` persist the
+ *     push-loop cursor so windows don't overlap across restarts.
+ *   - Master: `ingestTelemetryReport(db, deviceId, report)` upserts a
+ *     row keyed on (device_id, window_end) — idempotent so a slave can
+ *     retry a push without double-counting. Query helpers
+ *     (`getFleetCostSummary`, `getDeviceTelemetry`) feed the admin
+ *     dashboard shipping in Week 3.
+ *
+ * Sizing: one report is ~200–500 bytes post-JSON; 1,000 slaves pushing
+ * every 6 hours is ~100 KB/push × 4 pushes/day ≈ 400 KB/day of master
+ * ingest. Cheap at any reasonable fleet size.
+ */
+
+import type { ISqliteDriver } from '../database/drivers/ISqliteDriver';
+import { logNonCritical } from '@process/utils/logNonCritical';
+import type {
+  FleetCostSummary,
+  IngestResult,
+  StoredTelemetryReport,
+  TelemetryReport,
+  TelemetryState,
+} from './types';
+
+const TOP_ACTIONS_LIMIT = 5;
+const DEFAULT_TOP_DEVICES_LIMIT = 10;
+
+// ── Slave: build report ─────────────────────────────────────────────────
+
+/**
+ * Aggregate the slave's local tables into a telemetry report covering
+ * the window [since, until). If `until` is omitted, defaults to now().
+ *
+ * Reads are best-effort: if any source table is missing (e.g. on a very
+ * fresh install before some seed data lands) the missing field defaults
+ * to 0 instead of crashing the push.
+ */
+export function buildTelemetryReport(
+  db: ISqliteDriver,
+  since: number,
+  until: number = Date.now()
+): TelemetryReport {
+  const windowStart = Math.max(0, since);
+  const windowEnd = Math.max(windowStart, until);
+
+  const totalCostCents = safeCount(db, () => {
+    const row = db
+      .prepare('SELECT COALESCE(SUM(cost_cents), 0) as total FROM cost_events WHERE occurred_at >= ? AND occurred_at < ?')
+      .get(windowStart, windowEnd) as { total: number } | undefined;
+    return row?.total ?? 0;
+  });
+
+  const activityCount = safeCount(db, () => {
+    const row = db
+      .prepare('SELECT COUNT(*) as c FROM activity_log WHERE created_at >= ? AND created_at < ?')
+      .get(windowStart, windowEnd) as { c: number } | undefined;
+    return row?.c ?? 0;
+  });
+
+  const toolCallCount = safeCount(db, () => {
+    const row = db
+      .prepare('SELECT COUNT(*) as c FROM cost_events WHERE occurred_at >= ? AND occurred_at < ?')
+      .get(windowStart, windowEnd) as { c: number } | undefined;
+    return row?.c ?? 0;
+  });
+
+  const policyViolationCount = safeCount(db, () => {
+    const row = db
+      .prepare(
+        "SELECT COUNT(*) as c FROM activity_log WHERE action = 'policy.denied' AND created_at >= ? AND created_at < ?"
+      )
+      .get(windowStart, windowEnd) as { c: number } | undefined;
+    return row?.c ?? 0;
+  });
+
+  const agentCount = safeCount(db, () => {
+    const row = db.prepare('SELECT COUNT(*) as c FROM agent_gallery WHERE whitelisted = 1').get() as
+      | { c: number }
+      | undefined;
+    return row?.c ?? 0;
+  });
+
+  const topActions = safeTopActions(db, windowStart, windowEnd);
+
+  return {
+    windowStart,
+    windowEnd,
+    totalCostCents,
+    activityCount,
+    toolCallCount,
+    policyViolationCount,
+    agentCount,
+    topActions,
+  };
+}
+
+function safeCount(db: ISqliteDriver, fn: () => number): number {
+  try {
+    return fn();
+  } catch (e) {
+    logNonCritical('fleet.telemetry.count-query', e);
+    return 0;
+  }
+}
+
+function safeTopActions(
+  db: ISqliteDriver,
+  windowStart: number,
+  windowEnd: number
+): Array<{ action: string; count: number }> {
+  try {
+    const rows = db
+      .prepare(
+        `SELECT action, COUNT(*) as c
+         FROM activity_log
+         WHERE created_at >= ? AND created_at < ?
+         GROUP BY action
+         ORDER BY c DESC
+         LIMIT ${String(TOP_ACTIONS_LIMIT)}`
+      )
+      .all(windowStart, windowEnd) as Array<{ action: string; c: number }>;
+    return rows.map((r) => ({ action: r.action, count: r.c }));
+  } catch (e) {
+    logNonCritical('fleet.telemetry.top-actions-query', e);
+    return [];
+  }
+}
+
+// ── Slave: state singleton ──────────────────────────────────────────────
+
+/** Current slave-side telemetry cursor. Never throws — defaults on any error. */
+export function getTelemetryState(db: ISqliteDriver): TelemetryState {
+  try {
+    const row = db
+      .prepare('SELECT last_report_window_end, last_push_at, last_push_error FROM fleet_telemetry_state WHERE id = 1')
+      .get() as { last_report_window_end: number; last_push_at: number | null; last_push_error: string | null } | undefined;
+    if (!row) {
+      return { lastReportWindowEnd: 0 };
+    }
+    return {
+      lastReportWindowEnd: row.last_report_window_end,
+      lastPushAt: row.last_push_at ?? undefined,
+      lastPushError: row.last_push_error ?? undefined,
+    };
+  } catch (e) {
+    logNonCritical('fleet.telemetry.state-read', e);
+    return { lastReportWindowEnd: 0 };
+  }
+}
+
+/**
+ * Persist slave-side cursor + push metadata. Called after a successful
+ * master ack (advances lastReportWindowEnd) or after a failure (records
+ * lastPushError but leaves lastReportWindowEnd untouched so the next
+ * push re-tries the same window).
+ */
+export function setTelemetryState(
+  db: ISqliteDriver,
+  patch: Partial<TelemetryState> & { updatedAt?: number }
+): void {
+  const now = patch.updatedAt ?? Date.now();
+  // INSERT OR REPLACE keeps the singleton at id=1 regardless of prior state.
+  const existing = getTelemetryState(db);
+  const next: TelemetryState = {
+    lastReportWindowEnd: patch.lastReportWindowEnd ?? existing.lastReportWindowEnd,
+    lastPushAt: patch.lastPushAt ?? existing.lastPushAt,
+    lastPushError: patch.lastPushError ?? existing.lastPushError,
+  };
+  try {
+    db.prepare(
+      `INSERT OR REPLACE INTO fleet_telemetry_state
+       (id, last_report_window_end, last_push_at, last_push_error, updated_at)
+       VALUES (1, ?, ?, ?, ?)`
+    ).run(next.lastReportWindowEnd, next.lastPushAt ?? null, next.lastPushError ?? null, now);
+  } catch (e) {
+    logNonCritical('fleet.telemetry.state-write', e);
+  }
+}
+
+// ── Master: ingest ──────────────────────────────────────────────────────
+
+/**
+ * Persist a report pushed by a slave. Upsert on (device_id, window_end)
+ * makes replays harmless — a slave retrying a push gets the same row
+ * updated, not duplicated.
+ *
+ * Rejects nonsensical windows (end <= start, future windows too far out).
+ * Returns `nextWindowStart = report.windowEnd` so slaves can advance
+ * their cursor atomically on the response.
+ */
+export function ingestTelemetryReport(
+  db: ISqliteDriver,
+  deviceId: string,
+  report: TelemetryReport
+): IngestResult {
+  if (report.windowEnd <= report.windowStart) {
+    throw new Error('invalid telemetry window: end must be > start');
+  }
+  // Guard against clock skew pushing a window way into the future.
+  // 1 hour grace is enough for reasonable NTP drift.
+  const oneHourFromNow = Date.now() + 60 * 60 * 1000;
+  if (report.windowEnd > oneHourFromNow) {
+    throw new Error('invalid telemetry window: end is too far in the future');
+  }
+
+  const payload = JSON.stringify({
+    topActions: report.topActions,
+  });
+
+  db.prepare(
+    `INSERT OR REPLACE INTO fleet_telemetry_reports
+     (device_id, window_start, window_end, total_cost_cents, activity_count, tool_call_count,
+      policy_violation_count, agent_count, report_payload, received_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    deviceId,
+    report.windowStart,
+    report.windowEnd,
+    report.totalCostCents,
+    report.activityCount,
+    report.toolCallCount,
+    report.policyViolationCount,
+    report.agentCount,
+    payload,
+    Date.now()
+  );
+
+  return { ok: true, nextWindowStart: report.windowEnd };
+}
+
+// ── Master: query helpers (dashboard) ───────────────────────────────────
+
+/**
+ * Fleet-wide rollup across all devices for the given window. Powers the
+ * master admin dashboard's top strip + Top-N devices table.
+ *
+ * Joins fleet_enrollments (Phase B) to surface hostname in the output —
+ * the dashboard renders "laptop-alice" instead of raw device fingerprints.
+ * LEFT JOIN so devices whose enrollment row was revoked still show up in
+ * cost totals; their hostname just shows as undefined.
+ */
+export function getFleetCostSummary(
+  db: ISqliteDriver,
+  windowStart: number,
+  windowEnd: number,
+  topDevicesLimit: number = DEFAULT_TOP_DEVICES_LIMIT
+): FleetCostSummary {
+  const totalsRow = db
+    .prepare(
+      `SELECT COALESCE(SUM(total_cost_cents), 0) as total,
+              COUNT(DISTINCT device_id) as devices
+       FROM fleet_telemetry_reports
+       WHERE window_end > ? AND window_end <= ?`
+    )
+    .get(windowStart, windowEnd) as { total: number; devices: number } | undefined;
+
+  const topDeviceRows = db
+    .prepare(
+      `SELECT ftr.device_id,
+              fe.hostname,
+              SUM(ftr.total_cost_cents) as cost_cents,
+              SUM(ftr.activity_count) as activity_count,
+              MAX(ftr.received_at) as last_report_at
+       FROM fleet_telemetry_reports ftr
+       LEFT JOIN fleet_enrollments fe ON fe.device_id = ftr.device_id
+       WHERE ftr.window_end > ? AND ftr.window_end <= ?
+       GROUP BY ftr.device_id
+       ORDER BY cost_cents DESC
+       LIMIT ?`
+    )
+    .all(windowStart, windowEnd, topDevicesLimit) as Array<{
+    device_id: string;
+    hostname: string | null;
+    cost_cents: number;
+    activity_count: number;
+    last_report_at: number;
+  }>;
+
+  return {
+    totalCostCents: totalsRow?.total ?? 0,
+    activeDevices: totalsRow?.devices ?? 0,
+    topDevices: topDeviceRows.map((r) => ({
+      deviceId: r.device_id,
+      hostname: r.hostname ?? undefined,
+      costCents: r.cost_cents,
+      activityCount: r.activity_count,
+      lastReportAt: r.last_report_at,
+    })),
+  };
+}
+
+/** All stored reports for one device, newest first. Drill-down view. */
+export function getDeviceTelemetry(
+  db: ISqliteDriver,
+  deviceId: string,
+  limit: number = 50
+): StoredTelemetryReport[] {
+  const rows = db
+    .prepare(
+      `SELECT * FROM fleet_telemetry_reports
+       WHERE device_id = ?
+       ORDER BY window_end DESC
+       LIMIT ?`
+    )
+    .all(deviceId, limit) as Array<{
+    device_id: string;
+    window_start: number;
+    window_end: number;
+    total_cost_cents: number;
+    activity_count: number;
+    tool_call_count: number;
+    policy_violation_count: number;
+    agent_count: number;
+    report_payload: string;
+    received_at: number;
+  }>;
+
+  return rows.map((r) => {
+    let topActions: Array<{ action: string; count: number }> = [];
+    try {
+      const parsed = JSON.parse(r.report_payload) as { topActions?: Array<{ action: string; count: number }> };
+      topActions = parsed.topActions ?? [];
+    } catch {
+      // Corrupt payload — surface the numeric aggregates anyway.
+    }
+    return {
+      deviceId: r.device_id,
+      windowStart: r.window_start,
+      windowEnd: r.window_end,
+      totalCostCents: r.total_cost_cents,
+      activityCount: r.activity_count,
+      toolCallCount: r.tool_call_count,
+      policyViolationCount: r.policy_violation_count,
+      agentCount: r.agent_count,
+      topActions,
+      receivedAt: r.received_at,
+    };
+  });
+}
