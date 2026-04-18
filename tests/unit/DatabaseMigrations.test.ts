@@ -518,4 +518,33 @@ describe('Database migrations', () => {
       expect(joined).toContain('DROP TABLE IF EXISTS fleet_command_acks');
     });
   });
+
+  describe('migration v68 — signing key + replay nonces (Phase F.2)', () => {
+    const v68 = ALL_MIGRATIONS.find((m) => m.version === 68);
+
+    it('creates fleet_master_signing_key singleton + fleet_command_replay_nonces', () => {
+      expect(v68).toBeDefined();
+      const { driver, captured } = makeRecordingDriver();
+      v68!.up(driver);
+      const joined = captured.execs.join('\n');
+      expect(joined).toContain('CREATE TABLE IF NOT EXISTS fleet_master_signing_key');
+      expect(joined).toContain('CHECK (id = 1)');
+      expect(joined).toContain('CREATE TABLE IF NOT EXISTS fleet_command_replay_nonces');
+      expect(joined).toContain('PRIMARY KEY');
+    });
+
+    it('creates the nonce-sweep index', () => {
+      const { driver, captured } = makeRecordingDriver();
+      v68!.up(driver);
+      expect(captured.execs.join('\n')).toContain('idx_fleet_command_replay_nonces_seen');
+    });
+
+    it('down() drops both tables without throwing', () => {
+      const { driver, captured } = makeRecordingDriver();
+      v68!.down(driver);
+      const joined = captured.execs.join('\n');
+      expect(joined).toContain('DROP TABLE IF EXISTS fleet_master_signing_key');
+      expect(joined).toContain('DROP TABLE IF EXISTS fleet_command_replay_nonces');
+    });
+  });
 });

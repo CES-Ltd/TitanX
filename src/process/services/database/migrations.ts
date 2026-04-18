@@ -2704,6 +2704,60 @@ const migration_v67: IMigration = {
   },
 };
 
+// ────────────────────────────────────────────────────────────────────────
+// Phase F.2 Week 1 — Destructive command signing + replay prevention
+// ────────────────────────────────────────────────────────────────────────
+
+/**
+ * Two new tables, one per role:
+ *
+ * fleet_master_signing_key (master-only, singleton):
+ *   The master's Ed25519 keypair for signing destructive commands.
+ *   Private key is encrypted at rest via the secrets vault (same
+ *   pattern as deviceIdentity). Public key goes out to slaves in the
+ *   enrollment response so they can verify signatures.
+ *
+ *   Rotating this key revokes every prior destructive command
+ *   automatically — slaves with the old pubkey refuse signatures
+ *   from the new one, so any in-flight replay dies on arrival.
+ *
+ * fleet_command_replay_nonces (slave-only):
+ *   Every destructive command envelope carries a random 16-byte
+ *   nonce. Slaves record it here on first execution; a second
+ *   arrival with the same nonce gets rejected. Nonces older than
+ *   NONCE_RETENTION_MS are swept (bounded table size) but that
+ *   window must exceed the max command TTL or we re-enable replay.
+ */
+const migration_v68: IMigration = {
+  version: 68,
+  name: 'Create fleet_master_signing_key + fleet_command_replay_nonces for Phase F.2',
+  up(db: ISqliteDriver) {
+    db.exec(`CREATE TABLE IF NOT EXISTS fleet_master_signing_key (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      public_key_pem TEXT NOT NULL,
+      private_key_ciphertext TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      rotated_at INTEGER
+    )`);
+
+    db.exec(`CREATE TABLE IF NOT EXISTS fleet_command_replay_nonces (
+      nonce TEXT PRIMARY KEY,
+      seen_at INTEGER NOT NULL,
+      command_id TEXT NOT NULL
+    )`);
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_fleet_command_replay_nonces_seen ON fleet_command_replay_nonces(seen_at)'
+    );
+
+    console.log('[Migration-v68] Created fleet_master_signing_key + fleet_command_replay_nonces');
+  },
+  down(db: ISqliteDriver) {
+    db.exec('DROP INDEX IF EXISTS idx_fleet_command_replay_nonces_seen');
+    db.exec('DROP TABLE IF EXISTS fleet_command_replay_nonces');
+    db.exec('DROP TABLE IF EXISTS fleet_master_signing_key');
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -2718,7 +2772,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v45, migration_v46, migration_v47, migration_v48, migration_v49, migration_v50, migration_v51, migration_v52, migration_v53,
   migration_v54, migration_v55, migration_v56, migration_v57, migration_v58, migration_v59,
   migration_v60, migration_v61, migration_v62, migration_v63, migration_v64, migration_v65,
-  migration_v66, migration_v67,
+  migration_v66, migration_v67, migration_v68,
 ];
 
 /**
