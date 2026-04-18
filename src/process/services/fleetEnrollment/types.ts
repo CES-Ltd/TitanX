@@ -48,6 +48,23 @@ export type GeneratedEnrollmentToken = {
   expiresAt: number;
 };
 
+/**
+ * Fleet role declared at enrollment time.
+ *
+ * Phase B v1.10.0 introduces two tiers:
+ *   - 'workforce' (default): the original mode — slave is a managed
+ *     employee endpoint receiving policies and templates.
+ *   - 'farm': slave is a compute node exposing its local agent
+ *     templates for remote execution via agent.execute. Masters can
+ *     add farm agents to teams as if they were local.
+ *
+ * Role is locked at enroll time — re-enrollment is required to swap.
+ * This keeps the audit trail clean and avoids a split-brain scenario
+ * where master thinks a device is farm-capable but slave's local
+ * ProcessConfig disagrees.
+ */
+export type FleetRole = 'workforce' | 'farm';
+
 /** Input to enrollDevice() — the slave posts this over HTTPS. */
 export type EnrollDeviceInput = {
   enrollmentToken: string;
@@ -55,6 +72,18 @@ export type EnrollDeviceInput = {
   hostname: string;
   osVersion: string;
   titanxVersion: string;
+  /**
+   * Phase B v1.10.0: slave declares whether it's joining as a workforce
+   * endpoint or a farm compute node. Optional for backward-compat —
+   * pre-Phase-B slaves don't send this field and default to 'workforce'.
+   */
+  role?: FleetRole;
+  /**
+   * Phase B v1.10.0 — farm-capability hints (models the slave can run,
+   * approximate concurrency). Opaque JSON for forward-compat. Only
+   * consulted by the master's device-picker in the hire modal.
+   */
+  capabilities?: Record<string, unknown>;
 };
 
 /** Success result from enrollDevice() — returned to the slave. */

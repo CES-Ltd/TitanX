@@ -35,6 +35,8 @@ import DestructiveCommandModal, {
 } from '@renderer/components/fleet/commands/DestructiveCommandModal';
 import TemplateLibraryPanel from '@renderer/components/fleet/TemplateLibraryPanel';
 import DeviceHistoryModal from '@renderer/components/fleet/DeviceHistoryModal';
+import FarmDashboard from '@renderer/components/fleet/farm/FarmDashboard';
+import HireFarmAgentModal from '@renderer/components/fleet/farm/HireFarmAgentModal';
 import { enqueueFleetCommand, type FleetCommandType } from '@renderer/hooks/fleet/useFleetCommands';
 
 type EnrolledDevice = {
@@ -74,6 +76,8 @@ const FleetPage: React.FC = () => {
   // Phase A v1.9.40 — device history modal. null when closed; set to the
   // deviceId (incl. revoked ones) when the admin clicks the History icon.
   const [historyDeviceId, setHistoryDeviceId] = useState<string | null>(null);
+  // Phase B v1.10.0 — farm-agent hire modal.
+  const [hireFarmOpen, setHireFarmOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -357,6 +361,9 @@ const FleetPage: React.FC = () => {
           <Button icon={<Refresh theme='outline' size='14' />} onClick={() => void refresh()}>
             {t('fleet.master.refresh', { defaultValue: 'Refresh' })}
           </Button>
+          <Button icon={<Plus theme='outline' size='14' />} onClick={() => setHireFarmOpen(true)}>
+            {t('fleet.farm.hireButton', { defaultValue: 'Hire farm agent' })}
+          </Button>
           <Button type='primary' icon={<Plus theme='outline' size='14' />} onClick={() => setGenerateModalOpen(true)}>
             {t('fleet.master.generateToken', { defaultValue: 'Generate enrollment token' })}
           </Button>
@@ -393,6 +400,13 @@ const FleetPage: React.FC = () => {
           <TemplateLibraryPanel />
         </div>
 
+        {/* Phase B v1.10.0 — Agent Farm dashboard. Hidden on installs
+            without any farm-role devices (renders null in that case)
+            so workforce-only admins don't see a noisy empty panel. */}
+        <div className='mt-4 px-6'>
+          <FarmDashboard />
+        </div>
+
         {/* Phase F Week 3 — recent remote commands + per-device acks */}
         <div className='mt-4 px-6 pb-6'>
           <CommandHistoryPanel />
@@ -412,6 +426,10 @@ const FleetPage: React.FC = () => {
       {/* Phase A v1.9.40 — device forensics drill-down (works for
           revoked devices too; their audit history is preserved). */}
       <DeviceHistoryModal deviceId={historyDeviceId} onClose={() => setHistoryDeviceId(null)} />
+
+      {/* Phase B v1.10.0 — hire farm agent. Single instance on the
+          page; state drives open/close. */}
+      <HireFarmAgentModal open={hireFarmOpen} onClose={() => setHireFarmOpen(false)} />
 
       <Modal
         visible={generateModalOpen}

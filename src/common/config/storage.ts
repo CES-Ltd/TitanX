@@ -144,6 +144,13 @@ export interface IConfigStorageRefer {
   'fleet.slave.masterCommandSigningPubKeyCiphertext'?: string;
   // Slave-mode: enrollment lifecycle. Phase A: always 'pending' after wizard.
   'fleet.slave.enrollmentStatus'?: 'pending' | 'enrolled' | 'revoked';
+  // Slave-mode (Phase B, v1.10.0): role this slave declares at enrollment.
+  // 'workforce' (default) = managed employee endpoint; 'farm' = compute
+  // node exposing its local agent templates for remote execution via
+  // agent.execute. Role is sent to master on enroll and locked server-
+  // side. Changing this value AFTER enrollment has no effect — the
+  // slave must re-enroll for the role change to take effect.
+  'fleet.enrollmentRole'?: 'workforce' | 'farm';
   // Telegram assistant default model / Telegram 助手默认模型
   'assistant.telegram.defaultModel'?: {
     id: string;

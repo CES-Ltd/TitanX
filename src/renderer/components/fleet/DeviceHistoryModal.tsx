@@ -54,6 +54,7 @@ const COMMAND_COLOR: Record<FleetCommandType, string | undefined> = {
   'credential.rotate': 'red',
   'agent.restart': 'orange',
   'force.upgrade': 'red',
+  'agent.execute': 'purple',
 };
 
 const DeviceHistoryModal: React.FC<Props> = ({ deviceId, onClose }) => {

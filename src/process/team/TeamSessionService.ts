@@ -453,6 +453,58 @@ export class TeamSessionService {
     const team = await this.repo.findById(teamId);
     if (!team) throw new Error(`Team "${teamId}" not found`);
 
+    // Phase B v1.10.0 — farm-backed agent short-circuit. Farm agents
+    // don't have a local conversation (turns run remotely on a slave
+    // via agent.execute), so we skip conversation creation and the
+    // gallery whitelist check that infers from local templates.
+    //
+    // The whitelist still gets a chance to reject: master's
+    // fleetBinding.remoteSlotId must reference a template the slave
+    // would have already synced from the master's config bundle (the
+    // template publish flow Phase A shipped). No local whitelist check
+    // because the template lives on the slave, not here.
+    if (agent.backend === 'farm') {
+      if (!agent.fleetBinding) {
+        throw new Error('Farm-backed agent requires a fleetBinding (deviceId + remoteSlotId)');
+      }
+      const farmAgent: TeamAgent = {
+        ...agent,
+        slotId: `slot-${uuid(8)}`,
+        // Synthetic placeholder — farm agents don't have a local
+        // conversation but the TeamAgent schema requires a string.
+        // Prefixing with 'farm-' keeps it distinguishable in logs +
+        // prevents any accidental lookup-by-id from matching a real
+        // conversation row.
+        conversationId: `farm-${uuid(16)}`,
+      };
+      const updatedAgentsFarm = [...team.agents, farmAgent];
+      await this.repo.update(teamId, { agents: updatedAgentsFarm, updatedAt: Date.now() });
+      this.sessions.get(teamId)?.addAgent(farmAgent);
+
+      try {
+        const logDb = await getDatabase();
+        activityLogService.logActivity(logDb.getDriver(), {
+          userId: 'system_default_user',
+          actorType: 'system',
+          actorId: 'team_session_service',
+          action: 'team.agent.added_farm',
+          entityType: 'agent',
+          entityId: farmAgent.slotId,
+          agentId: farmAgent.slotId,
+          details: {
+            teamId,
+            agentName: farmAgent.agentName,
+            agentType: farmAgent.agentType,
+            deviceId: agent.fleetBinding.deviceId,
+            remoteSlotId: agent.fleetBinding.remoteSlotId,
+          },
+        });
+      } catch {
+        /* non-critical audit */
+      }
+      return farmAgent;
+    }
+
     // Security: verify at least one whitelisted agent exists in the gallery (skip for lead agents).
     // The user may pick any provider in the Hire modal, so we only check that
     // the gallery has at least one whitelisted entry for this user — proving

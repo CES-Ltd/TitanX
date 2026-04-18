@@ -149,6 +149,19 @@ async function attemptEnrollment(masterUrl: string): Promise<void> {
     return;
   }
 
+  // Phase B v1.10.0: slave can declare itself as a farm compute node
+  // instead of the default workforce endpoint. Set via ProcessConfig
+  // before enrollment — master records role on fleet_farm_devices and
+  // the admin's hire-farm-agent picker filters for role='farm'.
+  // Unknown values fall back to 'workforce'.
+  let role: 'workforce' | 'farm' = 'workforce';
+  try {
+    const cfg = (await ProcessConfig.get('fleet.enrollmentRole')) as string | undefined;
+    if (cfg === 'farm') role = 'farm';
+  } catch {
+    /* non-critical — default to workforce */
+  }
+
   try {
     const response = await fetch(`${stripTrailingSlash(masterUrl)}/api/fleet/enroll`, {
       method: 'POST',
@@ -159,6 +172,7 @@ async function attemptEnrollment(masterUrl: string): Promise<void> {
         hostname: os.hostname(),
         osVersion: `${os.platform()} ${os.release()}`,
         titanxVersion: getAppVersion(),
+        role,
       }),
     });
 

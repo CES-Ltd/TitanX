@@ -367,5 +367,65 @@
       "activity": "Activity",
       "violations": "Violations"
     }
+  },
+  "farm": {
+    "title": "Agent Farm",
+    "subtitle": "Remote compute nodes running agent turns on behalf of master teams.",
+    "refresh": "Refresh",
+    "hireButton": "Hire farm agent",
+    "deviceRollup": "Device utilization",
+    "jobsTitleAll": "Recent jobs (all devices)",
+    "jobsTitleDevice": "Recent jobs for {{device}}",
+    "clearFilter": "Show all",
+    "noJobs": "No farm jobs in this window. Trigger an agent.execute from a team to see activity here.",
+    "window": {
+      "h24": "Last 24h",
+      "d7": "Last 7 days",
+      "d30": "Last 30 days"
+    },
+    "summary": {
+      "devices": "Farm devices",
+      "jobs": "Jobs",
+      "success": "Completed",
+      "failures": "Failed / Timeout",
+      "latency": "Avg latency"
+    },
+    "table": {
+      "hostname": "Device",
+      "jobs": "Jobs",
+      "success": "Success",
+      "failed": "Failed",
+      "latency": "Avg latency"
+    },
+    "jobs": {
+      "id": "Job ID",
+      "device": "Device",
+      "status": "Status",
+      "enqueued": "Enqueued",
+      "duration": "Duration",
+      "error": "Error"
+    },
+    "hire": {
+      "title": "Hire farm agent",
+      "cancel": "Cancel",
+      "confirm": "Hire",
+      "loading": "Loading…",
+      "noDevices": "No farm-role devices are enrolled yet. Slaves must enroll with fleet.enrollmentRole=farm to appear here.",
+      "teamLabel": "Team",
+      "teamPlaceholder": "Select a team",
+      "teamRequired": "Pick a team",
+      "deviceLabel": "Farm device",
+      "devicePlaceholder": "Select a farm device",
+      "deviceRequired": "Pick a device",
+      "templateLabel": "Agent template",
+      "templatePlaceholder": "Select a template (from published or local)",
+      "templateRequired": "Pick a template",
+      "templateMissing": "Selected template no longer exists — refresh.",
+      "nameLabel": "Agent name",
+      "namePlaceholder": "e.g. Researcher_farm_1",
+      "nameRequired": "Enter a name",
+      "success": "{{name}} hired as a farm agent.",
+      "notes": "Farm agents run on the selected device. v1.10.0: pure LLM turn, no tools. Conversational wake integration ships in v1.10.1."
+    }
   }
 }

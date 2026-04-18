@@ -24,7 +24,18 @@ export type NonDestructiveCommandType = 'force_config_sync' | 'force_telemetry_p
  */
 export type DestructiveCommandTypeT = 'cache.clear' | 'credential.rotate' | 'agent.restart' | 'force.upgrade';
 
-export type CommandType = NonDestructiveCommandType | DestructiveCommandTypeT;
+/**
+ * Phase B (v1.10.0) signed-non-destructive tier — require a signed
+ * envelope (because payload carries user prompts and must be
+ * master-minted) but NOT admin re-auth on enqueue (would gate every
+ * high-frequency farm call behind a password prompt).
+ *
+ * Currently just `agent.execute`; future additions (e.g. `agent.stop`
+ * to cancel an in-flight job) plug in here.
+ */
+export type SignedNonDestructiveCommandType = 'agent.execute';
+
+export type CommandType = NonDestructiveCommandType | DestructiveCommandTypeT | SignedNonDestructiveCommandType;
 
 /**
  * Subset that requires the signing + admin-re-auth gate. Helper
@@ -37,8 +48,23 @@ export const DESTRUCTIVE_COMMAND_TYPES: ReadonlySet<CommandType> = new Set([
   'force.upgrade',
 ]);
 
+/**
+ * Subset that requires signing but NOT admin re-auth. Disjoint with
+ * DESTRUCTIVE_COMMAND_TYPES.
+ */
+export const SIGNED_NON_DESTRUCTIVE_COMMAND_TYPES: ReadonlySet<CommandType> = new Set(['agent.execute']);
+
 export function isDestructive(t: CommandType): boolean {
   return DESTRUCTIVE_COMMAND_TYPES.has(t);
+}
+
+/**
+ * True for commands that must travel in a signed envelope — destructive
+ * AND signed-non-destructive tiers. Non-destructive non-signed commands
+ * (force_config_sync, force_telemetry_push) return false.
+ */
+export function isSigned(t: CommandType): boolean {
+  return DESTRUCTIVE_COMMAND_TYPES.has(t) || SIGNED_NON_DESTRUCTIVE_COMMAND_TYPES.has(t);
 }
 
 /** Key under params where the signed envelope travels to the slave. */

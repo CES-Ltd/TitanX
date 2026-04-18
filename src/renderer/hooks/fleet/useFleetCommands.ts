@@ -19,7 +19,8 @@ export type FleetCommandType =
   | 'cache.clear'
   | 'credential.rotate'
   | 'agent.restart'
-  | 'force.upgrade';
+  | 'force.upgrade'
+  | 'agent.execute';
 export type AckStatus = 'succeeded' | 'failed' | 'skipped';
 
 export type FleetCommandRow = {

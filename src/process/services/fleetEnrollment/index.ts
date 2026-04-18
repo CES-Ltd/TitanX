@@ -192,6 +192,28 @@ export function enrollDevice(db: ISqliteDriver, input: EnrollDeviceInput): Enrol
      WHERE token_hash = ?`
   ).run(now, deviceId, tokenHash);
 
+  // Phase B v1.10.0: persist the declared role + capabilities on
+  // fleet_farm_devices. Locked at enroll time — no admin-facing
+  // "change role" action; re-enrollment is the supported path. The
+  // UPSERT is idempotent so idempotent-re-enroll for the same device
+  // just updates the role/caps atomically.
+  try {
+    const role = input.role === 'farm' ? 'farm' : 'workforce';
+    const capabilities = input.capabilities ?? {};
+    db.prepare(
+      `INSERT INTO fleet_farm_devices (device_id, role, capabilities, updated_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(device_id) DO UPDATE SET
+         role = excluded.role,
+         capabilities = excluded.capabilities,
+         updated_at = excluded.updated_at`
+    ).run(deviceId, role, JSON.stringify(capabilities), now);
+  } catch (e) {
+    // Non-critical — enrollment still succeeds. Device just defaults
+    // to workforce in the farm-device lookup path.
+    logNonCritical('fleet.enrollment.farm-role-upsert', e);
+  }
+
   auditSafe(db, {
     // `user_id` has an FK to users(id) — use the seeded default user id
     // for system-initiated audit rows. `actorId` carries the logical
@@ -239,6 +261,45 @@ export function getDevice(db: ISqliteDriver, deviceId: string): EnrolledDevice |
     | Record<string, unknown>
     | undefined;
   return row ? rowToDevice(row) : null;
+}
+
+/**
+ * Phase B v1.10.0 — a farm-mode device enriched with its role +
+ * capabilities, joined against fleet_farm_devices. Returned from the
+ * admin UI's device picker in the hire-farm-agent modal.
+ *
+ * Only `role='farm'` rows — workforce devices are excluded because
+ * they can't serve agent.execute commands. Also only `status='enrolled'`
+ * devices; revoked ones can't be reached anyway.
+ */
+export type FarmDevice = EnrolledDevice & {
+  role: 'farm';
+  capabilities: Record<string, unknown>;
+};
+
+export function listFarmDevices(db: ISqliteDriver): FarmDevice[] {
+  const rows = db
+    .prepare(
+      `SELECT e.*, f.role, f.capabilities
+       FROM fleet_enrollments e
+       INNER JOIN fleet_farm_devices f ON e.device_id = f.device_id
+       WHERE f.role = 'farm' AND e.status = 'enrolled'
+       ORDER BY e.enrolled_at DESC`
+    )
+    .all() as Array<Record<string, unknown>>;
+  return rows.map((r) => {
+    const base = rowToDevice(r);
+    let capabilities: Record<string, unknown> = {};
+    try {
+      const parsed = JSON.parse((r.capabilities as string) ?? '{}') as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        capabilities = parsed as Record<string, unknown>;
+      }
+    } catch {
+      /* leave empty */
+    }
+    return { ...base, role: 'farm', capabilities };
+  });
 }
 
 export function revokeDevice(
