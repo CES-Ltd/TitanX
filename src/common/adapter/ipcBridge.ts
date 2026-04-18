@@ -1132,8 +1132,10 @@ export const fleet = {
   >('fleet:list-consolidated-learnings'),
 
   /**
-   * Master-only: manual "Run Dream Now" trigger. Returns the pass
-   * summary so the UI can render the result inline.
+   * Master-only: manual "Run Dream Now" trigger. v1.11.2 gated on
+   * admin re-auth — the caller supplies the admin's cleartext
+   * password which the handler verifies against bcrypt before running
+   * a dream pass. Rate-limited via the existing adminReauth throttle.
    */
   runDreamNow: bridge.buildProvider<
     {
@@ -1143,9 +1145,28 @@ export const fleet = {
       contributingDevices?: number;
       elapsedMs?: number;
       error?: string;
+      code?: 'rate_limited' | 'unknown_user' | 'wrong_password' | 'error';
     },
-    void
+    { adminPassword: string }
   >('fleet:run-dream-now'),
+
+  /**
+   * Master-only: the drill-down for a single consolidated pattern.
+   * Returns which slaves contributed the underlying trajectories at
+   * consolidation time — the forensic question "whose learning got
+   * merged into this fleet-wide pattern?"
+   */
+  listPatternContributors: bridge.buildProvider<
+    {
+      contributors: Array<{
+        deviceId: string;
+        successScore: number;
+        usageCountLocal: number;
+        receivedAt: number;
+      }>;
+    },
+    { trajectoryHash: string; consolidatedVersion: number }
+  >('fleet:list-pattern-contributors'),
 
   /**
    * Slave-only: the local learning-push worker's current state.

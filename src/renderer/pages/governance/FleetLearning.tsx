@@ -20,8 +20,8 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Empty, Message, Table, Tag, Space, Popconfirm, Typography } from '@arco-design/web-react';
-import { Refresh, Brain, Lightning } from '@icon-park/react';
+import { Alert, Button, Empty, Input, Message, Modal, Table, Tag, Space, Typography } from '@arco-design/web-react';
+import { Refresh, Brain, Lightning, Shield } from '@icon-park/react';
 import { ipcBridge } from '@/common';
 
 type LearningStats = {
@@ -48,6 +48,13 @@ type ConsolidatedEntry = {
   contributingDevices: number;
 };
 
+type Contributor = {
+  deviceId: string;
+  successScore: number;
+  usageCountLocal: number;
+  receivedAt: number;
+};
+
 const FleetLearning: React.FC = () => {
   const { t } = useTranslation();
   const [stats, setStats] = useState<LearningStats | null>(null);
@@ -55,6 +62,17 @@ const FleetLearning: React.FC = () => {
   const [consolidatedVersion, setConsolidatedVersion] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [dreamRunning, setDreamRunning] = useState(false);
+
+  // v1.11.2: admin-reauth gate for the manual dream-pass trigger.
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [adminPassword, setAdminPassword] = useState('');
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+
+  // v1.11.2: drill-down modal for "which slaves contributed to this
+  // consolidated pattern". Null when closed.
+  const [drillDownEntry, setDrillDownEntry] = useState<ConsolidatedEntry | null>(null);
+  const [contributors, setContributors] = useState<Contributor[]>([]);
+  const [contributorsLoading, setContributorsLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -78,10 +96,35 @@ const FleetLearning: React.FC = () => {
   }, [refresh]);
 
   const handleRunDream = useCallback(async () => {
+    if (!adminPassword) {
+      setPasswordError(
+        t('governance.fleetLearning.reauth.passwordRequired', { defaultValue: 'Enter your admin password' })
+      );
+      return;
+    }
     setDreamRunning(true);
+    setPasswordError(null);
     try {
-      const r = await ipcBridge.fleet.runDreamNow.invoke();
+      const r = await ipcBridge.fleet.runDreamNow.invoke({ adminPassword });
       if (!r.ok) {
+        // Differentiate between re-auth failures (keep modal open, show
+        // inline error) and runtime failures (close modal, toast error).
+        if (r.code === 'wrong_password') {
+          setPasswordError(t('governance.fleetLearning.reauth.wrongPassword', { defaultValue: 'Incorrect password.' }));
+          return;
+        }
+        if (r.code === 'rate_limited') {
+          setPasswordModalOpen(false);
+          setAdminPassword('');
+          Message.warning(
+            t('governance.fleetLearning.reauth.rateLimited', {
+              defaultValue: 'Too many failed attempts. Wait 5 minutes before retrying.',
+            })
+          );
+          return;
+        }
+        setPasswordModalOpen(false);
+        setAdminPassword('');
         Message.error(
           t('governance.fleetLearning.runFailed', {
             defaultValue: 'Dream pass failed: {{error}}',
@@ -90,6 +133,9 @@ const FleetLearning: React.FC = () => {
         );
         return;
       }
+      // Success — close modal + toast + refresh.
+      setPasswordModalOpen(false);
+      setAdminPassword('');
       Message.success(
         t('governance.fleetLearning.runSuccess', {
           defaultValue: 'Dream pass v{{version}} complete — {{count}} patterns from {{devices}} devices ({{ms}}ms)',
@@ -101,11 +147,37 @@ const FleetLearning: React.FC = () => {
       );
       await refresh();
     } catch (err) {
+      setPasswordModalOpen(false);
+      setAdminPassword('');
       Message.error(err instanceof Error ? err.message : String(err));
     } finally {
       setDreamRunning(false);
     }
-  }, [refresh, t]);
+  }, [adminPassword, refresh, t]);
+
+  // v1.11.2: open the drill-down modal — fetch contributors for the
+  // clicked pattern + cache them in state. Refetch happens on re-open.
+  const handleDrillDown = useCallback(
+    async (entry: ConsolidatedEntry) => {
+      if (consolidatedVersion == null) return;
+      setDrillDownEntry(entry);
+      setContributors([]);
+      setContributorsLoading(true);
+      try {
+        const r = await ipcBridge.fleet.listPatternContributors.invoke({
+          trajectoryHash: entry.trajectoryHash,
+          consolidatedVersion,
+        });
+        setContributors(r.contributors);
+      } catch (err) {
+        Message.error(err instanceof Error ? err.message : String(err));
+        setDrillDownEntry(null);
+      } finally {
+        setContributorsLoading(false);
+      }
+    },
+    [consolidatedVersion]
+  );
 
   const hasDream = stats?.lastDream != null;
   const perDeviceColumns = [
@@ -164,6 +236,41 @@ const FleetLearning: React.FC = () => {
         <span className='tabular-nums'>{(row.successScore * 100).toFixed(0)}%</span>
       ),
     },
+    {
+      title: '',
+      key: 'actions',
+      width: 100,
+      render: (_: unknown, row: ConsolidatedEntry) => (
+        <Button size='mini' onClick={() => void handleDrillDown(row)}>
+          {t('governance.fleetLearning.entries.contributors', { defaultValue: 'Contributors' })}
+        </Button>
+      ),
+    },
+  ];
+
+  const contributorColumns = [
+    {
+      title: t('governance.fleetLearning.contributors.device', { defaultValue: 'Device' }),
+      key: 'deviceId',
+      render: (_: unknown, row: Contributor) => <code className='text-11px'>{row.deviceId.slice(0, 16)}…</code>,
+    },
+    {
+      title: t('governance.fleetLearning.contributors.localUsage', { defaultValue: 'Local usage' }),
+      dataIndex: 'usageCountLocal',
+      key: 'usageCountLocal',
+    },
+    {
+      title: t('governance.fleetLearning.contributors.localScore', { defaultValue: 'Local score' }),
+      key: 'successScore',
+      render: (_: unknown, row: Contributor) => (
+        <span className='tabular-nums'>{(row.successScore * 100).toFixed(0)}%</span>
+      ),
+    },
+    {
+      title: t('governance.fleetLearning.contributors.received', { defaultValue: 'Received' }),
+      key: 'receivedAt',
+      render: (_: unknown, row: Contributor) => new Date(row.receivedAt).toLocaleString(),
+    },
   ];
 
   return (
@@ -185,18 +292,18 @@ const FleetLearning: React.FC = () => {
           <Button size='small' icon={<Refresh theme='outline' size='12' />} onClick={() => void refresh()}>
             {t('governance.fleetLearning.refresh', { defaultValue: 'Refresh' })}
           </Button>
-          <Popconfirm
-            title={t('governance.fleetLearning.runConfirm.title', { defaultValue: 'Run a dream pass now?' })}
-            content={t('governance.fleetLearning.runConfirm.body', {
-              defaultValue:
-                'Consolidates every unprocessed slave-pushed learning into a new version. Takes a few seconds on small fleets, longer with many devices.',
-            })}
-            onOk={() => void handleRunDream()}
+          <Button
+            type='primary'
+            size='small'
+            icon={<Lightning theme='outline' size='12' />}
+            onClick={() => {
+              setAdminPassword('');
+              setPasswordError(null);
+              setPasswordModalOpen(true);
+            }}
           >
-            <Button type='primary' size='small' icon={<Lightning theme='outline' size='12' />} loading={dreamRunning}>
-              {t('governance.fleetLearning.runNow', { defaultValue: 'Run dream now' })}
-            </Button>
-          </Popconfirm>
+            {t('governance.fleetLearning.runNow', { defaultValue: 'Run dream now' })}
+          </Button>
         </Space>
       </div>
 
@@ -281,6 +388,114 @@ const FleetLearning: React.FC = () => {
           />
         )}
       </div>
+
+      {/* v1.11.2: admin re-auth modal for Run-Dream-Now */}
+      <Modal
+        visible={passwordModalOpen}
+        onCancel={() => {
+          setPasswordModalOpen(false);
+          setAdminPassword('');
+          setPasswordError(null);
+        }}
+        title={
+          <div className='flex items-center gap-2 text-primary-6'>
+            <Shield theme='outline' size='16' />
+            {t('governance.fleetLearning.reauth.title', { defaultValue: 'Authorize dream pass' })}
+          </div>
+        }
+        footer={
+          <div className='flex justify-end gap-2'>
+            <Button
+              onClick={() => {
+                setPasswordModalOpen(false);
+                setAdminPassword('');
+                setPasswordError(null);
+              }}
+              disabled={dreamRunning}
+            >
+              {t('governance.fleetLearning.reauth.cancel', { defaultValue: 'Cancel' })}
+            </Button>
+            <Button
+              type='primary'
+              icon={<Lightning theme='outline' size='12' />}
+              loading={dreamRunning}
+              disabled={!adminPassword}
+              onClick={() => void handleRunDream()}
+            >
+              {t('governance.fleetLearning.reauth.confirm', { defaultValue: 'Run dream' })}
+            </Button>
+          </div>
+        }
+        style={{ width: 480 }}
+      >
+        <div className='space-y-3'>
+          <Alert
+            type='info'
+            content={t('governance.fleetLearning.reauth.body', {
+              defaultValue:
+                'Dream pass touches every unprocessed slave learning AND runs LLM calls that cost money. Confirm your admin password to proceed.',
+            })}
+          />
+          <div>
+            <div className='text-12px text-t-tertiary mb-1'>
+              {t('governance.fleetLearning.reauth.passwordLabel', {
+                defaultValue: 'Admin password',
+              })}
+            </div>
+            <Input.Password
+              value={adminPassword}
+              onChange={(v) => {
+                setAdminPassword(v);
+                if (passwordError) setPasswordError(null);
+              }}
+              onPressEnter={() => void handleRunDream()}
+              autoFocus
+            />
+            {passwordError && <div className='text-12px text-danger-6 mt-1'>{passwordError}</div>}
+          </div>
+        </div>
+      </Modal>
+
+      {/* v1.11.2: drill-down modal showing which slaves contributed to a consolidated pattern */}
+      <Modal
+        visible={drillDownEntry != null}
+        onCancel={() => setDrillDownEntry(null)}
+        footer={null}
+        title={t('governance.fleetLearning.contributors.title', {
+          defaultValue: 'Pattern contributors',
+        })}
+        style={{ width: 640 }}
+      >
+        {drillDownEntry != null && (
+          <div className='space-y-3'>
+            <div>
+              <div className='text-12px text-t-tertiary mb-1'>
+                {t('governance.fleetLearning.contributors.pattern', { defaultValue: 'Pattern' })}
+              </div>
+              <div className='text-13px'>{drillDownEntry.taskDescription}</div>
+              <code className='text-10px text-t-tertiary'>{drillDownEntry.trajectoryHash}</code>
+            </div>
+            {!contributorsLoading && contributors.length === 0 ? (
+              <Empty
+                className='py-4'
+                description={t('governance.fleetLearning.contributors.empty', {
+                  defaultValue: 'No contributor rows match this pattern (may have been pruned).',
+                })}
+              />
+            ) : (
+              <Table
+                columns={contributorColumns as never}
+                data={contributors}
+                loading={contributorsLoading}
+                rowKey='deviceId'
+                pagination={false}
+                size='small'
+                scroll={{ y: 300 }}
+              />
+            )}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };
