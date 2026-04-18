@@ -17,10 +17,10 @@
  * sync status to show).
  */
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Message, Table, Tag } from '@arco-design/web-react';
-import { Refresh } from '@icon-park/react';
+import { Refresh, Upload } from '@icon-park/react';
 import { ipcBridge } from '@/common';
 import { useFleetMode } from '@renderer/hooks/fleet/useFleetMode';
 import { useConfigSyncStatus, useManagedKeys, type ManagedKeyRow } from '@renderer/hooks/fleet/useManagedKeys';
@@ -35,11 +35,53 @@ const FleetSyncPanel: React.FC = () => {
   return <FleetSyncPanelInner />;
 };
 
+type TelemetryPushStatus = {
+  running: boolean;
+  lastPushAt?: number;
+  lastReportWindowEnd?: number;
+  lastPushError?: string;
+};
+
 const FleetSyncPanelInner: React.FC = () => {
   const { t } = useTranslation();
   const { data: syncStatus, refresh } = useConfigSyncStatus();
   const { keys, isLoading } = useManagedKeys();
   const [syncing, setSyncing] = useState(false);
+  const [pushing, setPushing] = useState(false);
+  const [telemetryStatus, setTelemetryStatus] = useState<TelemetryPushStatus | null>(null);
+
+  // Fetch telemetry push status on mount + after each push. Not on an
+  // SWR interval because the 6h push cadence is too slow for periodic
+  // polling to be worthwhile — the UI just shows the last-known state
+  // and refreshes on user interaction.
+  const refreshTelemetryStatus = useCallback(async () => {
+    try {
+      const status = await ipcBridge.fleet.getTelemetryPushStatus.invoke();
+      setTelemetryStatus(status);
+    } catch {
+      // swallow — panel still usable without this row
+    }
+  }, []);
+  useEffect(() => {
+    void refreshTelemetryStatus();
+  }, [refreshTelemetryStatus]);
+
+  const handlePushNow = useCallback(async () => {
+    setPushing(true);
+    try {
+      const result = await ipcBridge.fleet.pushTelemetryNow.invoke();
+      if (result.ok) {
+        Message.success(t('fleet.telemetryPush.success', { defaultValue: 'Telemetry pushed' }));
+      } else {
+        Message.warning(result.error ?? t('fleet.telemetryPush.failed', { defaultValue: 'Push failed' }));
+      }
+      await refreshTelemetryStatus();
+    } catch (err) {
+      Message.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPushing(false);
+    }
+  }, [refreshTelemetryStatus, t]);
 
   const handleSyncNow = useCallback(async () => {
     setSyncing(true);
@@ -93,6 +135,42 @@ const FleetSyncPanelInner: React.FC = () => {
             {syncStatus.lastErrorMessage}
           </Tag>
         )}
+      </div>
+
+      {/* Telemetry push row (Phase D Week 3) — sits alongside config
+          sync because both are slave↔master loops and the user cares
+          about both in one glance. */}
+      <div className='flex items-center justify-between gap-8px pt-8px border-t-1 border-border-2'>
+        <div className='flex flex-wrap items-center gap-8px text-12px'>
+          <span className='text-12px font-medium'>
+            {t('fleet.telemetryPush.label', { defaultValue: 'Telemetry push' })}
+          </span>
+          <Tag color={telemetryStatus?.running ? 'green' : 'gray'} size='small'>
+            {telemetryStatus?.running
+              ? t('fleet.sync.statusRunning', { defaultValue: 'Running' })
+              : t('fleet.sync.statusStopped', { defaultValue: 'Stopped' })}
+          </Tag>
+          <span className='text-t-secondary'>
+            {t('fleet.telemetryPush.lastPush', { defaultValue: 'Last push' })}:{' '}
+            {telemetryStatus?.lastPushAt
+              ? new Date(telemetryStatus.lastPushAt).toLocaleString()
+              : t('fleet.sync.never', { defaultValue: 'never' })}
+          </span>
+          {telemetryStatus?.lastPushError && (
+            <Tag color='orange' size='small'>
+              {telemetryStatus.lastPushError}
+            </Tag>
+          )}
+        </div>
+        <Button
+          size='small'
+          icon={<Upload size={12} />}
+          loading={pushing}
+          disabled={telemetryStatus?.running === false}
+          onClick={handlePushNow}
+        >
+          {t('fleet.telemetryPush.pushNow', { defaultValue: 'Push now' })}
+        </Button>
       </div>
 
       {/* Managed keys table */}

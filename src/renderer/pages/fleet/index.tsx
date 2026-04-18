@@ -17,6 +17,7 @@ import { useTranslation } from 'react-i18next';
 import { Button, Message, Modal, Table, Tag, Input, InputNumber, Popconfirm } from '@arco-design/web-react';
 import { Copy, Delete, Refresh, Plus } from '@icon-park/react';
 import { ipcBridge } from '@/common';
+import FleetDashboard from '@renderer/components/fleet/FleetDashboard';
 
 type EnrolledDevice = {
   deviceId: string;
@@ -209,6 +210,11 @@ const FleetPage: React.FC = () => {
             </div>
           }
         />
+
+        {/* Phase D — fleet-wide telemetry dashboard */}
+        <div className='mt-6 border-t-1 border-border-2'>
+          <FleetDashboard />
+        </div>
       </div>
 
       <Modal

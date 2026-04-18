@@ -860,6 +860,44 @@ export const fleet = {
     securityFeaturesUpdated: number;
     newlyManagedKeys: string[];
   }>('fleet:config-applied'),
+
+  // ── Phase D Week 3: master dashboard queries ──────────────────────────
+  /**
+   * Fleet-wide cost + activity rollup for the admin dashboard. Takes a
+   * time window (epoch ms). Returns totals + top-N devices.
+   */
+  getFleetTelemetrySummary: bridge.buildProvider<
+    {
+      totalCostCents: number;
+      activeDevices: number;
+      topDevices: Array<{
+        deviceId: string;
+        hostname?: string;
+        costCents: number;
+        activityCount: number;
+        lastReportAt: number;
+      }>;
+    },
+    { windowStart: number; windowEnd: number; topDevicesLimit?: number }
+  >('fleet:get-telemetry-summary'),
+  /** Per-device drill-down: recent windows + top actions for one device. */
+  getDeviceTelemetry: bridge.buildProvider<
+    {
+      reports: Array<{
+        deviceId: string;
+        windowStart: number;
+        windowEnd: number;
+        totalCostCents: number;
+        activityCount: number;
+        toolCallCount: number;
+        policyViolationCount: number;
+        agentCount: number;
+        topActions: Array<{ action: string; count: number }>;
+        receivedAt: number;
+      }>;
+    },
+    { deviceId: string; limit?: number }
+  >('fleet:get-device-telemetry'),
 };
 
 // 系统通知接口 / System notification API

@@ -150,5 +150,51 @@
       "version": "Version",
       "appliedAt": "Applied"
     }
+  },
+  "telemetryPush": {
+    "label": "Telemetry push",
+    "lastPush": "Last push",
+    "pushNow": "Push now",
+    "success": "Telemetry pushed",
+    "failed": "Push failed"
+  },
+  "dashboard": {
+    "title": "Fleet Dashboard",
+    "refresh": "Refresh",
+    "exportCsv": "Export CSV",
+    "totalCost": "Total cost",
+    "activeDevices": "Active devices",
+    "totalActivity": "Total activity",
+    "topDevicesTitle": "Top devices by cost",
+    "top": "Top {{count}}",
+    "empty": "No telemetry reports yet. Slaves push every 6 hours after enrollment.",
+    "window": {
+      "h24": "Last 24h",
+      "d7": "Last 7 days",
+      "d30": "Last 30 days",
+      "d90": "Last 90 days"
+    },
+    "table": {
+      "hostname": "Device",
+      "cost": "Cost",
+      "activity": "Activity",
+      "lastReport": "Last report",
+      "inspect": "Inspect"
+    },
+    "device": {
+      "title": "Device telemetry",
+      "deviceId": "Device ID",
+      "latestWindow": "Latest window",
+      "agents": "Agents",
+      "lastReport": "Received",
+      "topActionsTitle": "Top actions in the latest window",
+      "historyTitle": "Recent report windows",
+      "noReports": "No reports from this device yet.",
+      "window": "Window",
+      "cost": "Cost",
+      "activity": "Activity",
+      "toolCalls": "Tool calls",
+      "violations": "Violations"
+    }
   }
 }

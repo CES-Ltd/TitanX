@@ -31,6 +31,10 @@ import * as securityFeaturesService from '@process/services/securityFeatures';
 import { isManaged, listManagedKeys } from '@process/services/fleetConfig';
 import { getConfigSyncStatus, onConfigApplied, syncNow } from '@process/services/fleetConfig/slaveSync';
 import { getTelemetryPushStatus, pushNow as pushTelemetryNowSvc } from '@process/services/fleetTelemetry/slavePush';
+import {
+  getDeviceTelemetry as getDeviceTelemetrySvc,
+  getFleetCostSummary,
+} from '@process/services/fleetTelemetry';
 import { logNonCritical } from '@process/utils/logNonCritical';
 import type { FleetMode, FleetSetupInput, FleetSetupResult } from '@/common/types/fleetTypes';
 
@@ -181,6 +185,18 @@ export function initFleetBridge(): void {
 
   ipcBridge.fleet.pushTelemetryNow.provider(async () => {
     return pushTelemetryNowSvc();
+  });
+
+  // ── Phase D Week 3: master dashboard providers ───────────────────────
+  ipcBridge.fleet.getFleetTelemetrySummary.provider(async ({ windowStart, windowEnd, topDevicesLimit }) => {
+    const db = await getDatabase();
+    return getFleetCostSummary(db.getDriver(), windowStart, windowEnd, topDevicesLimit);
+  });
+
+  ipcBridge.fleet.getDeviceTelemetry.provider(async ({ deviceId, limit }) => {
+    const db = await getDatabase();
+    const reports = getDeviceTelemetrySvc(db.getDriver(), deviceId, limit);
+    return { reports };
   });
 
   // Re-emit successful config-apply events to the renderer so SWR caches
