@@ -30,6 +30,7 @@ import { encrypt, decrypt, loadOrCreateMasterKey } from '@process/services/secre
 import { logNonCritical } from '@process/utils/logNonCritical';
 import { startConfigSyncPoller, stopConfigSyncPoller } from '@process/services/fleetConfig/slaveSync';
 import { startTelemetryPushLoop, stopTelemetryPushLoop } from '@process/services/fleetTelemetry/slavePush';
+import { startLearningPushLoop, stopLearningPushLoop } from '@process/services/fleetLearning/slavePush';
 import { executeBatch } from '@process/services/fleetCommands/slaveExecutor';
 import type { CommandForSlave } from '@process/services/fleetCommands/types';
 import os from 'os';
@@ -115,6 +116,12 @@ export async function startSlaveIfEnrolled(): Promise<void> {
     startHeartbeatLoop(masterUrl);
     startConfigSyncPoller(masterUrl);
     startTelemetryPushLoop(masterUrl);
+    // Phase C v1.11.0 — learning push loop. Gated at slave push side
+    // by fleet.learning.enabled managed key + the global kill switch,
+    // so starting it unconditionally here is safe: it records a
+    // "disabled by admin" state row and doesn't send anything until
+    // master enables the feature via config bundle.
+    startLearningPushLoop(masterUrl);
     return;
   }
 
@@ -131,6 +138,7 @@ export function stopSlaveClient(): void {
   _enrollmentBackoffMs = ENROLLMENT_RETRY_BASE_MS;
   stopConfigSyncPoller();
   stopTelemetryPushLoop();
+  stopLearningPushLoop();
 }
 
 /** Reset all module-level state — TEST ONLY. Production code never needs this. */
@@ -212,6 +220,12 @@ async function attemptEnrollment(masterUrl: string): Promise<void> {
     startHeartbeatLoop(masterUrl);
     startConfigSyncPoller(masterUrl);
     startTelemetryPushLoop(masterUrl);
+    // Phase C v1.11.0 — learning push loop. Gated at slave push side
+    // by fleet.learning.enabled managed key + the global kill switch,
+    // so starting it unconditionally here is safe: it records a
+    // "disabled by admin" state row and doesn't send anything until
+    // master enables the feature via config bundle.
+    startLearningPushLoop(masterUrl);
     console.log('[FleetSlave] Enrollment successful. Heartbeat + config-sync + telemetry-push loops started.');
   } catch (e) {
     logNonCritical('fleet.slave.enroll', e);

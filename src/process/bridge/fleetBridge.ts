@@ -301,6 +301,103 @@ export function initFleetBridge(): void {
     return { jobs };
   });
 
+  // ── Phase C v1.11.0: Dream Mode providers ────────────────────────────
+
+  ipcBridge.fleet.getFleetLearningStats.provider(async () => {
+    const db = await getDatabase();
+    const driver = db.getDriver();
+
+    // Latest dream pass (may be null on fresh master).
+    const lastRow = driver
+      .prepare(
+        `SELECT version, published_at, trajectory_count, contributing_devices
+         FROM consolidated_learnings ORDER BY version DESC LIMIT 1`
+      )
+      .get() as
+      | { version: number; published_at: number; trajectory_count: number; contributing_devices: number }
+      | undefined;
+
+    const pendingRow = driver
+      .prepare(`SELECT COUNT(*) AS c FROM fleet_learnings WHERE consolidated_version IS NULL`)
+      .get() as { c: number };
+
+    const perDeviceRows = driver
+      .prepare(
+        `SELECT device_id,
+                SUM(CASE WHEN learning_type = 'trajectory' THEN 1 ELSE 0 END) AS traj,
+                SUM(CASE WHEN learning_type = 'memory_summary' THEN 1 ELSE 0 END) AS mem,
+                MAX(received_at) AS last_at
+         FROM fleet_learnings
+         GROUP BY device_id
+         ORDER BY last_at DESC
+         LIMIT 50`
+      )
+      .all() as Array<{ device_id: string; traj: number; mem: number; last_at: number }>;
+
+    return {
+      lastDream: lastRow
+        ? {
+            version: lastRow.version,
+            publishedAt: lastRow.published_at,
+            trajectoryCount: lastRow.trajectory_count,
+            contributingDevices: lastRow.contributing_devices,
+          }
+        : null,
+      totalPendingFromSlaves: pendingRow.c,
+      perDevice: perDeviceRows.map((r) => ({
+        deviceId: r.device_id,
+        trajectoriesReceived: r.traj,
+        memorySummariesReceived: r.mem,
+        lastReceivedAt: r.last_at,
+      })),
+    };
+  });
+
+  ipcBridge.fleet.listConsolidatedLearnings.provider(async ({ limit }) => {
+    const { getLatestConsolidated } = await import('@process/services/fleetLearning');
+    const db = await getDatabase();
+    const latest = getLatestConsolidated(db.getDriver());
+    if (!latest) return { version: null, entries: [] };
+    const cap = Math.max(1, Math.min(limit ?? 20, 500));
+    return {
+      version: latest.version,
+      entries: latest.entries.slice(0, cap).map((e) => ({
+        trajectoryHash: e.trajectoryHash,
+        taskDescription: e.taskDescription,
+        successScore: e.successScore,
+        usageCountFleetwide: e.usageCountFleetwide,
+        contributingDevices: e.contributingDevices,
+      })),
+    };
+  });
+
+  ipcBridge.fleet.runDreamNow.provider(async () => {
+    try {
+      const { runDreamNow } = await import('@process/services/fleetLearning/dreamScheduler');
+      const result = await runDreamNow();
+      return {
+        ok: true,
+        version: result.version,
+        trajectoryCount: result.trajectoryCount,
+        contributingDevices: result.contributingDevices,
+        elapsedMs: result.elapsedMs,
+      };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+  ipcBridge.fleet.getLearningPushStatus.provider(async () => {
+    const { getLearningPushStatus } = await import('@process/services/fleetLearning/slavePush');
+    const status = await getLearningPushStatus();
+    return status;
+  });
+
+  ipcBridge.fleet.pushLearningsNow.provider(async () => {
+    const { pushNow } = await import('@process/services/fleetLearning/slavePush');
+    return pushNow();
+  });
+
   // Re-emit ack events to the renderer so the history SWR refreshes
   // immediately on every slave ack instead of polling. Subscriber
   // lives as long as the process does — no unsubscribe path.

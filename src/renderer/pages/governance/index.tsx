@@ -36,6 +36,7 @@ import WorkflowEngine from './workflows/WorkflowEngine';
 import AgentMemoryPanel from './agents/AgentMemoryPanel';
 import AgentPlanViewer from './agents/AgentPlanViewer';
 import TraceExplorer from './tracing/TraceExplorer';
+import FleetLearning from './FleetLearning';
 
 const { TabPane } = Tabs;
 const { Title } = Typography;
@@ -196,6 +197,17 @@ const GovernancePage: React.FC = () => {
           }
         >
           <Blueprints />
+        </TabPane>
+        <TabPane
+          key='fleet-learning'
+          title={
+            <span className='flex items-center gap-1'>
+              <Brain size={16} />
+              {t('governance.tabs.fleetLearning', 'Fleet Learning')}
+            </span>
+          }
+        >
+          <FleetLearning />
         </TabPane>
         <TabPane
           key='audit'

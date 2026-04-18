@@ -2815,6 +2815,126 @@ const migration_v69: IMigration = {
   },
 };
 
+/**
+ * v70 — Phase C (Dream Mode) data model (v1.11.0).
+ *
+ * learning_exports (slave-only):
+ *   Tracks which reasoning_bank + agent_memory rows have been pushed
+ *   to master as consolidation fodder. Without this table the slave
+ *   would re-push the same trajectory on every 24h cycle, so master
+ *   would see duplicates AND the slave would burn bandwidth. Keying
+ *   by (source_table, source_id, window_end) makes the "have I pushed
+ *   this specific row for this window?" check an O(1) index lookup.
+ *
+ *   Partial index on pushed_at IS NULL gives the worker a cheap way
+ *   to find "what's unsent" without scanning the full table.
+ *
+ * fleet_learnings (master-only):
+ *   Per-device shards of slave-pushed learnings. Each row is one
+ *   trajectory OR one memory-summary blob; the dream scheduler buckets
+ *   by trajectory_hash (for trajectories) and by content-hash (for
+ *   memory summaries) across devices when it consolidates.
+ *
+ *   consolidated_version is NULL until the dream scheduler merges the
+ *   row into a consolidation run — the partial index on that predicate
+ *   gives the scheduler a cheap "what's new since last run" query.
+ *
+ * consolidated_learnings (master-only):
+ *   Output of each dream pass. version is monotonic; payload is the
+ *   JSON array of DistilledTrajectory entries that gets embedded in
+ *   the next config bundle + broadcast back to slaves.
+ *
+ * reasoning_bank.source_tag (slave-only new column):
+ *   Distinguishes locally-minted trajectories from master-broadcast
+ *   consolidated ones. Without this split, the slave's pruning pass
+ *   could delete consolidated rows by accident (usage_count=0 on first
+ *   receive) and the next config pull would re-sync them, thrashing.
+ *   Default NULL = locally minted. 'fleet_consolidated' = master push.
+ */
+const migration_v70: IMigration = {
+  version: 70,
+  name: 'Create learning_exports + fleet_learnings + consolidated_learnings for Phase C Dream Mode (v1.11.0)',
+  up(db: ISqliteDriver) {
+    // Slave-only: export tracking. Master installs create this table
+    // too but never write to it — simpler than a split-schema migration.
+    db.exec(`CREATE TABLE IF NOT EXISTS learning_exports (
+      id TEXT PRIMARY KEY,
+      source_table TEXT NOT NULL CHECK(source_table IN ('reasoning_bank','agent_memory')),
+      source_id TEXT NOT NULL,
+      window_start INTEGER NOT NULL,
+      window_end INTEGER NOT NULL,
+      pushed_at INTEGER,
+      ack_version INTEGER,
+      UNIQUE(source_table, source_id, window_end)
+    )`);
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_learning_exports_unpushed ON learning_exports(pushed_at) WHERE pushed_at IS NULL'
+    );
+
+    // Master-only: ingested shards from slaves. Rows accumulate until
+    // the next dream pass consolidates them.
+    db.exec(`CREATE TABLE IF NOT EXISTS fleet_learnings (
+      id TEXT PRIMARY KEY,
+      device_id TEXT NOT NULL,
+      learning_type TEXT NOT NULL CHECK(learning_type IN ('trajectory','memory_summary')),
+      payload TEXT NOT NULL,
+      success_score REAL,
+      usage_count_local INTEGER,
+      received_at INTEGER NOT NULL,
+      consolidated_version INTEGER
+    )`);
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_fleet_learnings_unconsolidated ON fleet_learnings(consolidated_version) WHERE consolidated_version IS NULL'
+    );
+    db.exec('CREATE INDEX IF NOT EXISTS idx_fleet_learnings_device ON fleet_learnings(device_id, received_at DESC)');
+
+    // Master-only: consolidated output, versioned. Latest row's payload
+    // ships in the next config bundle.
+    db.exec(`CREATE TABLE IF NOT EXISTS consolidated_learnings (
+      version INTEGER PRIMARY KEY,
+      published_at INTEGER NOT NULL,
+      payload TEXT NOT NULL,
+      trajectory_count INTEGER NOT NULL DEFAULT 0,
+      contributing_devices INTEGER NOT NULL DEFAULT 0
+    )`);
+
+    // Slave-only new column on reasoning_bank. Default NULL keeps
+    // existing rows classified as locally-minted with zero backfill.
+    // SQLite ALTER TABLE ADD COLUMN is atomic, idempotent-safe via
+    // try/catch: if we re-run the migration on a partial state the
+    // column may already exist.
+    try {
+      db.exec(`ALTER TABLE reasoning_bank ADD COLUMN source_tag TEXT`);
+    } catch (e) {
+      // Only 'duplicate column name' is expected here; anything else
+      // is a real error and should surface. SQLite's err message format
+      // is stable ("duplicate column name: source_tag").
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!/duplicate column name/i.test(msg)) throw e;
+    }
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_reasoning_bank_source_tag ON reasoning_bank(source_tag) WHERE source_tag IS NOT NULL'
+    );
+
+    console.log(
+      '[Migration-v70] Created learning_exports + fleet_learnings + consolidated_learnings + reasoning_bank.source_tag for Dream Mode'
+    );
+  },
+  down(db: ISqliteDriver) {
+    // Note: ALTER TABLE DROP COLUMN is SQLite 3.35+. Skip the column
+    // drop on rollback — nulled values are harmless, and rolling back
+    // past a dream-mode release should be rare enough that manual
+    // cleanup is acceptable.
+    db.exec('DROP INDEX IF EXISTS idx_reasoning_bank_source_tag');
+    db.exec('DROP TABLE IF EXISTS consolidated_learnings');
+    db.exec('DROP INDEX IF EXISTS idx_fleet_learnings_device');
+    db.exec('DROP INDEX IF EXISTS idx_fleet_learnings_unconsolidated');
+    db.exec('DROP TABLE IF EXISTS fleet_learnings');
+    db.exec('DROP INDEX IF EXISTS idx_learning_exports_unpushed');
+    db.exec('DROP TABLE IF EXISTS learning_exports');
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -2829,7 +2949,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v45, migration_v46, migration_v47, migration_v48, migration_v49, migration_v50, migration_v51, migration_v52, migration_v53,
   migration_v54, migration_v55, migration_v56, migration_v57, migration_v58, migration_v59,
   migration_v60, migration_v61, migration_v62, migration_v63, migration_v64, migration_v65,
-  migration_v66, migration_v67, migration_v68, migration_v69,
+  migration_v66, migration_v67, migration_v68, migration_v69, migration_v70,
 ];
 
 /**

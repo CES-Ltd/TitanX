@@ -557,6 +557,23 @@ const handleAppReady = async (): Promise<void> => {
       } catch (err) {
         console.error('[App] Failed to start pruning scheduler:', err);
       }
+
+      // Phase C v1.11.0: start the nightly dream scheduler when running
+      // as master. Slaves never run it; their learnings push UP to the
+      // master which runs the consolidation. Gated on fleet mode to
+      // avoid wasted setTimeout budgets on regular/slave installs.
+      try {
+        const { getDatabase } = await import('@process/services/database');
+        const { getFleetMode } = await import('@process/services/fleet');
+        const mode = await getFleetMode();
+        if (mode === 'master') {
+          const { startDreamScheduler } = await import('@process/services/fleetLearning/dreamScheduler');
+          const db = await getDatabase();
+          startDreamScheduler(db.getDriver());
+        }
+      } catch (err) {
+        console.error('[App] Failed to start dream scheduler:', err);
+      }
       // Periodic manual GC every 30 minutes (if --expose-gc is active)
       if (typeof global.gc === 'function') {
         setInterval(

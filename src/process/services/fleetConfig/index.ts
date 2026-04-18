@@ -98,6 +98,8 @@ export function buildConfigBundle(db: ISqliteDriver, sinceVersion: number): Flee
       iamPolicies: [],
       securityFeatures: [],
       agentTemplates: [],
+      // consolidatedLearnings omitted on up-to-date — nothing changed,
+      // nothing to carry.
       upToDate: true,
     };
   }
@@ -158,6 +160,37 @@ export function buildConfigBundle(db: ISqliteDriver, sinceVersion: number): Flee
     createdAt: r.created_at as number,
   }));
 
+  // Phase C v1.11.0: piggy-back the latest dream-pass output on the
+  // config bundle. Loaded lazily — bundle callers that don't care
+  // (e.g. tests) pay nothing beyond a SELECT. When master has never
+  // run a dream pass, the field stays undefined and slaves skip the
+  // apply step.
+  let consolidatedLearnings: FleetConfigBundle['consolidatedLearnings'];
+  try {
+    const row = db
+      .prepare(`SELECT version, published_at, payload FROM consolidated_learnings ORDER BY version DESC LIMIT 1`)
+      .get() as { version: number; published_at: number; payload: string } | undefined;
+    if (row) {
+      const entries = JSON.parse(row.payload) as Array<{
+        trajectoryHash: string;
+        taskDescription: string;
+        trajectoryJson: string;
+        successScore: number;
+        usageCountFleetwide: number;
+        contributingDevices: number;
+      }>;
+      consolidatedLearnings = {
+        version: row.version,
+        publishedAt: row.published_at,
+        entries: Array.isArray(entries) ? entries : [],
+      };
+    }
+  } catch {
+    // consolidated_learnings table may not exist on pre-v70 DBs (e.g.
+    // during a downgrade). Treat as "no consolidated data yet" rather
+    // than failing the whole bundle build.
+  }
+
   return {
     version: currentVersion,
     updatedAt,
@@ -165,6 +198,7 @@ export function buildConfigBundle(db: ISqliteDriver, sinceVersion: number): Flee
     iamPolicies,
     securityFeatures,
     agentTemplates,
+    consolidatedLearnings,
     upToDate: false,
   };
 }
@@ -193,6 +227,7 @@ export function applyConfigBundle(db: ISqliteDriver, bundle: FleetConfigBundle):
       iamPoliciesReplaced: 0,
       securityFeaturesUpdated: 0,
       agentTemplatesReplaced: 0,
+      consolidatedLearningsApplied: 0,
       newlyManagedKeys: [],
     };
   }
@@ -301,6 +336,21 @@ export function applyConfigBundle(db: ISqliteDriver, bundle: FleetConfigBundle):
     }
   }
 
+  // Phase C v1.11.0 — install fleet-consolidated learnings into the
+  // local reasoning_bank. Idempotent upsert keyed on trajectory_hash +
+  // source_tag; locally-minted trajectories (source_tag IS NULL) are
+  // untouched. If the bundle carries an older version than what we
+  // already applied, skip — prevents accidental downgrade on split
+  // brain.
+  let consolidatedLearningsApplied = 0;
+  if (bundle.consolidatedLearnings && bundle.consolidatedLearnings.entries.length > 0) {
+    try {
+      consolidatedLearningsApplied = applyConsolidatedLearnings(db, bundle.consolidatedLearnings);
+    } catch (e) {
+      logNonCritical('fleet.config.apply-consolidated-learnings', e);
+    }
+  }
+
   // Bump local version to the bundle's version (skipping the usual +1,
   // because the slave is *adopting* master's version, not adding to it).
   db.prepare(
@@ -332,8 +382,89 @@ export function applyConfigBundle(db: ISqliteDriver, bundle: FleetConfigBundle):
     iamPoliciesReplaced: bundle.iamPolicies.length,
     securityFeaturesUpdated: bundle.securityFeatures.length,
     agentTemplatesReplaced: agentTemplates.length,
+    consolidatedLearningsApplied,
     newlyManagedKeys: Array.from(newlyManagedKeys),
   };
+}
+
+/**
+ * Apply one consolidated-learnings payload to the local reasoning_bank.
+ * Called from `applyConfigBundle` — factored out for testability +
+ * so a future "apply just the learnings" admin action can call it
+ * directly without routing through a full config pull.
+ *
+ * Idempotency: keyed on (trajectory_hash, source_tag='fleet_consolidated').
+ * Re-applying the same payload is a no-op beyond usage_count replacement.
+ *
+ * Version guard: skips if the payload's version isn't newer than
+ * whatever was last applied (detected via the max created_at on
+ * source_tag rows). Zero downside to re-applying, but skipping is
+ * cheaper.
+ *
+ * Returns the count of rows upserted.
+ */
+function applyConsolidatedLearnings(
+  db: ISqliteDriver,
+  payload: NonNullable<FleetConfigBundle['consolidatedLearnings']>
+): number {
+  // Version guard — cheaper than re-running the upsert loop.
+  // Tracked via a single-row marker in fleet_config_version extras
+  // would need schema churn; simpler to stash in updated_by field
+  // of a sentinel row. But schema already has an "updated_by" string,
+  // which is unused for learning state — reuse the `updated_at` of
+  // the newest fleet_consolidated row as a proxy for "last applied".
+  const latestLocal = db
+    .prepare(`SELECT MAX(updated_at) AS latest FROM reasoning_bank WHERE source_tag = 'fleet_consolidated'`)
+    .get() as { latest: number | null };
+  if (latestLocal.latest != null && payload.publishedAt <= latestLocal.latest) {
+    return 0;
+  }
+
+  const now = Date.now();
+  // Upsert on (trajectory_hash, source_tag). The composite isn't a
+  // unique index yet (migration-v70 kept it light), so we do a manual
+  // lookup + UPDATE/INSERT rather than relying on ON CONFLICT.
+  const lookup = db.prepare(
+    `SELECT id FROM reasoning_bank WHERE trajectory_hash = ? AND source_tag = 'fleet_consolidated' LIMIT 1`
+  );
+  const updateStmt = db.prepare(
+    `UPDATE reasoning_bank SET task_description = ?, trajectory = ?, success_score = ?, usage_count = ?, updated_at = ? WHERE id = ?`
+  );
+  const insertStmt = db.prepare(
+    `INSERT INTO reasoning_bank (id, trajectory_hash, task_description, trajectory, success_score, usage_count, created_at, updated_at, source_tag)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'fleet_consolidated')`
+  );
+  let upserted = 0;
+  for (const entry of payload.entries) {
+    const existing = lookup.get(entry.trajectoryHash) as { id: string } | undefined;
+    if (existing) {
+      updateStmt.run(
+        entry.taskDescription,
+        entry.trajectoryJson,
+        entry.successScore,
+        entry.usageCountFleetwide,
+        now,
+        existing.id
+      );
+    } else {
+      // Use a deterministic-looking id so inspection tooling can see
+      // at a glance that this row came from the fleet consolidation
+      // pipeline (rather than a UUID that looks like local).
+      const id = `fleet-cons-${entry.trajectoryHash.slice(0, 16)}`;
+      insertStmt.run(
+        id,
+        entry.trajectoryHash,
+        entry.taskDescription,
+        entry.trajectoryJson,
+        entry.successScore,
+        entry.usageCountFleetwide,
+        now,
+        now
+      );
+    }
+    upserted += 1;
+  }
+  return upserted;
 }
 
 // ── Managed-key inspection (UI consumption) ─────────────────────────────
