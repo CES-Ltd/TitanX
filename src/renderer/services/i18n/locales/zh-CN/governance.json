@@ -10,7 +10,8 @@
     "costs": "费用",
     "secrets": "密钥管理",
     "approvals": "审批",
-    "runtime": "运行时"
+    "runtime": "运行时",
+    "fleetLearning": "Fleet Learning"
   },
   "totalRuns": "总运行次数",
   "successRate": "成功率",
@@ -116,5 +117,40 @@
     "officeView": "🎮 办公室视图",
     "exitOffice": "退出办公室",
     "officeTooltip": "打开像素风办公室（彩蛋）"
+  },
+  "fleetLearning": {
+    "title": "Fleet Learning",
+    "subtitle": "Consolidated patterns learned across the fleet. Slaves push learnings nightly; master dreams, deduplicates, and broadcasts back.",
+    "refresh": "Refresh",
+    "runNow": "Run dream now",
+    "runFailed": "Dream pass failed: {{error}}",
+    "runSuccess": "Dream pass v{{version}} complete — {{count}} patterns from {{devices}} devices ({{ms}}ms)",
+    "runConfirm": {
+      "title": "Run a dream pass now?",
+      "body": "Consolidates every unprocessed slave-pushed learning into a new version. Takes a few seconds on small fleets, longer with many devices."
+    },
+    "summary": {
+      "version": "Latest version",
+      "patterns": "Consolidated patterns",
+      "devices": "Contributing devices",
+      "pending": "Pending from slaves",
+      "lastRun": "Last run"
+    },
+    "perDeviceTitle": "Slaves contributing",
+    "noDevices": "No slaves have pushed learnings yet. Enable fleet.learning.enabled in the config bundle to opt in.",
+    "patternsTitle": "Consolidated patterns (version {{v}})",
+    "noPatterns": "No consolidated patterns yet. Run a dream pass once slaves have pushed.",
+    "table": {
+      "device": "Device",
+      "trajectories": "Trajectories",
+      "memories": "Memories",
+      "lastReceived": "Last received"
+    },
+    "entries": {
+      "task": "Task pattern",
+      "devices": "Devices",
+      "usage": "Usage",
+      "score": "Score"
+    }
   }
 }

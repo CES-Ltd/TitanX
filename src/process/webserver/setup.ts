@@ -126,6 +126,9 @@ export function setupBasicMiddleware(app: Express): void {
         '/api/fleet/heartbeat',
         '/api/fleet/config',
         '/api/fleet/telemetry',
+        // Phase C v1.11.0: slave→master learning push. Same device-JWT
+        // auth as /telemetry; CSRF-exempt for the same reason.
+        '/api/fleet/learnings',
         /^\/api\/fleet\/commands\/[^/]+\/ack$/,
       ],
       [] // No service worker URLs

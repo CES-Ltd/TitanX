@@ -332,6 +332,94 @@ export function registerFleetRoutes(app: Express): void {
     }
   });
 
+  // ── Phase C v1.11.0: Dream Mode learning push ────────────────────────
+  // Slave POSTs a LearningExportEnvelope (trajectories + memory summaries).
+  // Same device-JWT gate as telemetry. Rate-limited via the shared
+  // apiRateLimiter. Policy gate (globally disabled / device opted-out)
+  // is enforced server-side so a slave pushing without opt-in still
+  // gets a clean rejectedReason ack it can surface to its UI.
+  app.post('/api/fleet/learnings', apiRateLimiter, async (req: Request, res: Response) => {
+    try {
+      const bearer = extractBearer(req);
+      if (!bearer) {
+        res.status(401).json({ error: 'Authorization: Bearer <device-jwt> required' });
+        return;
+      }
+      const db = await getDatabase();
+      const auth = fleetEnrollment.verifyDeviceRequest(db.getDriver(), bearer);
+      if ('error' in auth) {
+        res.status(401).json({ error: auth.error });
+        return;
+      }
+
+      // Validate envelope shape. Arrays may be empty — an empty
+      // envelope is semantically equivalent to "no new learnings this
+      // window" and just advances the slave's cursor.
+      const body = (req.body ?? {}) as {
+        envelope?: {
+          windowStart?: unknown;
+          windowEnd?: unknown;
+          trajectories?: unknown;
+          memorySummaries?: unknown;
+        };
+      };
+      const e = body.envelope;
+      if (
+        !e ||
+        typeof e.windowStart !== 'number' ||
+        typeof e.windowEnd !== 'number' ||
+        !Array.isArray(e.trajectories) ||
+        !Array.isArray(e.memorySummaries)
+      ) {
+        res.status(400).json({ ok: false, error: 'malformed learning envelope' });
+        return;
+      }
+
+      // Server-side policy gate. Check the global disable key first
+      // (operator kill switch); fall through to per-device opt-in. If
+      // gated out, respond 200 with rejectedReason so the slave records
+      // the reason without hammering retries.
+      const { learningService } = await import('@process/services/fleetLearning/serverGate');
+      const gate = learningService.checkOptIn(db.getDriver(), auth.deviceId);
+      if (gate.ok === false) {
+        res.json({
+          ok: false,
+          nextWindowStart: e.windowEnd,
+          ingested: { trajectories: 0, memorySummaries: 0 },
+          rejectedReason: gate.reason,
+        });
+        return;
+      }
+
+      const { ingestLearningEnvelope } = await import('@process/services/fleetLearning');
+      const envelope = {
+        windowStart: e.windowStart,
+        windowEnd: e.windowEnd,
+        trajectories: (e.trajectories as Array<Record<string, unknown>>).map((t) => ({
+          trajectoryHash: String(t.trajectoryHash ?? ''),
+          taskDescription: String(t.taskDescription ?? ''),
+          trajectoryJson: String(t.trajectoryJson ?? '[]'),
+          successScore: typeof t.successScore === 'number' ? t.successScore : 0,
+          usageCountLocal: typeof t.usageCountLocal === 'number' ? t.usageCountLocal : 0,
+        })),
+        memorySummaries: (e.memorySummaries as Array<Record<string, unknown>>).map((s) => ({
+          agentSlotHash: String(s.agentSlotHash ?? ''),
+          contentJson: String(s.contentJson ?? '{}'),
+          tokenCount: typeof s.tokenCount === 'number' ? s.tokenCount : 0,
+        })),
+      };
+
+      const ingested = ingestLearningEnvelope(db.getDriver(), auth.deviceId, envelope);
+      res.json({
+        ok: true,
+        nextWindowStart: envelope.windowEnd,
+        ingested,
+      });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   // ── Admin: device roster ─────────────────────────────────────────────
   app.get('/api/fleet/devices', apiRateLimiter, auth, async (_req: Request, res: Response) => {
     try {

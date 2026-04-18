@@ -1085,6 +1085,89 @@ export const fleet = {
     },
     { deviceId?: string; limit?: number }
   >('fleet:list-farm-jobs'),
+
+  // ── Phase C v1.11.0: Dream Mode ────────────────────────────────────────
+
+  /**
+   * Master-only: aggregated stats for the Fleet Learning governance tab.
+   * Includes last dream-pass version + timestamp, per-device ingestion
+   * counts, and the count of consolidated entries currently published
+   * in the bundle.
+   */
+  getFleetLearningStats: bridge.buildProvider<
+    {
+      lastDream: {
+        version: number;
+        publishedAt: number;
+        trajectoryCount: number;
+        contributingDevices: number;
+      } | null;
+      totalPendingFromSlaves: number;
+      perDevice: Array<{
+        deviceId: string;
+        trajectoriesReceived: number;
+        memorySummariesReceived: number;
+        lastReceivedAt: number;
+      }>;
+    },
+    void
+  >('fleet:get-learning-stats'),
+
+  /**
+   * Master-only: top consolidated patterns from the latest dream pass.
+   * Drill-down view on the FleetLearning tab.
+   */
+  listConsolidatedLearnings: bridge.buildProvider<
+    {
+      version: number | null;
+      entries: Array<{
+        trajectoryHash: string;
+        taskDescription: string;
+        successScore: number;
+        usageCountFleetwide: number;
+        contributingDevices: number;
+      }>;
+    },
+    { limit?: number }
+  >('fleet:list-consolidated-learnings'),
+
+  /**
+   * Master-only: manual "Run Dream Now" trigger. Returns the pass
+   * summary so the UI can render the result inline.
+   */
+  runDreamNow: bridge.buildProvider<
+    {
+      ok: boolean;
+      version?: number;
+      trajectoryCount?: number;
+      contributingDevices?: number;
+      elapsedMs?: number;
+      error?: string;
+    },
+    void
+  >('fleet:run-dream-now'),
+
+  /**
+   * Slave-only: the local learning-push worker's current state.
+   * Powers the settings panel showing "learning enabled? last push?
+   * any errors?"
+   */
+  getLearningPushStatus: bridge.buildProvider<
+    {
+      running: boolean;
+      enabled: boolean;
+      lastPushAt?: number;
+      lastWindowEnd?: number;
+      lastPushError?: string;
+    },
+    void
+  >('fleet:get-learning-push-status'),
+
+  /**
+   * Slave-only: admin-triggered "Push learnings now" button. Useful
+   * when verifying the opt-in + transport end-to-end.
+   */
+  pushLearningsNow: bridge.buildProvider<{ ok: boolean; error?: string }, void>('fleet:push-learnings-now'),
 };
 
 // 系统通知接口 / System notification API

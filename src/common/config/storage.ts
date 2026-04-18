@@ -151,6 +151,13 @@ export interface IConfigStorageRefer {
   // side. Changing this value AFTER enrollment has no effect — the
   // slave must re-enroll for the role change to take effect.
   'fleet.enrollmentRole'?: 'workforce' | 'farm';
+  // Local kill switch for the Phase C v1.11.0 Dream Mode learning push
+  // loop. When true, the slave skips every push cycle with a recorded
+  // reason regardless of whether master has enabled the feature via
+  // managed config. Intended as an operator-level "stop pushing my
+  // data" lever on the slave that doesn't require an admin-push cycle.
+  // Absent/false = normal (opt-in still gated by master's managed flag).
+  'fleet.learning.globalDisabled'?: boolean;
   // Telegram assistant default model / Telegram 助手默认模型
   'assistant.telegram.defaultModel'?: {
     id: string;

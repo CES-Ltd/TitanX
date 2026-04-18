@@ -6,6 +6,7 @@
 import type { IAMPolicy } from '../iamPolicies';
 import type { SecurityFeature } from '../securityFeatures';
 import type { GalleryAgent } from '../agentGallery';
+import type { ConsolidatedLearningsPayload } from '../fleetLearning/types';
 
 /** Managed security feature toggle row. */
 export type ManagedFeatureToggle = {
@@ -66,6 +67,16 @@ export type FleetConfigBundle = {
    */
   agentTemplates: ManagedAgentTemplate[];
   /**
+   * Phase C v1.11.0 — Dream Mode consolidated learnings. Master's
+   * most recent dream-pass output; slaves upsert these into their
+   * local reasoning_bank with source_tag='fleet_consolidated' so
+   * locally-minted trajectories stay separable.
+   *
+   * Undefined = master has never run a dream pass, OR master is
+   * pre-Phase-C (backward-compat via optional field).
+   */
+  consolidatedLearnings?: ConsolidatedLearningsPayload;
+  /**
    * True when the caller's `since` was already >= master version — slave
    * can skip the apply step. Lets slaves poll efficiently.
    */
@@ -79,6 +90,10 @@ export type ApplyBundleResult = {
   securityFeaturesUpdated: number;
   /** How many master-pushed agent templates landed (Phase E). */
   agentTemplatesReplaced: number;
+  /** Phase C: how many fleet-consolidated learnings were upserted
+   *  into reasoning_bank. 0 when bundle carries none or version
+   *  matches the locally-applied consolidated version. */
+  consolidatedLearningsApplied: number;
   /** Keys that flipped from local → managed in this apply. */
   newlyManagedKeys: string[];
 };
