@@ -635,6 +635,17 @@ const handleAppReady = async (): Promise<void> => {
     await initializeAcpDetector();
   }
 
+  // Fleet master: if this install is in master mode, auto-start the
+  // webserver on fleet.master.port so slaves can reach /api/fleet/*.
+  // Silent no-op on regular / slave installs. Skips if Desktop WebUI
+  // has already started a server (same Express app serves both).
+  try {
+    const { startMasterWebServerIfConfigured } = await import('./process/services/fleet');
+    void startMasterWebServerIfConfigured();
+  } catch (err) {
+    console.error('[AionUi] Failed to start fleet master webserver:', err);
+  }
+
   // Fleet slave: if this install was set up as a slave, kick off the
   // enrollment + heartbeat loop. Silent no-op when mode !== 'slave'.
   // Fire-and-forget — the slave client is resilient to master

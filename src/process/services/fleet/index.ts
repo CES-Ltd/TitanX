@@ -26,6 +26,8 @@ import { encrypt, loadOrCreateMasterKey } from '@process/services/secrets/encryp
 import { getDatabase } from '@process/services/database';
 import * as activityLogService from '@process/services/activityLog';
 import { logNonCritical } from '@process/utils/logNonCritical';
+import { getWebServerInstance, setWebServerInstance } from '@process/bridge/webuiBridge';
+import { startWebServerWithInstance } from '@process/webserver/index';
 import {
   isValidFleetMode,
   type FleetConfig,
@@ -212,6 +214,13 @@ export async function applyFleetSetup(input: FleetSetupInput): Promise<FleetSetu
     hasEnrollment: Boolean(input.slaveMasterUrl || input.slaveEnrollmentToken),
   });
 
+  // If we're switching TO master mode right now (not from boot), start
+  // the webserver immediately so the user doesn't need to restart just
+  // to see /api/fleet/* reachable. No-op if already running.
+  if (input.mode === 'master' && priorMode !== 'master') {
+    void startMasterWebServerIfConfigured();
+  }
+
   return { ok: true };
 }
 
@@ -229,6 +238,54 @@ export async function applyWizardCancelled(): Promise<void> {
     hasEnrollment: false,
     cancelled: true,
   });
+}
+
+// ── Master-mode webserver auto-start (Phase C follow-up) ────────────────
+
+/**
+ * Start the webserver on `fleet.master.port` + `fleet.master.bindAll` if
+ * this install is in master mode and the webserver isn't already running.
+ *
+ * This is the fix for a Phase A gap: the setup wizard persists the port
+ * + bindAll preference, but nothing in the boot path actually starts
+ * the server. The master wizard's promise ("Master TitanX exposes an
+ * API so slave machines can connect") was cosmetic until this ran.
+ *
+ * Collision handling: if Desktop WebUI already bound a server at boot
+ * (via `restoreDesktopWebUIFromPreferences`), we skip — the fleet
+ * routes are registered on THE SAME Express app unconditionally, so
+ * they're already reachable. Starting a second server would just fight
+ * for the port.
+ *
+ * Silent no-op in regular / slave mode. Errors are logged but never
+ * thrown — a master without a running API still boots, it just won't
+ * accept slave connections until the user opens Settings and retries.
+ */
+export async function startMasterWebServerIfConfigured(): Promise<void> {
+  const mode = await getFleetMode();
+  if (mode !== 'master') return;
+
+  // Desktop WebUI may have already started the server at boot; skip to
+  // avoid a double-bind. The fleet routes are registered on the same
+  // Express app, so the existing server already serves them.
+  if (getWebServerInstance()) {
+    console.log('[FleetMaster] Webserver already running (Desktop WebUI) — fleet routes active on that instance');
+    return;
+  }
+
+  const port = ((await ProcessConfig.get('fleet.master.port')) as number | undefined) ?? DEFAULT_MASTER_PORT;
+  const bindAll = ((await ProcessConfig.get('fleet.master.bindAll')) as boolean | undefined) ?? false;
+
+  try {
+    const instance = await startWebServerWithInstance(port, bindAll);
+    setWebServerInstance(instance);
+    console.log(
+      `[FleetMaster] Webserver started on port=${String(instance.port)} bindAll=${String(bindAll)} — /api/fleet/* ready`
+    );
+  } catch (e) {
+    logNonCritical('fleet.master.webserver-start', e);
+    console.error('[FleetMaster] Failed to auto-start master webserver:', e);
+  }
 }
 
 // ── Internals ───────────────────────────────────────────────────────────

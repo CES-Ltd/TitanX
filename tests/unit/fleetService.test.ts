@@ -56,6 +56,19 @@ vi.mock('@process/services/database', () => ({
 const mockLogActivity = vi.hoisted(() => vi.fn());
 vi.mock('@process/services/activityLog', () => ({ logActivity: mockLogActivity }));
 
+// Webserver auto-start: mock the bridge so we can assert startup calls
+// without actually binding a port.
+const mockGetWebServerInstance = vi.hoisted(() => vi.fn());
+const mockSetWebServerInstance = vi.hoisted(() => vi.fn());
+vi.mock('@process/bridge/webuiBridge', () => ({
+  getWebServerInstance: mockGetWebServerInstance,
+  setWebServerInstance: mockSetWebServerInstance,
+}));
+const mockStartWebServerWithInstance = vi.hoisted(() => vi.fn());
+vi.mock('@process/webserver/index', () => ({
+  startWebServerWithInstance: mockStartWebServerWithInstance,
+}));
+
 // Import AFTER mocks
 import {
   applyFleetSetup,
@@ -63,6 +76,7 @@ import {
   getFleetConfig,
   getFleetMode,
   isSetupRequired,
+  startMasterWebServerIfConfigured,
   validateFleetSetup,
 } from '@process/services/fleet';
 
@@ -72,6 +86,9 @@ beforeEach(() => {
   mockProcessConfig.set.mockClear();
   mockEncrypt.mockClear();
   mockLogActivity.mockClear();
+  mockGetWebServerInstance.mockReset().mockReturnValue(null);
+  mockSetWebServerInstance.mockReset();
+  mockStartWebServerWithInstance.mockReset().mockResolvedValue({ port: 8888, server: {}, wss: {} });
 });
 
 describe('getFleetMode', () => {
@@ -291,5 +308,93 @@ describe('applyWizardCancelled', () => {
     await applyWizardCancelled();
     expect(configStore['fleet.mode']).toBe('regular');
     expect(configStore['fleet.setupCompletedAt']).toBeUndefined();
+  });
+});
+
+// ── Phase C follow-up — master webserver auto-start ─────────────────────
+
+describe('startMasterWebServerIfConfigured', () => {
+  it('no-ops when mode is regular', async () => {
+    configStore['fleet.mode'] = 'regular';
+    await startMasterWebServerIfConfigured();
+    expect(mockStartWebServerWithInstance).not.toHaveBeenCalled();
+    expect(mockSetWebServerInstance).not.toHaveBeenCalled();
+  });
+
+  it('no-ops when mode is slave', async () => {
+    configStore['fleet.mode'] = 'slave';
+    await startMasterWebServerIfConfigured();
+    expect(mockStartWebServerWithInstance).not.toHaveBeenCalled();
+  });
+
+  it('skips starting when webserver already running (Desktop WebUI collision)', async () => {
+    configStore['fleet.mode'] = 'master';
+    configStore['fleet.master.port'] = 8888;
+    mockGetWebServerInstance.mockReturnValue({ port: 8888, server: {}, wss: {} });
+
+    await startMasterWebServerIfConfigured();
+
+    expect(mockStartWebServerWithInstance).not.toHaveBeenCalled();
+    expect(mockSetWebServerInstance).not.toHaveBeenCalled();
+  });
+
+  it('starts webserver with stored port + bindAll in master mode', async () => {
+    configStore['fleet.mode'] = 'master';
+    configStore['fleet.master.port'] = 9001;
+    configStore['fleet.master.bindAll'] = true;
+
+    await startMasterWebServerIfConfigured();
+
+    expect(mockStartWebServerWithInstance).toHaveBeenCalledWith(9001, true);
+    expect(mockSetWebServerInstance).toHaveBeenCalledOnce();
+  });
+
+  it('falls back to default port 8888 and bindAll=false when config keys missing', async () => {
+    configStore['fleet.mode'] = 'master';
+    // no port / bindAll set
+    await startMasterWebServerIfConfigured();
+    expect(mockStartWebServerWithInstance).toHaveBeenCalledWith(8888, false);
+  });
+
+  it('swallows startWebServer errors without throwing (master still boots)', async () => {
+    configStore['fleet.mode'] = 'master';
+    mockStartWebServerWithInstance.mockRejectedValueOnce(new Error('EADDRINUSE'));
+
+    await expect(startMasterWebServerIfConfigured()).resolves.toBeUndefined();
+    expect(mockSetWebServerInstance).not.toHaveBeenCalled();
+  });
+});
+
+describe('applyFleetSetup — master auto-start hook', () => {
+  it('starts webserver when switching regular → master at runtime', async () => {
+    configStore['fleet.mode'] = 'regular';
+    await applyFleetSetup({ mode: 'master', masterPort: 9500, masterBindAll: true });
+    // The auto-start is fire-and-forget via `void`; await a microtask to
+    // let it resolve before asserting.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockStartWebServerWithInstance).toHaveBeenCalledWith(9500, true);
+  });
+
+  it('does NOT re-start webserver when already in master mode (only port change)', async () => {
+    configStore['fleet.mode'] = 'master';
+    configStore['fleet.master.port'] = 8888;
+
+    await applyFleetSetup({ mode: 'master', masterPort: 9500 });
+    await new Promise((r) => setTimeout(r, 0));
+
+    // priorMode was master, so the auto-start hook should NOT fire — port
+    // changes without restart require the user to explicitly toggle.
+    expect(mockStartWebServerWithInstance).not.toHaveBeenCalled();
+  });
+
+  it('does NOT start webserver when switching to slave', async () => {
+    configStore['fleet.mode'] = 'regular';
+    await applyFleetSetup({
+      mode: 'slave',
+      slaveMasterUrl: 'https://m.local',
+      slaveEnrollmentToken: '1234567890abcdef',
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockStartWebServerWithInstance).not.toHaveBeenCalled();
   });
 });
