@@ -119,10 +119,12 @@ export function setupBasicMiddleware(app: Express): void {
         //   /enroll     → one-time enrollment token in body (tokenHash lookup)
         //   /heartbeat  → device JWT in Authorization: Bearer header
         //   /config     → device JWT in Authorization: Bearer header
+        //   /telemetry  → device JWT in Authorization: Bearer header
         // Each is stronger than session-based CSRF would be here.
         '/api/fleet/enroll',
         '/api/fleet/heartbeat',
         '/api/fleet/config',
+        '/api/fleet/telemetry',
       ],
       [] // No service worker URLs
     )

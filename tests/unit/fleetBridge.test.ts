@@ -90,6 +90,14 @@ vi.mock('@process/services/fleetConfig/slaveSync', () => ({
   syncNow: mockSyncNow,
 }));
 
+// Mock telemetry slavePush — bridge reads push status + fires pushNow.
+const mockGetTelemetryPushStatus = vi.hoisted(() => vi.fn());
+const mockPushTelemetryNow = vi.hoisted(() => vi.fn());
+vi.mock('@process/services/fleetTelemetry/slavePush', () => ({
+  getTelemetryPushStatus: mockGetTelemetryPushStatus,
+  pushNow: mockPushTelemetryNow,
+}));
+
 import { initFleetBridge } from '@/process/bridge/fleetBridge';
 
 beforeEach(() => {
@@ -115,6 +123,8 @@ beforeEach(() => {
   mockOnConfigApplied.mockImplementation(() => () => undefined);
   mockSyncNow.mockReset();
   mockSyncNow.mockResolvedValue({ ok: true });
+  mockGetTelemetryPushStatus.mockReset().mockResolvedValue({ running: false });
+  mockPushTelemetryNow.mockReset().mockResolvedValue({ ok: true });
   initFleetBridge();
 });
 
@@ -334,5 +344,40 @@ describe('fleet.configApplied emitter wiring', () => {
         newlyManagedKeys: ['iam.policy.x'],
       },
     ]);
+  });
+});
+
+// ── Phase D Week 2 — telemetry push providers ─────────────────────────
+
+describe('fleet.getTelemetryPushStatus', () => {
+  it('passes through the slavePush status struct', async () => {
+    mockGetTelemetryPushStatus.mockResolvedValueOnce({
+      running: true,
+      lastPushAt: 123,
+      lastReportWindowEnd: 456,
+      lastPushError: undefined,
+    });
+    const handler = providerMap.get('fleet.getTelemetryPushStatus')!;
+    const result = (await handler()) as { running: boolean; lastReportWindowEnd?: number };
+    expect(result.running).toBe(true);
+    expect(result.lastReportWindowEnd).toBe(456);
+  });
+});
+
+describe('fleet.pushTelemetryNow', () => {
+  it('delegates to slavePush.pushNow and returns its result', async () => {
+    mockPushTelemetryNow.mockResolvedValueOnce({ ok: true });
+    const handler = providerMap.get('fleet.pushTelemetryNow')!;
+    const result = await handler();
+    expect(result).toEqual({ ok: true });
+    expect(mockPushTelemetryNow).toHaveBeenCalledOnce();
+  });
+
+  it('surfaces { ok: false, error } when slave is not running', async () => {
+    mockPushTelemetryNow.mockResolvedValueOnce({ ok: false, error: 'slave is not running' });
+    const handler = providerMap.get('fleet.pushTelemetryNow')!;
+    const result = (await handler()) as { ok: boolean; error?: string };
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('slave is not running');
   });
 });

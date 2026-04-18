@@ -29,6 +29,7 @@ import { getDeviceId, getDevicePublicKey } from '@process/services/deviceIdentit
 import { encrypt, decrypt, loadOrCreateMasterKey } from '@process/services/secrets/encryption';
 import { logNonCritical } from '@process/utils/logNonCritical';
 import { startConfigSyncPoller, stopConfigSyncPoller } from '@process/services/fleetConfig/slaveSync';
+import { startTelemetryPushLoop, stopTelemetryPushLoop } from '@process/services/fleetTelemetry/slavePush';
 import os from 'os';
 
 /** Read app version from Electron's `app` when available; fall back to
@@ -106,10 +107,12 @@ export async function startSlaveIfEnrolled(): Promise<void> {
 
   const existingJwt = await getCachedDeviceJwt();
   if (existingJwt) {
-    // Already enrolled — jump straight to heartbeat + config-sync loops
+    // Already enrolled — jump straight to heartbeat + config-sync +
+    // telemetry-push loops.
     updateStatus({ connection: 'online', deviceId: getDeviceId() });
     startHeartbeatLoop(masterUrl);
     startConfigSyncPoller(masterUrl);
+    startTelemetryPushLoop(masterUrl);
     return;
   }
 
@@ -125,6 +128,7 @@ export function stopSlaveClient(): void {
   }
   _enrollmentBackoffMs = ENROLLMENT_RETRY_BASE_MS;
   stopConfigSyncPoller();
+  stopTelemetryPushLoop();
 }
 
 /** Reset all module-level state — TEST ONLY. Production code never needs this. */
@@ -179,7 +183,8 @@ async function attemptEnrollment(masterUrl: string): Promise<void> {
     });
     startHeartbeatLoop(masterUrl);
     startConfigSyncPoller(masterUrl);
-    console.log('[FleetSlave] Enrollment successful. Heartbeat + config-sync loops started.');
+    startTelemetryPushLoop(masterUrl);
+    console.log('[FleetSlave] Enrollment successful. Heartbeat + config-sync + telemetry-push loops started.');
   } catch (e) {
     logNonCritical('fleet.slave.enroll', e);
     updateStatus({

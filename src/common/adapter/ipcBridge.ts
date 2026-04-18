@@ -835,6 +835,20 @@ export const fleet = {
    * not enrolled yet), letting the UI disable/hide the button.
    */
   syncConfigNow: bridge.buildProvider<{ ok: boolean; error?: string }, void>('fleet:sync-config-now'),
+
+  // ── Phase D Week 2: telemetry push (slave→master) ─────────────────────
+  /** Slave telemetry push-loop status. Read by the Fleet sync panel. */
+  getTelemetryPushStatus: bridge.buildProvider<
+    {
+      running: boolean;
+      lastPushAt?: number;
+      lastReportWindowEnd?: number;
+      lastPushError?: string;
+    },
+    void
+  >('fleet:get-telemetry-push-status'),
+  /** Manual "Push telemetry now" button handler. Mirrors syncConfigNow. */
+  pushTelemetryNow: bridge.buildProvider<{ ok: boolean; error?: string }, void>('fleet:push-telemetry-now'),
   /**
    * Emitted after a slave successfully applies a config bundle from master.
    * Renderer listens + re-fetches IAM policies / feature toggles so the UI

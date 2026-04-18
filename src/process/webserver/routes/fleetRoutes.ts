@@ -20,6 +20,8 @@ import { type Express, type Request, type Response } from 'express';
 import { getDatabase } from '@process/services/database';
 import * as fleetEnrollment from '@process/services/fleetEnrollment';
 import { buildConfigBundle } from '@process/services/fleetConfig';
+import { ingestTelemetryReport } from '@process/services/fleetTelemetry';
+import type { TelemetryReport } from '@process/services/fleetTelemetry/types';
 import { createAuthMiddleware } from '@process/webserver/auth/middleware/TokenMiddleware';
 import { apiRateLimiter } from '../middleware/security';
 
@@ -194,6 +196,65 @@ export function registerFleetRoutes(app: Express): void {
       const sinceVersion = Number.isFinite(since) && since > 0 ? since : 0;
       const bundle = buildConfigBundle(db.getDriver(), sinceVersion);
       res.json({ bundle });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // ── Device-JWT: push telemetry report (Phase D Week 2) ───────────────
+  // Slaves POST a small JSON envelope { report } every ~6h (or on the
+  // UI's "Push now" button). Master validates the report via the
+  // fleetTelemetry service (window sanity + clock-skew guard) and
+  // upserts by (device_id, window_end) — retries are harmless.
+  app.post('/api/fleet/telemetry', apiRateLimiter, async (req: Request, res: Response) => {
+    try {
+      const bearer = extractBearer(req);
+      if (!bearer) {
+        res.status(401).json({ error: 'Authorization: Bearer <device-jwt> required' });
+        return;
+      }
+      const db = await getDatabase();
+      const auth = fleetEnrollment.verifyDeviceRequest(db.getDriver(), bearer);
+      if ('error' in auth) {
+        res.status(401).json({ error: auth.error });
+        return;
+      }
+
+      // Validate the report envelope before touching the DB so we fail
+      // fast on malformed clients instead of bubbling a SQLite error.
+      const body = (req.body ?? {}) as { report?: Partial<TelemetryReport> };
+      const r = body.report;
+      if (
+        !r ||
+        typeof r.windowStart !== 'number' ||
+        typeof r.windowEnd !== 'number' ||
+        typeof r.totalCostCents !== 'number' ||
+        typeof r.activityCount !== 'number' ||
+        typeof r.toolCallCount !== 'number' ||
+        typeof r.policyViolationCount !== 'number' ||
+        typeof r.agentCount !== 'number'
+      ) {
+        res.status(400).json({ ok: false, error: 'malformed telemetry report' });
+        return;
+      }
+      const report: TelemetryReport = {
+        windowStart: r.windowStart,
+        windowEnd: r.windowEnd,
+        totalCostCents: r.totalCostCents,
+        activityCount: r.activityCount,
+        toolCallCount: r.toolCallCount,
+        policyViolationCount: r.policyViolationCount,
+        agentCount: r.agentCount,
+        topActions: Array.isArray(r.topActions) ? r.topActions : [],
+      };
+
+      try {
+        const result = ingestTelemetryReport(db.getDriver(), auth.deviceId, report);
+        res.json(result);
+      } catch (ingestErr) {
+        // Window-validation errors from the service → 400, not 500.
+        res.status(400).json({ ok: false, error: String(ingestErr) });
+      }
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }

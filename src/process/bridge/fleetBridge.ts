@@ -30,6 +30,7 @@ import { getDatabase } from '@process/services/database';
 import * as securityFeaturesService from '@process/services/securityFeatures';
 import { isManaged, listManagedKeys } from '@process/services/fleetConfig';
 import { getConfigSyncStatus, onConfigApplied, syncNow } from '@process/services/fleetConfig/slaveSync';
+import { getTelemetryPushStatus, pushNow as pushTelemetryNowSvc } from '@process/services/fleetTelemetry/slavePush';
 import { logNonCritical } from '@process/utils/logNonCritical';
 import type { FleetMode, FleetSetupInput, FleetSetupResult } from '@/common/types/fleetTypes';
 
@@ -171,6 +172,15 @@ export function initFleetBridge(): void {
 
   ipcBridge.fleet.syncConfigNow.provider(async () => {
     return syncNow();
+  });
+
+  // ── Phase D Week 2: telemetry push ───────────────────────────────────
+  ipcBridge.fleet.getTelemetryPushStatus.provider(async () => {
+    return getTelemetryPushStatus();
+  });
+
+  ipcBridge.fleet.pushTelemetryNow.provider(async () => {
+    return pushTelemetryNowSvc();
   });
 
   // Re-emit successful config-apply events to the renderer so SWR caches
