@@ -195,6 +195,26 @@
       "activity": "Activity",
       "toolCalls": "Tool calls",
       "violations": "Violations"
+    },
+    "publishedTemplatesTitle": "Published templates",
+    "pushedCount": "{{count}} pushed",
+    "templates": {
+      "name": "Template",
+      "adoption": "Adoption",
+      "active": "active",
+      "publishedAt": "Published"
+    }
+  },
+  "gallery": {
+    "publish": {
+      "button": "Publish",
+      "unpublish": "Unpublish",
+      "publishedTag": "Published",
+      "whitelistFirst": "Whitelist this template first before publishing to the fleet",
+      "publishedSuccess": "Published \"{{name}}\" to the fleet",
+      "unpublishedSuccess": "Removed \"{{name}}\" from the fleet",
+      "unknown": "Template not found — refresh and try again",
+      "deleteBlocked": "This template is managed by your IT administrator and cannot be deleted locally."
     }
   }
 }

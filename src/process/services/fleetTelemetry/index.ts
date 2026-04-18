@@ -26,6 +26,7 @@ import type {
   StoredTelemetryReport,
   TelemetryReport,
   TelemetryState,
+  TemplateAdoption,
 } from './types';
 
 const TOP_ACTIONS_LIMIT = 5;
@@ -342,4 +343,71 @@ export function getDeviceTelemetry(
       receivedAt: r.received_at,
     };
   });
+}
+
+// ── Master: agent-template adoption (Phase E Week 3) ────────────────────
+
+/**
+ * Active-device staleness threshold. Phase B heartbeat cadence is 60s;
+ * 5 minutes gives a device one missed heartbeat of slack before it's
+ * considered absent from the fleet for adoption purposes.
+ */
+const HEARTBEAT_STALE_AFTER_MS = 5 * 60_000;
+
+/**
+ * Per-template adoption rollup for the master admin dashboard
+ * (Phase E Week 3).
+ *
+ * Answers: "How many of my enrolled slaves currently have this
+ * master-pushed template installed?"
+ *
+ * Because Phase C's bundle is full-replace + Phase E publishes templates
+ * inside that bundle, the correct answer is:
+ *
+ *   activeDevices  = enrollments with a heartbeat within the last 5 min
+ *                    (i.e. devices we're confident have applied the
+ *                    latest bundle)
+ *   enrolledDevices = all non-revoked enrollments (includes stale ones
+ *                     that will catch up on next reconnect)
+ *
+ * We don't need a per-device applied-version column — the full-replace
+ * guarantee means "recently-online => has every published template".
+ */
+export function listPublishedTemplatesWithAdoption(db: ISqliteDriver): TemplateAdoption[] {
+  const now = Date.now();
+  const staleBefore = now - HEARTBEAT_STALE_AFTER_MS;
+
+  // Enrollment counts — one query, cached in vars so a 1000-slave fleet
+  // doesn't fan out to 1000 N+1 lookups per template row.
+  const enrollRow = db
+    .prepare(
+      `SELECT
+         SUM(CASE WHEN status = 'enrolled' THEN 1 ELSE 0 END) as enrolled,
+         SUM(CASE WHEN status = 'enrolled' AND last_heartbeat_at IS NOT NULL AND last_heartbeat_at > ? THEN 1 ELSE 0 END) as active
+       FROM fleet_enrollments`
+    )
+    .get(staleBefore) as { enrolled: number | null; active: number | null } | undefined;
+
+  const enrolledDevices = enrollRow?.enrolled ?? 0;
+  const activeDevices = enrollRow?.active ?? 0;
+
+  // Pull published templates. `source != 'master'` guards against a
+  // slave-turned-master re-broadcasting its IT-pushed templates.
+  const rows = db
+    .prepare(
+      `SELECT id, name, agent_type, updated_at
+       FROM agent_gallery
+       WHERE published_to_fleet = 1 AND (source IS NULL OR source != 'master')
+       ORDER BY name ASC`
+    )
+    .all() as Array<{ id: string; name: string; agent_type: string; updated_at: number }>;
+
+  return rows.map((r) => ({
+    agentId: r.id,
+    name: r.name,
+    agentType: r.agent_type,
+    publishedAt: r.updated_at,
+    activeDevices,
+    enrolledDevices,
+  }));
 }

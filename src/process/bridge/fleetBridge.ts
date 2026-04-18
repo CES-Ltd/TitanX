@@ -34,6 +34,7 @@ import { getTelemetryPushStatus, pushNow as pushTelemetryNowSvc } from '@process
 import {
   getDeviceTelemetry as getDeviceTelemetrySvc,
   getFleetCostSummary,
+  listPublishedTemplatesWithAdoption,
 } from '@process/services/fleetTelemetry';
 import { logNonCritical } from '@process/utils/logNonCritical';
 import type { FleetMode, FleetSetupInput, FleetSetupResult } from '@/common/types/fleetTypes';
@@ -197,6 +198,13 @@ export function initFleetBridge(): void {
     const db = await getDatabase();
     const reports = getDeviceTelemetrySvc(db.getDriver(), deviceId, limit);
     return { reports };
+  });
+
+  // Phase E Week 3: published-template adoption rollup
+  ipcBridge.fleet.getPublishedTemplatesAdoption.provider(async () => {
+    const db = await getDatabase();
+    const templates = listPublishedTemplatesWithAdoption(db.getDriver());
+    return { templates };
   });
 
   // Re-emit successful config-apply events to the renderer so SWR caches

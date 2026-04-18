@@ -17,6 +17,7 @@ import {
   getFleetCostSummary,
   getTelemetryState,
   ingestTelemetryReport,
+  listPublishedTemplatesWithAdoption,
   setTelemetryState,
 } from '@process/services/fleetTelemetry';
 
@@ -444,5 +445,107 @@ describeOrSkip('fleetTelemetry — getDeviceTelemetry', () => {
     const rows = getDeviceTelemetry(db, 'corrupt-dev');
     expect(rows).toHaveLength(1);
     expect(rows[0]?.topActions).toEqual([]); // fell back gracefully
+  });
+});
+
+// ── Phase E Week 3 — listPublishedTemplatesWithAdoption ─────────────────
+
+describeOrSkip('fleetTelemetry — listPublishedTemplatesWithAdoption', () => {
+  let db: ISqliteDriver;
+  beforeEach(() => {
+    db = setupDb();
+  });
+  afterEach(() => {
+    (db as BetterSqlite3Driver).close();
+  });
+
+  function insertAgent(
+    id: string,
+    overrides: Partial<{ published_to_fleet: number; source: string; name: string }> = {}
+  ): void {
+    db.prepare(
+      `INSERT INTO agent_gallery
+       (id, user_id, name, agent_type, category, avatar_sprite_idx, capabilities, config, whitelisted,
+        allowed_tools, published, env_bindings, created_at, updated_at, published_to_fleet, source)
+       VALUES (?, 'u1', ?, 'claude', 'technical', 0, '[]', '{}', 1, '[]', 1, '{}', ?, ?, ?, ?)`
+    ).run(
+      id,
+      overrides.name ?? `Agent ${id}`,
+      Date.now(),
+      Date.now(),
+      overrides.published_to_fleet ?? 0,
+      overrides.source ?? 'local'
+    );
+  }
+
+  function insertEnrollment(
+    deviceId: string,
+    overrides: Partial<{ status: string; last_heartbeat_at: number | null }> = {}
+  ): void {
+    db.prepare(
+      `INSERT INTO fleet_enrollments
+       (device_id, device_pubkey_pem, hostname, os_version, titanx_version, enrolled_at,
+        device_jwt_jti, status, enrollment_token_hash, last_heartbeat_at)
+       VALUES (?, 'pem', ?, 'darwin', '1.9.34', ?, 'jti-' || ?, ?, 'hash-' || ?, ?)`
+    ).run(
+      deviceId,
+      `host-${deviceId}`,
+      Date.now(),
+      deviceId,
+      overrides.status ?? 'enrolled',
+      deviceId,
+      overrides.last_heartbeat_at ?? null
+    );
+  }
+
+  it('returns empty array when nothing is published', () => {
+    insertAgent('a1', { published_to_fleet: 0 });
+    insertEnrollment('d1', { last_heartbeat_at: Date.now() });
+    expect(listPublishedTemplatesWithAdoption(db)).toEqual([]);
+  });
+
+  it('lists one row per published template sorted by name', () => {
+    insertAgent('a1', { published_to_fleet: 1, name: 'Beta' });
+    insertAgent('a2', { published_to_fleet: 1, name: 'Alpha' });
+    const rows = listPublishedTemplatesWithAdoption(db);
+    expect(rows.map((r) => r.name)).toEqual(['Alpha', 'Beta']);
+  });
+
+  it('counts enrolled + active devices correctly', () => {
+    insertAgent('a1', { published_to_fleet: 1 });
+    const now = Date.now();
+    // 3 enrolled devices: 2 fresh heartbeats + 1 stale
+    insertEnrollment('d-fresh-1', { last_heartbeat_at: now - 10_000 });
+    insertEnrollment('d-fresh-2', { last_heartbeat_at: now - 60_000 });
+    insertEnrollment('d-stale', { last_heartbeat_at: now - 10 * 60_000 });
+    // 1 revoked device — should NOT count in either tally
+    insertEnrollment('d-revoked', { status: 'revoked', last_heartbeat_at: now - 1_000 });
+
+    const rows = listPublishedTemplatesWithAdoption(db);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.enrolledDevices).toBe(3);
+    expect(rows[0]!.activeDevices).toBe(2);
+  });
+
+  it("excludes published source='master' rows (slave-turned-master guard)", () => {
+    insertAgent('a-local', { published_to_fleet: 1, source: 'local', name: 'Local' });
+    insertAgent('a-master', { published_to_fleet: 1, source: 'master', name: 'Master' });
+    const rows = listPublishedTemplatesWithAdoption(db);
+    expect(rows.map((r) => r.name)).toEqual(['Local']);
+  });
+
+  it('works when there are published templates but no enrollments (first-run master)', () => {
+    insertAgent('a1', { published_to_fleet: 1 });
+    const rows = listPublishedTemplatesWithAdoption(db);
+    expect(rows[0]!.enrolledDevices).toBe(0);
+    expect(rows[0]!.activeDevices).toBe(0);
+  });
+
+  it('treats null last_heartbeat_at as inactive (never-seen device)', () => {
+    insertAgent('a1', { published_to_fleet: 1 });
+    insertEnrollment('d-neverseen', { last_heartbeat_at: null });
+    const rows = listPublishedTemplatesWithAdoption(db);
+    expect(rows[0]!.enrolledDevices).toBe(1);
+    expect(rows[0]!.activeDevices).toBe(0);
   });
 });

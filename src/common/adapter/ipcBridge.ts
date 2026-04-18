@@ -880,6 +880,24 @@ export const fleet = {
     },
     { windowStart: number; windowEnd: number; topDevicesLimit?: number }
   >('fleet:get-telemetry-summary'),
+  /**
+   * Per-template adoption rollup (Phase E Week 3). Lists every
+   * master-published template plus active vs enrolled device counts
+   * so the master admin can eyeball "is my push landing on everyone".
+   */
+  getPublishedTemplatesAdoption: bridge.buildProvider<
+    {
+      templates: Array<{
+        agentId: string;
+        name: string;
+        agentType: string;
+        publishedAt: number;
+        activeDevices: number;
+        enrolledDevices: number;
+      }>;
+    },
+    void
+  >('fleet:get-published-templates-adoption'),
   /** Per-device drill-down: recent windows + top actions for one device. */
   getDeviceTelemetry: bridge.buildProvider<
     {

@@ -24,6 +24,7 @@ import { Refresh, DocDetail, Download } from '@icon-park/react';
 import {
   resolveWindow,
   useFleetTelemetrySummary,
+  usePublishedTemplatesAdoption,
   type DashboardWindow,
 } from '@renderer/hooks/fleet/useFleetTelemetry';
 import DeviceTelemetryModal from './DeviceTelemetryModal';
@@ -47,6 +48,7 @@ const FleetDashboard: React.FC = () => {
   const { windowStart, windowEnd } = useMemo(() => resolveWindow(windowName), [windowName]);
 
   const { data, isLoading, refresh } = useFleetTelemetrySummary(windowStart, windowEnd);
+  const { templates: publishedTemplates, isLoading: templatesLoading } = usePublishedTemplatesAdoption();
 
   const handleExport = useCallback(() => {
     if (!data) return;
@@ -182,6 +184,69 @@ const FleetDashboard: React.FC = () => {
           />
         )}
       </div>
+
+      {/* Published templates adoption (Phase E Week 3) — renders only
+          when something is actually published; otherwise a full empty
+          panel is just noise. */}
+      {(templatesLoading || publishedTemplates.length > 0) && (
+        <div className='bg-2 rd-16px overflow-hidden'>
+          <div className='px-4 py-3 flex items-center justify-between border-b-1 border-border-2'>
+            <div className='text-14px font-medium'>
+              {t('fleet.dashboard.publishedTemplatesTitle', { defaultValue: 'Published templates' })}
+            </div>
+            <Tag size='small' color='green'>
+              {t('fleet.dashboard.pushedCount', {
+                defaultValue: '{{count}} pushed',
+                count: publishedTemplates.length,
+              })}
+            </Tag>
+          </div>
+          <Table
+            columns={
+              [
+                {
+                  title: t('fleet.dashboard.templates.name', { defaultValue: 'Template' }),
+                  key: 'name',
+                  render: (_: unknown, row: (typeof publishedTemplates)[number]) => (
+                    <div className='flex flex-col'>
+                      <span className='font-medium'>{row.name}</span>
+                      <span className='text-11px text-t-tertiary'>{row.agentType}</span>
+                    </div>
+                  ),
+                },
+                {
+                  title: t('fleet.dashboard.templates.adoption', { defaultValue: 'Adoption' }),
+                  key: 'adoption',
+                  render: (_: unknown, row: (typeof publishedTemplates)[number]) => {
+                    const total = row.enrolledDevices;
+                    const active = row.activeDevices;
+                    const fraction = total === 0 ? '—' : `${String(active)} / ${String(total)}`;
+                    return (
+                      <span className='tabular-nums'>
+                        {fraction}
+                        <span className='ml-2 text-t-tertiary text-11px'>
+                          {t('fleet.dashboard.templates.active', { defaultValue: 'active' })}
+                        </span>
+                      </span>
+                    );
+                  },
+                },
+                {
+                  title: t('fleet.dashboard.templates.publishedAt', { defaultValue: 'Published' }),
+                  key: 'publishedAt',
+                  render: (_: unknown, row: (typeof publishedTemplates)[number]) =>
+                    new Date(row.publishedAt).toLocaleString(),
+                },
+              ] as never
+            }
+            data={publishedTemplates}
+            loading={templatesLoading}
+            rowKey='agentId'
+            pagination={false}
+            size='small'
+          />
+        </div>
+      )}
 
       <DeviceTelemetryModal
         deviceId={drillDownDeviceId}

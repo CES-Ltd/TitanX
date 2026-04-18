@@ -68,3 +68,27 @@ export type TelemetryState = {
   /** Message from the most recent failed push, if any. */
   lastPushError?: string;
 };
+
+/**
+ * Per-template adoption summary for the master admin's Fleet Dashboard
+ * (Phase E Week 3). "Active" is defined by a recent heartbeat —
+ * Phase B's 5-minute staleness window — because the master can't
+ * directly query a slave's applied bundle version; it can only
+ * verify the slave is online and assume Phase C's full-replace
+ * semantics have pushed it every published template.
+ */
+export type TemplateAdoption = {
+  agentId: string;
+  name: string;
+  agentType: string;
+  /**
+   * When this template was last flipped to published_to_fleet=1 (or
+   * its row last updated, whichever is newer). Surfaced so admins can
+   * reason about "I published this 10 min ago, why is adoption 0?".
+   */
+  publishedAt: number;
+  /** Devices whose last_heartbeat_at is within the staleness window. */
+  activeDevices: number;
+  /** Total enrolled, non-revoked devices. */
+  enrolledDevices: number;
+};

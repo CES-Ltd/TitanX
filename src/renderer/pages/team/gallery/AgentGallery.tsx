@@ -347,7 +347,11 @@ const AgentGallery: React.FC = () => {
         // of the raw "controlled_by_master:<key>" wire string.
         const msg = err instanceof Error ? err.message : String(err);
         if (msg.startsWith('controlled_by_master')) {
-          Message.warning('This template is managed by your IT administrator and cannot be deleted locally.');
+          Message.warning(
+            t('fleet.gallery.publish.deleteBlocked', {
+              defaultValue: 'This template is managed by your IT administrator and cannot be deleted locally.',
+            })
+          );
           return;
         }
         Message.error(msg);
@@ -375,16 +379,23 @@ const AgentGallery: React.FC = () => {
       try {
         const result = await agentGallery.publishToFleet.invoke({ agentId: agent.id });
         if (result.ok) {
-          Message.success(`Published "${agent.name}" to the fleet`);
+          Message.success(
+            t('fleet.gallery.publish.publishedSuccess', {
+              defaultValue: 'Published "{{name}}" to the fleet',
+              name: agent.name,
+            })
+          );
           void loadData();
         } else {
-          Message.warning('Template not found — refresh and try again');
+          Message.warning(
+            t('fleet.gallery.publish.unknown', { defaultValue: 'Template not found — refresh and try again' })
+          );
         }
       } catch (err) {
         Message.error(err instanceof Error ? err.message : String(err));
       }
     },
-    [loadData]
+    [loadData, t]
   );
 
   const handleUnpublishFromFleet = useCallback(
@@ -392,14 +403,19 @@ const AgentGallery: React.FC = () => {
       try {
         const result = await agentGallery.unpublishFromFleet.invoke({ agentId: agent.id });
         if (result.ok) {
-          Message.success(`Removed "${agent.name}" from the fleet`);
+          Message.success(
+            t('fleet.gallery.publish.unpublishedSuccess', {
+              defaultValue: 'Removed "{{name}}" from the fleet',
+              name: agent.name,
+            })
+          );
           void loadData();
         }
       } catch (err) {
         Message.error(err instanceof Error ? err.message : String(err));
       }
     },
-    [loadData]
+    [loadData, t]
   );
 
   // ─── Render Agent Card ─────────────────────────────────────────────
@@ -452,7 +468,7 @@ const AgentGallery: React.FC = () => {
             icon={<CloseOne theme='outline' size='12' />}
             onClick={() => void handleUnpublishFromFleet(agent)}
           >
-            Unpublish
+            {t('fleet.gallery.publish.unpublish', { defaultValue: 'Unpublish' })}
           </Button>
         ) : (
           <Button
@@ -460,9 +476,22 @@ const AgentGallery: React.FC = () => {
             type='text'
             size='small'
             icon={<ShareTwo theme='outline' size='12' />}
+            // A disabled (non-whitelisted) template on the master would
+            // also land on slaves as disabled — which is usable but
+            // confusing ("I pushed it and nobody can hire it?"). Force
+            // the admin to whitelist first; publishing a live template
+            // is the only path that makes sense.
+            disabled={!agent.whitelisted}
+            title={
+              !agent.whitelisted
+                ? t('fleet.gallery.publish.whitelistFirst', {
+                    defaultValue: 'Whitelist this template first before publishing to the fleet',
+                  })
+                : undefined
+            }
             onClick={() => void handlePublishToFleet(agent)}
           >
-            Publish
+            {t('fleet.gallery.publish.button', { defaultValue: 'Publish' })}
           </Button>
         )
       );
@@ -503,7 +532,7 @@ const AgentGallery: React.FC = () => {
                 </Tag>
                 {isMaster && isPublishedToFleet && (
                   <Tag size='small' color='green'>
-                    Published
+                    {t('fleet.gallery.publish.publishedTag', { defaultValue: 'Published' })}
                   </Tag>
                 )}
                 {isSlave && isMasterManaged && (

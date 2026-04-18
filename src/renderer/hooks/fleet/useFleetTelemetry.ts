@@ -76,6 +76,40 @@ export function useDeviceTelemetry(
   };
 }
 
+// ── Phase E Week 3 — published-template adoption ──────────────────────
+
+export type PublishedTemplateAdoption = {
+  agentId: string;
+  name: string;
+  agentType: string;
+  publishedAt: number;
+  activeDevices: number;
+  enrolledDevices: number;
+};
+
+/**
+ * Lists every master-published template + the count of active vs
+ * enrolled devices that should be running it. 60 s refresh matches
+ * the rest of the dashboard — templates don't get published every
+ * second, so faster polling would just spam IPC.
+ */
+export function usePublishedTemplatesAdoption(): {
+  templates: PublishedTemplateAdoption[];
+  isLoading: boolean;
+  refresh: () => void;
+} {
+  const { data, isLoading, mutate } = useSWR<{ templates: PublishedTemplateAdoption[] }>(
+    'fleet.telemetry.templates-adoption',
+    () => ipcBridge.fleet.getPublishedTemplatesAdoption.invoke(),
+    { refreshInterval: REFRESH_INTERVAL_MS }
+  );
+  return {
+    templates: data?.templates ?? [],
+    isLoading,
+    refresh: () => void mutate(),
+  };
+}
+
 // ── Window helpers for the selector ──────────────────────────────────────
 
 export type DashboardWindow = '24h' | '7d' | '30d' | '90d';
