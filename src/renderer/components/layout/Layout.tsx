@@ -59,6 +59,7 @@ const useDebug = () => {
 
 const UpdateModal = React.lazy(() => import('@/renderer/components/settings/UpdateModal'));
 const SlaveStatusBanner = React.lazy(() => import('@/renderer/components/fleet/SlaveStatusBanner'));
+const FleetNotifier = React.lazy(() => import('@/renderer/components/fleet/FleetNotifier'));
 
 const DEFAULT_SIDER_WIDTH = 250;
 const DESKTOP_COLLAPSED_WIDTH = 64;
@@ -536,6 +537,12 @@ const Layout: React.FC<{
                 regular/master mode or when slave connection is healthy. */}
             <Suspense fallback={null}>
               <SlaveStatusBanner />
+            </Suspense>
+            {/* v1.9.38: headless listener that surfaces destructive-command
+                notifications to the slave user (cache cleared by IT,
+                credentials rotated). No DOM of its own. */}
+            <Suspense fallback={null}>
+              <FleetNotifier />
             </Suspense>
             <Outlet />
             {multiAgentContextHolder}

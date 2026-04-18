@@ -204,6 +204,33 @@ describeOrSkip('fleetTelemetry — state singleton', () => {
     expect(state.lastReportWindowEnd).toBe(1000); // unchanged
     expect(state.lastPushError).toBe('HTTP 500');
   });
+
+  // v1.9.38 regression: the earlier merge logic used
+  // `patch.lastPushError ?? existing.lastPushError` which fell through
+  // to the stored value when callers passed `undefined` to clear.
+  // Machine B would keep showing a stale "HTTP 401" forever even after
+  // pushes recovered to 200 OK.
+  it('clearing lastPushError actually clears it (v1.9.38 bugfix)', () => {
+    setTelemetryState(db, { lastPushError: 'HTTP 401' });
+    expect(getTelemetryState(db).lastPushError).toBe('HTTP 401');
+    // Simulate a successful push clearing the error
+    setTelemetryState(db, {
+      lastReportWindowEnd: 2000,
+      lastPushAt: Date.now(),
+      lastPushError: undefined,
+    });
+    expect(getTelemetryState(db).lastPushError).toBeUndefined();
+  });
+
+  it('omitting a field from patch preserves its existing value', () => {
+    setTelemetryState(db, { lastReportWindowEnd: 500, lastPushError: 'x' });
+    // Only updating lastPushAt — other two should stay put
+    setTelemetryState(db, { lastPushAt: 999 });
+    const state = getTelemetryState(db);
+    expect(state.lastReportWindowEnd).toBe(500);
+    expect(state.lastPushError).toBe('x');
+    expect(state.lastPushAt).toBe(999);
+  });
 });
 
 // ── ingestTelemetryReport (master side) ────────────────────────────────

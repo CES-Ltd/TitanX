@@ -24,6 +24,7 @@ import PreferenceRow from './PreferenceRow';
 import FleetModeSwitcher from '@/renderer/pages/fleet/FleetModeSwitcher';
 import { useFleetConfig, useFleetMode } from '@/renderer/hooks/fleet/useFleetMode';
 import FleetSyncPanel from '@/renderer/components/fleet/FleetSyncPanel';
+import ChangePasswordModal from '@/renderer/components/settings/ChangePasswordModal';
 
 /**
  * System settings content component
@@ -56,6 +57,8 @@ const SystemModalContent: React.FC = () => {
   const fleetMode = useFleetMode();
   const { data: fleetConfig } = useFleetConfig();
   const [fleetSwitcherVisible, setFleetSwitcherVisible] = useState(false);
+  // v1.9.38: in-app password change modal trigger state.
+  const [passwordModalVisible, setPasswordModalVisible] = useState(false);
 
   useEffect(() => {
     if (!isDesktop) {
@@ -256,6 +259,21 @@ const SystemModalContent: React.FC = () => {
         </div>
       ),
     },
+    {
+      // v1.9.38: admin password change. Wires to the existing
+      // webui.changePassword IPC which already requires currentPassword
+      // on the server side. Previously only reachable via `bun run resetpass`.
+      key: 'changePassword',
+      label: t('settings.password.row.label', { defaultValue: 'Admin password' }),
+      description: t('settings.password.row.description', {
+        defaultValue: 'Change the password for signing in and authorizing destructive fleet commands.',
+      }),
+      component: (
+        <Button size='small' onClick={() => setPasswordModalVisible(true)}>
+          {t('settings.password.row.button', { defaultValue: 'Change password…' })}
+        </Button>
+      ),
+    },
   ];
 
   const saveDirConfigValidate = (_values: { cacheDir: string; workDir: string }): Promise<unknown> => {
@@ -311,6 +329,7 @@ const SystemModalContent: React.FC = () => {
         onClose={() => setFleetSwitcherVisible(false)}
         currentConfig={fleetConfig}
       />
+      <ChangePasswordModal open={passwordModalVisible} onClose={() => setPasswordModalVisible(false)} />
 
       <AionScrollArea className='flex-1 min-h-0 pb-16px' disableOverflow={isPageMode}>
         <div className='space-y-16px'>

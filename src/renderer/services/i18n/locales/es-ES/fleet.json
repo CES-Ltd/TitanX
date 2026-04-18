@@ -279,6 +279,16 @@
       "credentialRotate": {
         "title": "Rotate credentials",
         "warning": "This will wipe ALL saved provider API keys on the selected device(s). Users will re-enter keys on next use."
+      },
+      "notify": {
+        "cacheClear": {
+          "title": "Cache cleared by your IT administrator",
+          "body": "Scope: {{scope}}. Affected files will be re-downloaded as needed."
+        },
+        "credentialRotate": {
+          "title": "Credentials rotated by your IT administrator",
+          "body": "{{count}} saved provider credential(s) cleared. You will be prompted to re-enter them on next use."
+        }
       }
     }
   }

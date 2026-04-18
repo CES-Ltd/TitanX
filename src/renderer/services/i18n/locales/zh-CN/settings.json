@@ -808,5 +808,24 @@
     "pendingCancel": "取消",
     "pendingTimeRemaining": "剩余时间：{{time}}"
   },
-  "appTagline": "您的 AI 数字团队 — 以闪电般的速度实现 10 倍效率 ⚡"
+  "appTagline": "您的 AI 数字团队 — 以闪电般的速度实现 10 倍效率 ⚡",
+  "password": {
+    "row": {
+      "label": "Admin password",
+      "description": "Change the password for signing in and authorizing destructive fleet commands.",
+      "button": "Change password…"
+    },
+    "title": "Change password",
+    "current": "Current password",
+    "new": "New password (at least 8 characters)",
+    "confirm": "Confirm new password",
+    "cancel": "Cancel",
+    "submit": "Update password",
+    "success": "Password updated",
+    "missingCurrent": "Enter your current password",
+    "tooShort": "New password must be at least 8 characters",
+    "mismatch": "Passwords do not match",
+    "sameAsCurrent": "New password must be different from your current password",
+    "genericError": "Failed to update password"
+  }
 }

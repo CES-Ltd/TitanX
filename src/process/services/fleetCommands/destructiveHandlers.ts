@@ -26,6 +26,29 @@ import { logActivity } from '../activityLog';
 import { logNonCritical } from '@process/utils/logNonCritical';
 import type { ISqliteDriver } from '../database/drivers/ISqliteDriver';
 
+/**
+ * v1.9.38: notify the slave's renderer when a destructive command
+ * executes. The UI listens on `fleet:destructive-executed` and shows
+ * an Arco Notification — gives the user a signal that their IT admin
+ * just did something to their machine, instead of silent surprise.
+ *
+ * Dynamic import to avoid loading @/common (which pulls in Electron
+ * IPC bindings) when this module is loaded during tests.
+ */
+async function emitSlaveNotification(
+  commandType: 'cache.clear' | 'credential.rotate',
+  result: Record<string, unknown>
+): Promise<void> {
+  try {
+    const { ipcBridge } = await import('@/common');
+    ipcBridge.fleet.destructiveExecuted.emit({ commandType, result });
+  } catch (e) {
+    // Non-critical — the ack already landed; missed notification is UX
+    // regression only, not a correctness issue.
+    logNonCritical('fleet.command.destructive-notify', e);
+  }
+}
+
 export type HandlerOutcome = {
   status: 'succeeded' | 'failed' | 'skipped';
   result?: Record<string, unknown>;
@@ -105,10 +128,12 @@ export async function handleCacheClear(params: Record<string, unknown>): Promise
     }
   }
 
-  return {
+  const outcome: HandlerOutcome = {
     status: 'succeeded',
     result: { scope, clearedPaths: cleared, skippedPaths: skipped },
   };
+  void emitSlaveNotification('cache.clear', outcome.result ?? {});
+  return outcome;
 }
 
 // ── credential.rotate ───────────────────────────────────────────────────
@@ -154,8 +179,10 @@ export async function handleCredentialRotate(db: ISqliteDriver): Promise<Handler
     logNonCritical('fleet.command.audit-credential-rotate', e);
   }
 
-  return {
+  const outcome: HandlerOutcome = {
     status: 'succeeded',
     result: { deletedSecrets: beforeCount },
   };
+  void emitSlaveNotification('credential.rotate', outcome.result ?? {});
+  return outcome;
 }

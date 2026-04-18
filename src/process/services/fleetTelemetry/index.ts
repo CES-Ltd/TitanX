@@ -157,9 +157,15 @@ export function getTelemetryState(db: ISqliteDriver): TelemetryState {
 
 /**
  * Persist slave-side cursor + push metadata. Called after a successful
- * master ack (advances lastReportWindowEnd) or after a failure (records
- * lastPushError but leaves lastReportWindowEnd untouched so the next
- * push re-tries the same window).
+ * master ack (advances lastReportWindowEnd, clears lastPushError) or
+ * after a failure (records lastPushError but leaves lastReportWindowEnd
+ * untouched so the next push re-tries the same window).
+ *
+ * Merge semantics use `in` rather than nullish coalescing. Earlier versions
+ * used `patch.lastPushError ?? existing.lastPushError`, which fell through
+ * to the old value when callers passed `undefined` to clear the error —
+ * meaning an error set once could never be cleared. That made Machine B's
+ * UI report a stale "HTTP 401" even after push had recovered to 200 OK.
  */
 export function setTelemetryState(
   db: ISqliteDriver,
@@ -168,10 +174,14 @@ export function setTelemetryState(
   const now = patch.updatedAt ?? Date.now();
   // INSERT OR REPLACE keeps the singleton at id=1 regardless of prior state.
   const existing = getTelemetryState(db);
+  // "Field is in patch" check — distinguishes "caller wants to clear"
+  // from "caller didn't mention this field". A value of undefined
+  // passed explicitly now correctly clears the field.
   const next: TelemetryState = {
-    lastReportWindowEnd: patch.lastReportWindowEnd ?? existing.lastReportWindowEnd,
-    lastPushAt: patch.lastPushAt ?? existing.lastPushAt,
-    lastPushError: patch.lastPushError ?? existing.lastPushError,
+    lastReportWindowEnd:
+      'lastReportWindowEnd' in patch ? (patch.lastReportWindowEnd ?? 0) : existing.lastReportWindowEnd,
+    lastPushAt: 'lastPushAt' in patch ? patch.lastPushAt : existing.lastPushAt,
+    lastPushError: 'lastPushError' in patch ? patch.lastPushError : existing.lastPushError,
   };
   try {
     db.prepare(

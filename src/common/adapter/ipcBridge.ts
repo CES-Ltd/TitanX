@@ -860,6 +860,18 @@ export const fleet = {
     securityFeaturesUpdated: number;
     newlyManagedKeys: string[];
   }>('fleet:config-applied'),
+  /**
+   * v1.9.38 — slave-side notification when a destructive remote
+   * command executes successfully. Renderer listens and shows an
+   * Arco Notification so the user knows IT just cleared their cache
+   * or rotated their credentials (vs silent surprise behavior).
+   * Emitted only on `status: 'succeeded'` — failures / skips stay
+   * silent to avoid spamming the user for upstream flaps.
+   */
+  destructiveExecuted: bridge.buildEmitter<{
+    commandType: 'cache.clear' | 'credential.rotate';
+    result: Record<string, unknown>;
+  }>('fleet:destructive-executed'),
 
   // ── Phase D Week 3: master dashboard queries ──────────────────────────
   /**
