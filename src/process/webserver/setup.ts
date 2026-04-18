@@ -110,7 +110,20 @@ export function setupBasicMiddleware(app: Express): void {
     csrf(
       CSRF_SECRET,
       ['POST', 'PUT', 'DELETE', 'PATCH'], // Protected methods
-      ['/login', '/api/auth/qr-login', '/api/upload'], // Excluded: login form, QR login, and file upload (uses API token auth)
+      [
+        '/login',
+        '/api/auth/qr-login',
+        '/api/upload',
+        // Fleet mode endpoints — slaves have no browser session + no CSRF
+        // token to send. Their auth is:
+        //   /enroll     → one-time enrollment token in body (tokenHash lookup)
+        //   /heartbeat  → device JWT in Authorization: Bearer header
+        //   /config     → device JWT in Authorization: Bearer header
+        // Each is stronger than session-based CSRF would be here.
+        '/api/fleet/enroll',
+        '/api/fleet/heartbeat',
+        '/api/fleet/config',
+      ],
       [] // No service worker URLs
     )
   );
