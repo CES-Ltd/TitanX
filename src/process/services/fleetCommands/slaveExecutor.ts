@@ -110,6 +110,14 @@ const SIGNED_HANDLERS: Record<SignedNonDestructiveCommandType, Handler> = {
     const { handleAgentExecute } = await import('./farmExecutor');
     return handleAgentExecute(params);
   },
+  // v2.4.0 — master fires this at hire time so the slave pre-materializes
+  // the mirror team (Lead + first teammate) before any agent.execute
+  // lands. Ensures the slave's Teams UI updates immediately instead of
+  // waiting for the first message.
+  'team.farm_provision': async (params) => {
+    const { handleTeamFarmProvision } = await import('./farmProvisioning');
+    return handleTeamFarmProvision(params);
+  },
 };
 
 // ── Public API ──────────────────────────────────────────────────────────

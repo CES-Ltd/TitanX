@@ -457,6 +457,308 @@ async function resolveCliPathForBackend(
   return { cliPath: match.cliPath, detectedName: match.name, acpArgs: match.acpArgs };
 }
 
+// ── v2.4.0 — persistent slave-Lead ACP sessions ───────────────────────
+//
+// When a team was provisioned via `team.farm_provision`, the slave
+// owns a Lead conversation whose CLI session is long-lived across
+// master turns. That preserves context ("remember what we said last
+// turn") and avoids the 2-5s ACP connect cost per message.
+//
+// Cache keyed by teamId — one Lead session per mirrored team. Master
+// turns for any teammate in that team drive the cached Lead.
+
+type LeadTurnContext = {
+  accumulator: string;
+  resolve: (
+    r: { ok: true; text: string } | { ok: false; reason: string; error: string }
+  ) => void;
+  finishReason: string | null;
+};
+
+type LeadSession = {
+  agent: import('@process/agent/acp').AcpAgent;
+  teamId: string;
+  leadConversationId: string;
+  backend: AcpBackend;
+  tmpWorkspace: string;
+  currentTurn: LeadTurnContext | null;
+  idleTimer: ReturnType<typeof setTimeout> | null;
+};
+
+const leadSessions = new Map<string, LeadSession>();
+const LEAD_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+
+function scheduleLeadIdleTeardown(session: LeadSession): void {
+  if (session.idleTimer) clearTimeout(session.idleTimer);
+  session.idleTimer = setTimeout(() => {
+    void teardownLeadSession(session.teamId, 'idle_timeout');
+  }, LEAD_IDLE_TIMEOUT_MS);
+}
+
+async function teardownLeadSession(teamId: string, reason: string): Promise<void> {
+  const session = leadSessions.get(teamId);
+  if (!session) return;
+  leadSessions.delete(teamId);
+  if (session.idleTimer) clearTimeout(session.idleTimer);
+  try {
+    await session.agent.kill();
+  } catch (e) {
+    logNonCritical(`fleet.farm.lead.kill:${reason}`, e);
+  }
+  try {
+    await fs.rm(session.tmpWorkspace, { recursive: true, force: true });
+  } catch (e) {
+    logNonCritical(`fleet.farm.lead.cleanup:${reason}`, e);
+  }
+}
+
+/**
+ * Resolve the Lead conversation + its ACP backend for a team on this
+ * slave. Returns null if the team wasn't provisioned through v2.4.0's
+ * `team.farm_provision` path — caller falls back to the old ephemeral
+ * executor in that case.
+ */
+async function resolveTeamLead(
+  db: ISqliteDriver,
+  teamId: string
+): Promise<{ leadConversationId: string; backend: AcpBackend } | null> {
+  const teamRow = db
+    .prepare('SELECT lead_agent_id, agents FROM teams WHERE id = ?')
+    .get(teamId) as { lead_agent_id: string; agents: string } | undefined;
+  if (!teamRow) return null;
+  let agents: Array<{ slotId: string; conversationId?: string; agentType?: string; role?: string }> = [];
+  try {
+    agents = JSON.parse(teamRow.agents) as typeof agents;
+  } catch {
+    return null;
+  }
+  const leadSlot = agents.find((a) => a.slotId === teamRow.lead_agent_id);
+  if (!leadSlot || !leadSlot.conversationId || !leadSlot.agentType) return null;
+  // Validate the conversation still exists on this slave — teams
+  // row could have been written by a pre-v2.4.0 upsertSlaveMirror
+  // that stamped lead_agent_id=teammateSlot without creating a Lead
+  // conversation.
+  const convRow = db
+    .prepare('SELECT id FROM conversations WHERE id = ? AND type = ?')
+    .get(leadSlot.conversationId, 'acp') as { id: string } | undefined;
+  if (!convRow) return null;
+  return { leadConversationId: leadSlot.conversationId, backend: leadSlot.agentType as AcpBackend };
+}
+
+/**
+ * Get-or-start the Lead's ACP session. Spins up a fresh CLI process
+ * scoped to the team's tmp workspace, attaches stream callbacks that
+ * funnel into the session's `currentTurn` bucket (mutable across
+ * turns). Cached thereafter; idle timer kills it after 30min
+ * inactivity.
+ */
+async function getOrStartLeadSession(
+  teamId: string,
+  leadConversationId: string,
+  backend: AcpBackend
+): Promise<{ ok: true; session: LeadSession } | { ok: false; reason: string; error: string }> {
+  const cached = leadSessions.get(teamId);
+  if (cached) {
+    scheduleLeadIdleTeardown(cached);
+    return { ok: true, session: cached };
+  }
+  const detection = await resolveCliPathForBackend(backend);
+  if (!detection) {
+    return {
+      ok: false,
+      reason: 'runtime_not_detected',
+      error: `Backend '${backend}' not detected on this device. Install the CLI and restart TitanX on the slave.`,
+    };
+  }
+  const tmpWorkspace = path.join(os.tmpdir(), `titanx-farm-lead-${teamId}`);
+  try {
+    await fs.mkdir(tmpWorkspace, { recursive: true });
+  } catch (e) {
+    return {
+      ok: false,
+      reason: 'runtime_workspace_failed',
+      error: e instanceof Error ? e.message : String(e),
+    };
+  }
+  const { AcpAgent } = await import('@process/agent/acp');
+
+  // Placeholder session object the callbacks close over. We mutate
+  // currentTurn to dispatch stream events to whichever turn is
+  // active; stale events (arriving after a turn resolves) are
+  // dropped because currentTurn resets to null on finish.
+  const session: LeadSession = {
+    agent: null as unknown as import('@process/agent/acp').AcpAgent,
+    teamId,
+    leadConversationId,
+    backend,
+    tmpWorkspace,
+    currentTurn: null,
+    idleTimer: null,
+  };
+
+  const agent = new AcpAgent({
+    id: leadConversationId,
+    backend,
+    cliPath: detection.cliPath,
+    workingDir: tmpWorkspace,
+    customArgs: detection.acpArgs,
+    extra: {
+      workspace: tmpWorkspace,
+      backend,
+      cliPath: detection.cliPath,
+      customWorkspace: false,
+      customArgs: detection.acpArgs,
+      yoloMode: true,
+    },
+    onStreamEvent: (evt) => {
+      if (!session.currentTurn) return;
+      if (evt.type === 'content') {
+        if (typeof evt.data === 'string') {
+          session.currentTurn.accumulator += evt.data;
+        } else if (evt.data && typeof evt.data === 'object') {
+          const text = (evt.data as { content?: unknown }).content;
+          if (typeof text === 'string') session.currentTurn.accumulator += text;
+        }
+      }
+    },
+    onSignalEvent: (evt) => {
+      if (!session.currentTurn) return;
+      if (evt.type === 'finish') {
+        const text = session.currentTurn.accumulator.trim();
+        const turn = session.currentTurn;
+        session.currentTurn = null;
+        turn.resolve({ ok: true, text: text.length > 0 ? text : '(runtime returned empty response)' });
+      } else if (evt.type === 'error') {
+        const reason = typeof evt.data === 'string' ? evt.data : 'runtime_error';
+        const turn = session.currentTurn;
+        session.currentTurn = null;
+        turn.resolve({ ok: false, reason: 'runtime_error', error: reason });
+      }
+    },
+  });
+  session.agent = agent;
+
+  try {
+    await agent.start();
+  } catch (e) {
+    await teardownLeadSession(teamId, 'start_failed');
+    return {
+      ok: false,
+      reason: 'runtime_start_failed',
+      error: e instanceof Error ? e.message : String(e),
+    };
+  }
+
+  leadSessions.set(teamId, session);
+  scheduleLeadIdleTeardown(session);
+  return { ok: true, session };
+}
+
+async function runTurnOnLead(
+  session: LeadSession,
+  jobId: string,
+  prompt: string,
+  timeoutMs: number
+): Promise<{ ok: true; assistantText: string } | { ok: false; reason: string; error: string }> {
+  if (session.currentTurn) {
+    // Shouldn't happen in practice — master serializes wakes per
+    // slot — but guard anyway so we don't interleave accumulators.
+    return {
+      ok: false,
+      reason: 'runtime_busy',
+      error: 'Lead session is already handling a turn for this team',
+    };
+  }
+  const result = await new Promise<
+    { ok: true; text: string } | { ok: false; reason: string; error: string }
+  >((resolve) => {
+    session.currentTurn = { accumulator: '', resolve, finishReason: null };
+    // Timeout wrapper — mirrors the master's enforced budget so we
+    // never hold the ack longer than the master is willing to wait.
+    const timer = setTimeout(() => {
+      if (session.currentTurn) {
+        session.currentTurn = null;
+        resolve({
+          ok: false,
+          reason: 'runtime_timeout',
+          error: `Lead turn exceeded ${String(timeoutMs)}ms`,
+        });
+      }
+    }, timeoutMs);
+    // Kick off the send — failure here throws synchronously from the
+    // CLI path. We treat that as a send-layer failure, not a
+    // runtime error.
+    void session.agent.sendMessage({ content: prompt, msg_id: jobId }).catch((e) => {
+      if (session.currentTurn) {
+        session.currentTurn = null;
+        clearTimeout(timer);
+        resolve({
+          ok: false,
+          reason: 'runtime_send_failed',
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    });
+    // Clear timer on resolve — wraps the user-supplied resolve.
+    const originalResolve = session.currentTurn.resolve;
+    session.currentTurn.resolve = (r) => {
+      clearTimeout(timer);
+      originalResolve(r);
+    };
+  });
+
+  scheduleLeadIdleTeardown(session);
+
+  if (result.ok) {
+    const success = result as { ok: true; text: string };
+    return { ok: true, assistantText: success.text };
+  }
+  const failure = result as { ok: false; reason: string; error: string };
+  return { ok: false, reason: failure.reason, error: failure.error };
+}
+
+/**
+ * v2.4.0 — run the turn through the slave's persistent Lead CLI
+ * session. First call for a teamId boots the Lead; subsequent calls
+ * reuse the cached session. If no Lead exists yet (pre-v2.4.0 hire
+ * or provisioning hasn't landed), returns null so caller falls back
+ * to the v2.3.x ephemeral executor.
+ */
+async function executeViaLead(
+  parsed: ExecuteParams,
+  timeoutMs: number
+): Promise<
+  | null
+  | { ok: true; assistantText: string; leadConversationId: string }
+  | { ok: false; reason: string; error: string }
+> {
+  if (!parsed.teamId) return null;
+  const db = await getDatabase();
+  const driver = db.getDriver();
+  const leadInfo = await resolveTeamLead(driver, parsed.teamId);
+  if (!leadInfo) return null;
+
+  const start = await getOrStartLeadSession(parsed.teamId, leadInfo.leadConversationId, leadInfo.backend);
+  if (!start.ok) {
+    const failure = start as { ok: false; reason: string; error: string };
+    return { ok: false, reason: failure.reason, error: failure.error };
+  }
+
+  const prompt = buildAcpPrompt(parsed.messages);
+  const turn = await runTurnOnLead(start.session, parsed.jobId, prompt, timeoutMs);
+  if (turn.ok) {
+    const success = turn as { ok: true; assistantText: string };
+    return { ok: true, assistantText: success.assistantText, leadConversationId: leadInfo.leadConversationId };
+  }
+  const failure = turn as { ok: false; reason: string; error: string };
+  // If the CLI died mid-turn, drop the cached session so the next
+  // turn re-spawns fresh instead of reusing a broken process.
+  if (failure.reason === 'runtime_error' || failure.reason === 'runtime_send_failed') {
+    await teardownLeadSession(parsed.teamId, failure.reason);
+  }
+  return { ok: false, reason: failure.reason, error: failure.error };
+}
+
 /**
  * v2.3.0 — run a single turn through the chosen ACP runtime. Spawns
  * the CLI into a per-job temp workspace, fires one prompt, collects
@@ -658,11 +960,82 @@ export async function handleAgentExecute(rawParams: Record<string, unknown>): Pr
 
   const timeoutMs = Math.max(1000, (parsed.timeoutMs ?? DEFAULT_TIMEOUT_MS) - TIMEOUT_SAFETY_MARGIN_MS);
 
-  // v2.3.0 — ACP runtime dispatch. When the operator picked an ACP
-  // backend at hire time (runtimeBackend in the envelope), route the
-  // turn through that CLI instead of the LangChain/API path. The CLI
-  // owns its own auth + model selection; the slave doesn't need a
-  // `model.config` LLM provider.
+  // v2.4.0 — prefer the slave's persistent Lead session when the
+  // team was provisioned via `team.farm_provision`. Keeps CLI
+  // context warm across master turns + avoids the 2-5s ACP connect
+  // cost per message.
+  const leadResult = await executeViaLead(parsed, timeoutMs);
+  if (leadResult !== null) {
+    if (leadResult.ok) {
+      const result = {
+        jobId: parsed.jobId,
+        assistantText: leadResult.assistantText,
+        agentTemplateId: parsed.agentTemplateId,
+        templateName: template.name,
+        runtimeBackend: parsed.runtimeBackend,
+        leadConversationId: leadResult.leadConversationId,
+        path: 'lead' as const,
+      };
+      try {
+        recordJobFinish(driver, parsed.jobId, 'completed', result);
+      } catch (e) {
+        logNonCritical('fleet.agent-execute.job-finish-lead-ok', e);
+      }
+      try {
+        logActivity(driver, {
+          userId: 'system_default_user',
+          actorType: 'system',
+          actorId: 'fleet_farm_executor',
+          action: 'fleet.agent.execute.completed',
+          entityType: 'fleet_command',
+          entityId: parsed.jobId,
+          details: {
+            agentTemplateId: parsed.agentTemplateId,
+            messagesCount: parsed.messages.length,
+            textLength: leadResult.assistantText.length,
+            runtimeBackend: parsed.runtimeBackend,
+            path: 'lead',
+          },
+          agentId: parsed.agentTemplateId,
+        });
+      } catch (e) {
+        logNonCritical('fleet.agent-execute.audit-lead-ok', e);
+      }
+      upsertSlaveMirror(driver, parsed, leadResult.assistantText);
+      return { status: 'succeeded', result };
+    }
+    // Lead path failed — same ack shape as ACP failure, plus surface
+    // the fact that the Lead was the target so master audit can
+    // distinguish Lead-routed vs ephemeral failures.
+    const failure = leadResult as { ok: false; reason: string; error: string };
+    try {
+      recordJobFinish(driver, parsed.jobId, 'failed', {}, `${failure.reason}:${failure.error}`);
+    } catch (e) {
+      logNonCritical('fleet.agent-execute.job-finish-lead-fail', e);
+    }
+    upsertSlaveMirror(
+      driver,
+      parsed,
+      `Lead-routed turn failed (${failure.reason}): ${failure.error}`
+    );
+    return {
+      status: 'failed',
+      result: {
+        reason: failure.reason,
+        error: failure.error,
+        runtimeBackend: parsed.runtimeBackend,
+        jobId: parsed.jobId,
+        path: 'lead',
+      },
+    };
+  }
+
+  // v2.3.0 — ACP runtime dispatch (fallback path when no Lead
+  // exists). When the operator picked an ACP backend at hire time
+  // (runtimeBackend in the envelope), route the turn through that
+  // CLI instead of the LangChain/API path. The CLI owns its own
+  // auth + model selection; the slave doesn't need a `model.config`
+  // LLM provider.
   if (parsed.runtimeBackend && ACP_DISPATCH_BACKENDS.has(parsed.runtimeBackend)) {
     const acpResult = await executeViaAcp(parsed, parsed.runtimeBackend as AcpBackend, timeoutMs);
     if (acpResult.ok) {

@@ -20,7 +20,8 @@ export type FleetCommandType =
   | 'credential.rotate'
   | 'agent.restart'
   | 'force.upgrade'
-  | 'agent.execute';
+  | 'agent.execute'
+  | 'team.farm_provision';
 export type AckStatus = 'succeeded' | 'failed' | 'skipped';
 
 export type FleetCommandRow = {

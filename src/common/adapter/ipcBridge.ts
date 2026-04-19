@@ -969,7 +969,8 @@ export const fleet = {
           | 'credential.rotate'
           | 'agent.restart'
           | 'force.upgrade'
-          | 'agent.execute';
+          | 'agent.execute'
+          | 'team.farm_provision';
         params: Record<string, unknown>;
         createdAt: number;
         createdBy: string;

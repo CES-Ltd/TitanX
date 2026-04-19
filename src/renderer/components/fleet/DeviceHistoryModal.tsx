@@ -55,6 +55,7 @@ const COMMAND_COLOR: Record<FleetCommandType, string | undefined> = {
   'agent.restart': 'orange',
   'force.upgrade': 'red',
   'agent.execute': 'purple',
+  'team.farm_provision': 'purple',
 };
 
 const DeviceHistoryModal: React.FC<Props> = ({ deviceId, onClose }) => {

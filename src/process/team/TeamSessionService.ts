@@ -534,6 +534,43 @@ export class TeamSessionService {
       } catch {
         /* non-critical audit */
       }
+
+      // v2.4.0 — fire `team.farm_provision` so the slave
+      // pre-materializes the mirror team (Lead + teammate) right now,
+      // before any agent.execute turns. Ensures the slave's Teams
+      // UI reflects the hire immediately instead of lazily on first
+      // message. Failures here are non-fatal — the slave will still
+      // self-heal via `upsertSlaveMirror` in farmExecutor on the
+      // first agent.execute.
+      try {
+        const logDb = await getDatabase();
+        const { enqueueSignedCommand } = await import('@process/services/fleetCommands');
+        const result = enqueueSignedCommand(logDb.getDriver(), {
+          targetDeviceId: agent.fleetBinding.deviceId,
+          commandType: 'team.farm_provision',
+          params: {
+            teamId,
+            teamName: team.name,
+            // Default the slave Lead's runtime to the teammate's
+            // runtime — keeps the operator's single-runtime choice
+            // meaningful on both master + slave sides.
+            leadRuntimeBackend: agent.fleetBinding.runtimeBackend ?? agent.agentType,
+            agentSlotId: farmAgent.slotId,
+            agentName: farmAgent.agentName,
+            remoteSlotId: agent.fleetBinding.remoteSlotId,
+            runtimeBackend: agent.fleetBinding.runtimeBackend ?? agent.agentType,
+            toolsAllowlist: agent.fleetBinding.toolsAllowlist ?? [],
+          },
+          ttlSeconds: 300,
+          createdBy: 'system_default_user',
+        });
+        if (!result.ok) {
+          console.warn('[TeamSessionService] farm_provision enqueue failed:', (result as { error: string }).error);
+        }
+      } catch (e) {
+        console.warn('[TeamSessionService] farm_provision enqueue threw:', e);
+      }
+
       return farmAgent;
     }
 

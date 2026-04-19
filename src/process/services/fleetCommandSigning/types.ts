@@ -41,7 +41,7 @@ export type DestructiveCommandType = 'cache.clear' | 'credential.rotate' | 'agen
  * slave but is enqueued through `enqueueSignedCommand` (no re-auth),
  * not `enqueueDestructiveCommand`.
  */
-export type SignedNonDestructiveCommandType = 'agent.execute';
+export type SignedNonDestructiveCommandType = 'agent.execute' | 'team.farm_provision';
 
 /**
  * Union of every command type that ships in a signed envelope — both
