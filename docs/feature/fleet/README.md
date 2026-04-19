@@ -3,10 +3,14 @@
 <p align="center">
   <img src="https://img.shields.io/badge/NEW-v2.4-FF6B6B?style=flat-square" alt="NEW">
   &nbsp;
-  <img src="https://img.shields.io/badge/Status-validated%20end--to--end-00B42A?style=flat-square" alt="Validated">
+  <img src="https://img.shields.io/badge/status-Alpha-FFB020?style=flat-square&logo=semver&logoColor=white" alt="Alpha">
+  &nbsp;
+  <img src="https://img.shields.io/badge/Validated-end--to--end-00B42A?style=flat-square" alt="Validated">
   &nbsp;
   <img src="https://img.shields.io/badge/Enterprise-ready-4FC3F7?style=flat-square" alt="Enterprise Ready">
 </p>
+
+> ⚠️ **Alpha — v2.4.x.** Master / Slave / Farm are validated end-to-end (two physical machines, hire-to-reply round-trip) and documented here as they ship. The protocol is still iterating: envelope fields may gain required params, command types may rename, telemetry shape may widen. **Pin both master and slave to the same minor version.** Production rollouts should pilot with a small slave cohort before going fleet-wide, and operators should subscribe to the GitHub Releases feed for protocol-break notes.
 
 Fleet Mode turns TitanX from a single-machine app into a control-plane that coordinates many. One machine runs as **Master**, any number run as **Slaves** (in one of two flavors — Workforce or Farm), and they exchange signed commands, config bundles, and telemetry over a small HTTP surface.
 
@@ -79,7 +83,7 @@ After enrollment the slave only needs the JWT — no more tokens. Token rotation
 
 ---
 
-## 4. Master mode
+## 4. Master mode <img src="https://img.shields.io/badge/status-Alpha-FFB020?style=flat-square" alt="Alpha">
 
 ### What it runs
 
@@ -110,7 +114,7 @@ Destructive commands (§7) additionally require the admin to re-auth with their 
 
 ---
 
-## 5. Slave / Workforce
+## 5. Slave / Workforce <img src="https://img.shields.io/badge/status-Alpha-FFB020?style=flat-square" alt="Alpha">
 
 ### Loops
 
@@ -137,7 +141,7 @@ After a config bundle is applied, any IAM policy / security toggle / template th
 
 ---
 
-## 6. Slave / Farm
+## 6. Slave / Farm <img src="https://img.shields.io/badge/status-Alpha-FFB020?style=flat-square" alt="Alpha">
 
 ### How it differs from Workforce
 

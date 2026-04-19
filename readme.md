@@ -30,7 +30,7 @@
 
 <p align="center">
   <a href="#-key-features">Features</a> &middot;
-  <a href="#-fleet-mode">Fleet Mode</a> <img src="https://img.shields.io/badge/NEW-v2.4-FF6B6B?style=flat-square" alt="NEW"> &middot;
+  <a href="#-fleet-mode">Fleet Mode</a> <img src="https://img.shields.io/badge/NEW-v2.4-FF6B6B?style=flat-square" alt="NEW"> <img src="https://img.shields.io/badge/status-Alpha-FFB020?style=flat-square&logo=semver&logoColor=white" alt="Alpha"> &middot;
   <a href="#-screenshots">Screenshots</a> &middot;
   <a href="#-security--governance">Security</a> &middot;
   <a href="#-observability">Observability</a> &middot;
@@ -198,7 +198,9 @@ https://github.com/CES-Ltd/TitanX/raw/main/docs/screenshots/demo-security.mp4
 
 ---
 
-## 🌐 Fleet Mode <img src="https://img.shields.io/badge/NEW-v2.4-FF6B6B?style=flat-square" alt="NEW"> <img src="https://img.shields.io/badge/enterprise-ready-4FC3F7?style=flat-square" alt="Enterprise Ready">
+## 🌐 Fleet Mode <img src="https://img.shields.io/badge/NEW-v2.4-FF6B6B?style=flat-square" alt="NEW"> <img src="https://img.shields.io/badge/status-Alpha-FFB020?style=flat-square&logo=semver&logoColor=white" alt="Alpha"> <img src="https://img.shields.io/badge/enterprise-ready-4FC3F7?style=flat-square" alt="Enterprise Ready">
+
+> ⚠️ **Alpha — v2.4.x.** The Master / Slave / Farm stack was validated end-to-end (two physical machines, hire-to-reply round-trip) but is still iterating. Expect breaking changes through the v2.x cycle: envelope fields may gain required params, command types may rename, telemetry shape may widen. Pin both master and slave to the same minor version. Production rollouts should pilot with a small slave cohort before going fleet-wide.
 
 TitanX v2.4 ships **Fleet Mode** — a control-plane extension that lets one install coordinate many. A device boots in one of four flavors, switchable from the titlebar without editing config files:
 
@@ -224,7 +226,7 @@ TitanX v2.4 ships **Fleet Mode** — a control-plane extension that lets one ins
 | Accept farm commands (`team.farm_provision`, `agent.execute`) | — | — | — | ✅ |
 | Host Lead ACP session for a master-mirrored team | — | — | — | ✅ |
 
-### 🏛 Master Mode <img src="https://img.shields.io/badge/NEW-v2.4-FF6B6B?style=flat-square" alt="NEW">
+### 🏛 Master Mode <img src="https://img.shields.io/badge/NEW-v2.4-FF6B6B?style=flat-square" alt="NEW"> <img src="https://img.shields.io/badge/status-Alpha-FFB020?style=flat-square&logo=semver&logoColor=white" alt="Alpha">
 
 - **Fleet Dashboard** — device roster, heartbeat freshness, enrollment tokens, revocation forensics
 - **Signed command envelopes** — Ed25519 signing with replay nonces + admin re-auth for destructive tiers
@@ -234,7 +236,7 @@ TitanX v2.4 ships **Fleet Mode** — a control-plane extension that lets one ins
 - **Farm hire modal** — editable runtime picker with green "on device" tags, runtime fallback list even before telemetry lands
 - **Dream Mode** (Phase C) — nightly cross-slave learning consolidation with redaction + per-device opt-in
 
-### 👷 Slave / Workforce <img src="https://img.shields.io/badge/NEW-v2.4-FF6B6B?style=flat-square" alt="NEW">
+### 👷 Slave / Workforce <img src="https://img.shields.io/badge/NEW-v2.4-FF6B6B?style=flat-square" alt="NEW"> <img src="https://img.shields.io/badge/status-Alpha-FFB020?style=flat-square&logo=semver&logoColor=white" alt="Alpha">
 
 - **Managed endpoint** — slave operator sees a slim UI; IT-controlled policies lock sensitive settings with a padlock icon
 - **Auto-enrollment via JWT** — device fingerprint + Ed25519 key pair bound at first enrollment, persisted encrypted
@@ -242,7 +244,7 @@ TitanX v2.4 ships **Fleet Mode** — a control-plane extension that lets one ins
 - **Telemetry push** — every 60s: cost, activity, agent counts, detected ACP runtimes (no API keys, shape only)
 - **Destructive command receiver** — verifies signed envelope (signature + replay nonce), executes with audit trail, acks with granular reason codes
 
-### 🚜 Slave / Farm <img src="https://img.shields.io/badge/NEW-v2.4-FF6B6B?style=flat-square" alt="NEW"> <img src="https://img.shields.io/badge/remote%20compute-node-FF7D00?style=flat-square" alt="Remote Compute">
+### 🚜 Slave / Farm <img src="https://img.shields.io/badge/NEW-v2.4-FF6B6B?style=flat-square" alt="NEW"> <img src="https://img.shields.io/badge/status-Alpha-FFB020?style=flat-square&logo=semver&logoColor=white" alt="Alpha"> <img src="https://img.shields.io/badge/remote%20compute-node-FF7D00?style=flat-square" alt="Remote Compute">
 
 *Farm mode is everything Workforce does, plus the slave acts as a remote-compute node for master's teams.*
 
@@ -488,7 +490,7 @@ TitanX adds **40+ tables** via **71 migrations** on top of AionUI's base schema:
 | **Traces**       | trace_runs, trace_feedback                                                                                                                                              |
 | **Operations**   | activity_log (HMAC + device signed), secrets, secret_versions, cost_events, budget_policies, budget_incidents, agent_runs, approvals, workflow_rules                    |
 | **Teams**        | teams, team_tasks (with progress_notes + lifecycle_state), sprint_tasks, sprint_counters, agent_gallery, agent_snapshots, inference_routing_rules, project_plans        |
-| **Fleet** <img src="https://img.shields.io/badge/NEW-v2.4-FF6B6B?style=flat-square" alt="NEW"> | fleet_enrollments, fleet_config_version, fleet_telemetry_reports, fleet_telemetry_state, fleet_commands, fleet_command_acks, fleet_farm_devices, fleet_agent_jobs, fleet_learnings, consolidated_learnings, learning_exports |
+| **Fleet** <img src="https://img.shields.io/badge/NEW-v2.4-FF6B6B?style=flat-square" alt="NEW"> <img src="https://img.shields.io/badge/status-Alpha-FFB020?style=flat-square&logo=semver&logoColor=white" alt="Alpha"> | fleet_enrollments, fleet_config_version, fleet_telemetry_reports, fleet_telemetry_state, fleet_commands, fleet_command_acks, fleet_farm_devices, fleet_agent_jobs, fleet_learnings, consolidated_learnings, learning_exports |
 
 ---
 
