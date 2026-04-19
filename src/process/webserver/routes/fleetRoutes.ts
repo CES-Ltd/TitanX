@@ -51,6 +51,46 @@ function extractBearer(req: Request): string | null {
   return m ? m[1].trim() : null;
 }
 
+/**
+ * v2.5.0 Phase D1 — per-slave trajectory quota check for the
+ * /api/fleet/learnings endpoint.
+ *
+ * Count trajectory rows ingested from this device in the last
+ * `windowMs` (default 24h). If over the max, reject the envelope.
+ * Quota is on trajectory count only — memory summaries and
+ * consumption feedback are cheaper and not covered. Master's
+ * existing apiRateLimiter middleware caps request rate, this
+ * bounds *stored volume* so a slow-drip flooder can't bypass it.
+ */
+function checkTrajectoryQuota(
+  driver: import('@process/services/database/drivers/ISqliteDriver').ISqliteDriver,
+  deviceId: string
+): { ok: true } | { ok: false; used: number; max: number; windowMs: number } {
+  const windowMs = 24 * 60 * 60 * 1000;
+  const envMax = process.env.TITANX_FLEET_LEARNING_DEVICE_QUOTA;
+  let max = 500;
+  if (envMax) {
+    const n = Number.parseInt(envMax, 10);
+    if (Number.isFinite(n) && n > 0) max = n;
+  }
+  try {
+    const since = Date.now() - windowMs;
+    const row = driver
+      .prepare(
+        `SELECT COUNT(*) AS n FROM fleet_learnings
+         WHERE device_id = ? AND learning_type = 'trajectory' AND received_at >= ?`
+      )
+      .get(deviceId, since) as { n: number } | undefined;
+    const used = row?.n ?? 0;
+    if (used >= max) return { ok: false, used, max, windowMs };
+    return { ok: true };
+  } catch {
+    // On read failure, fail open — better to let an occasional push
+    // through than block all slaves because of a transient DB error.
+    return { ok: true };
+  }
+}
+
 export function registerFleetRoutes(app: Express): void {
   // ── Admin: mint a new one-time enrollment token ───────────────────────
   app.post('/api/fleet/enrollment-tokens', apiRateLimiter, auth, async (req: Request, res: Response) => {
@@ -324,7 +364,7 @@ export function registerFleetRoutes(app: Express): void {
         // ingestor stashes it in the JSON payload column; absent on
         // pre-v2.2.1 slaves, handled downstream as "unknown".
         runtimes: Array.isArray((r as { runtimes?: unknown }).runtimes)
-          ? ((r as { runtimes: TelemetryReport['runtimes'] }).runtimes)
+          ? (r as { runtimes: TelemetryReport['runtimes'] }).runtimes
           : undefined,
       };
 
@@ -415,6 +455,32 @@ export function registerFleetRoutes(app: Express): void {
         return;
       }
 
+      // v2.5.0 Phase D1 — per-slave trajectory quota. Master re-enforces
+      // a daily cap (default 500/day; configurable via
+      // TITANX_FLEET_LEARNING_DEVICE_QUOTA env var) so a buggy or
+      // malicious slave can't flood fleet_learnings with garbage
+      // between slave-side caps and the nightly prune. Rejected with
+      // status 200 + rejectedReason='rate_limited' so the slave
+      // records the reason and doesn't retry immediately.
+      const quotaResult = checkTrajectoryQuota(db.getDriver(), auth.deviceId);
+      if (!quotaResult.ok) {
+        // Explicit cast — TS narrowing across the `!ok` guard above is
+        // flaky with returned discriminated unions here.
+        const denied = quotaResult as { ok: false; used: number; max: number; windowMs: number };
+        res.json({
+          ok: false,
+          nextWindowStart: e.windowEnd,
+          ingested: { trajectories: 0, memorySummaries: 0 },
+          rejectedReason: 'rate_limited',
+          // Include quota details for operator debugging — slave logs
+          // the full body on rate-limit.
+          quotaWindow: denied.windowMs,
+          quotaUsed: denied.used,
+          quotaMax: denied.max,
+        });
+        return;
+      }
+
       const { ingestLearningEnvelope } = await import('@process/services/fleetLearning');
       const envelope = {
         windowStart: e.windowStart,
@@ -425,12 +491,23 @@ export function registerFleetRoutes(app: Express): void {
           trajectoryJson: String(t.trajectoryJson ?? '[]'),
           successScore: typeof t.successScore === 'number' ? t.successScore : 0,
           usageCountLocal: typeof t.usageCountLocal === 'number' ? t.usageCountLocal : 0,
+          failurePattern: typeof t.failurePattern === 'boolean' ? t.failurePattern : undefined,
         })),
         memorySummaries: (e.memorySummaries as Array<Record<string, unknown>>).map((s) => ({
           agentSlotHash: String(s.agentSlotHash ?? ''),
           contentJson: String(s.contentJson ?? '{}'),
           tokenCount: typeof s.tokenCount === 'number' ? s.tokenCount : 0,
         })),
+        // v2.5.0 Phase B1 — consumption feedback is optional;
+        // validated element-by-element below.
+        consumptionFeedback: Array.isArray((e as { consumptionFeedback?: unknown }).consumptionFeedback)
+          ? (e as { consumptionFeedback: Array<Record<string, unknown>> }).consumptionFeedback.map((c) => ({
+              trajectoryHash: String(c.trajectoryHash ?? ''),
+              usedCount: typeof c.usedCount === 'number' ? c.usedCount : 0,
+              successCount: typeof c.successCount === 'number' ? c.successCount : 0,
+              fromFleet: c.fromFleet === true,
+            }))
+          : undefined,
       };
 
       const ingested = ingestLearningEnvelope(db.getDriver(), auth.deviceId, envelope);

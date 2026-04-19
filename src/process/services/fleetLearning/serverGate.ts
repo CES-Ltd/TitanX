@@ -45,7 +45,12 @@ export const learningService = {
       const enabled = db
         .prepare(`SELECT enabled FROM security_features WHERE feature = 'fleet.learning.enabled' LIMIT 1`)
         .get() as { enabled: number } | undefined;
-      if (enabled?.enabled !== 1) {
+      // v2.5.0 Phase A1 — absent row means not-explicitly-disabled.
+      // Any slave that bothered to send a learning envelope clearly
+      // wants to participate; master only rejects when the row
+      // exists AND is 0. Matches the slave-side default-on flip in
+      // slavePush.ts's isLearningEnabledForDevice.
+      if (enabled !== undefined && enabled.enabled !== 1) {
         return { ok: false, reason: 'device_opted_out' };
       }
     } catch {

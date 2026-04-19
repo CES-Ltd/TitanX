@@ -30,6 +30,21 @@ export type ExportedTrajectory = {
   successScore: number;
   /** Local usage_count on THIS slave. Master sums across devices. */
   usageCountLocal: number;
+  /**
+   * v2.5.0 Phase B2 — set when this trajectory came from a failed
+   * turn (status not completed/active). Master's distillation
+   * pass treats failure clusters as sources of avoidance rules
+   * rather than preferred paths. Optional for back-compat with
+   * pre-v2.5 slaves.
+   */
+  failurePattern?: boolean;
+  /**
+   * v2.5.0 final — workspace scope. When present, master only
+   * consolidates this trajectory into clusters scoped to the same
+   * workspace. Absent / null = fleet-wide. Pre-v2.5 slaves won't
+   * emit this; master treats that as fleet-wide for back-compat.
+   */
+  workspaceId?: string;
 };
 
 /** A single exported agent-memory summary — slave side. */
@@ -42,12 +57,40 @@ export type ExportedMemorySummary = {
   tokenCount: number;
 };
 
+/**
+ * v2.5.0 Phase B1 — consumption feedback item.
+ *
+ * When a slave's agent turn consumes a consolidated trajectory (via
+ * findSimilarTrajectories) and the turn closes with success, the
+ * slave tracks per-trajectory counters. These piggyback to master
+ * on the next learning push so the dream pass can re-rank by
+ * real-world adoption (not just ingestion-time signal).
+ */
+export type ConsumptionFeedbackItem = {
+  /** trajectory_hash — master joins this back to consolidated_learnings. */
+  trajectoryHash: string;
+  /** How many times this slave used the entry since last push. */
+  usedCount: number;
+  /** Of those uses, how many ended in successScore >= 0.7. */
+  successCount: number;
+  /** Whether this entry came from master's consolidation
+   *  (source_tag='fleet_consolidated') or is locally-minted. Master
+   *  only folds consolidated ones into usage_count_fleetwide; local
+   *  feedback is stored for audit but doesn't change ranking. */
+  fromFleet: boolean;
+};
+
 /** The push envelope — wire format slave→master. */
 export type LearningExportEnvelope = {
   windowStart: number;
   windowEnd: number;
   trajectories: ExportedTrajectory[];
   memorySummaries: ExportedMemorySummary[];
+  /**
+   * v2.5.0 Phase B1 — consumption feedback for consolidated entries.
+   * Optional for back-compat with pre-v2.5 master (which ignores it).
+   */
+  consumptionFeedback?: ConsumptionFeedbackItem[];
 };
 
 /** Master's reply to a slave learning push. */
@@ -64,6 +107,18 @@ export type LearningIngestResult = {
    *  disabled). Slave logs the reason + stops pushing until its next
    *  opt-in cycle. */
   rejectedReason?: 'learning_globally_disabled' | 'device_opted_out' | 'rate_limited';
+};
+
+/**
+ * v2.5.0 Phase C1 — structured insight extracted by the distillation
+ * LLM. Pre-v2.5 entries don't have this field and keep falling back
+ * to `taskDescription` for retrieval hints.
+ */
+export type DistilledInsightPayload = {
+  taskShape: string;
+  preferredPath?: string;
+  avoidancePath?: string;
+  triggerCondition?: string;
 };
 
 /** A single consolidated learning — produced by the dream scheduler. */
@@ -84,6 +139,65 @@ export type ConsolidatedLearning = {
   /** How many distinct devices contributed to this cluster. Stored as
    *  provenance so the dashboard can render "3 devices learned this". */
   contributingDevices: number;
+  /**
+   * v2.5.0 Phase B2 — set when this cluster was majority-failures.
+   * Slave applies `avoidancePath` as a warn-against hint rather than
+   * a preferred path when injecting into the prompt.
+   */
+  failurePattern?: boolean;
+  /**
+   * v2.5.0 Phase C1 — structured distillation output. Optional; pre-
+   * v2.5 consolidated rows lack this and still work via
+   * `taskDescription` alone.
+   */
+  insight?: DistilledInsightPayload;
+  /**
+   * v2.5.0 final — workspace scope carried through from the source
+   * trajectories. When present, slaves should only surface this
+   * cluster to agents running in the matching workspace. When
+   * absent / null, the cluster is fleet-wide (consolidated from
+   * untagged trajectories, available to every workspace).
+   */
+  workspaceId?: string;
+};
+
+/**
+ * v2.5.0 Phase C2 — consolidated memory summary, broadcast to slaves.
+ *
+ * Each entry represents what the fleet knows about an agent slot
+ * (identified by agentSlotHash = SHA256(slotId)[:16]). Entries are
+ * the N most-recent slave-side summaries for that slot, across all
+ * devices. Slaves upsert these into their own agent_memory with a
+ * source_tag so local agents consult fleet-wide domain knowledge
+ * alongside their own history.
+ */
+export type ConsolidatedMemorySummary = {
+  agentSlotHash: string;
+  entries: Array<{
+    contentJson: string;
+    deviceId: string;
+    receivedAt: number;
+  }>;
+  contributingDevices: number;
+};
+
+/**
+ * v2.5.0 Phase C3 — template persona patch. The dream pass produces
+ * these for agent templates that have high-signal fleet-wide clusters
+ * tied to them. Slaves append the patch to the template's
+ * `instructionsMd` at agent-spawn time. Kept separate from the
+ * original instructions so an admin can inspect / roll back patches
+ * without touching the base template.
+ */
+export type FleetTemplatePatch = {
+  /** `agent_gallery.id` this patch applies to. Must match a synced template. */
+  agentGalleryId: string;
+  /** Short markdown addendum (≤1KB) describing the fleet-learned rules. */
+  fleetInstructionsMd: string;
+  /** Count of clusters that contributed to this patch — for audit. */
+  clusterCount: number;
+  /** Highest rank score among contributing clusters. */
+  maxRankScore: number;
 };
 
 /** Published consolidated-learnings payload — travels in the config bundle. */
@@ -91,6 +205,18 @@ export type ConsolidatedLearningsPayload = {
   version: number;
   publishedAt: number;
   entries: ConsolidatedLearning[];
+  /**
+   * v2.5.0 Phase C2 — optional, consolidated memory summaries from
+   * the dream pass. Pre-v2.5 master omits it; pre-v2.5 slave ignores
+   * it. Both continue to work with just `entries` for trajectories.
+   */
+  memorySummaries?: ConsolidatedMemorySummary[];
+  /**
+   * v2.5.0 Phase C3 — optional template persona patches. Absent
+   * when no template reached the patch-worthy threshold in the
+   * last pass. Pre-v2.5 slaves ignore this field.
+   */
+  templatePatches?: FleetTemplatePatch[];
 };
 
 /** Caps enforced by the slave push worker. */
@@ -105,6 +231,20 @@ export const LEARNING_EXPORT_LIMITS = {
   MAX_PAYLOAD_BYTES: 500_000,
 } as const;
 
-/** Default cadence for the slave push loop. 24h aligns with the nightly
- *  master dream pass so the master always sees fresh data each run. */
-export const LEARNING_PUSH_INTERVAL_MS = 24 * 60 * 60 * 1000;
+/**
+ * Default cadence for the slave push loop.
+ *
+ * v2.5.0 Phase A2 — lowered from 24h → 2h. The 24h setting aligned with
+ * the nightly 03:00 dream pass, but it meant a lesson learned at
+ * 10:00 AM on Slave A couldn't help Slave B until 40+ hours later
+ * (24h push + 24h dream cycle + 30s config-pull). Two hours is still
+ * lightweight at scale (payloads are capped at 500KB, the dream
+ * scheduler now threshold-triggers before the nightly timer, and
+ * push only fires if there are unexported trajectories in the
+ * window), so the extra frequency is effectively free when fleets
+ * are idle.
+ *
+ * Operators can still tune via TITANX_LEARNING_PUSH_HOURS (min 1,
+ * max 168); 2h is the sensible default for self-evolving fleets.
+ */
+export const LEARNING_PUSH_INTERVAL_MS = 2 * 60 * 60 * 1000;

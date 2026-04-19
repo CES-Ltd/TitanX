@@ -239,7 +239,7 @@ function upsertSlaveMirror(
   // teammates context we don't re-log. assistantText is only non-null
   // on success — failure paths write their own error bubble.
   try {
-    const lastUser = [...params.messages].reverse().find((m) => m.role === 'user');
+    const lastUser = [...params.messages].toReversed().find((m) => m.role === 'user');
     if (lastUser) {
       const msgId = `${params.jobId}-user`;
       db.prepare(
@@ -469,9 +469,7 @@ async function resolveCliPathForBackend(
 
 type LeadTurnContext = {
   accumulator: string;
-  resolve: (
-    r: { ok: true; text: string } | { ok: false; reason: string; error: string }
-  ) => void;
+  resolve: (r: { ok: true; text: string } | { ok: false; reason: string; error: string }) => void;
   finishReason: string | null;
 };
 
@@ -522,9 +520,9 @@ async function resolveTeamLead(
   db: ISqliteDriver,
   teamId: string
 ): Promise<{ leadConversationId: string; backend: AcpBackend } | null> {
-  const teamRow = db
-    .prepare('SELECT lead_agent_id, agents FROM teams WHERE id = ?')
-    .get(teamId) as { lead_agent_id: string; agents: string } | undefined;
+  const teamRow = db.prepare('SELECT lead_agent_id, agents FROM teams WHERE id = ?').get(teamId) as
+    | { lead_agent_id: string; agents: string }
+    | undefined;
   if (!teamRow) return null;
   let agents: Array<{ slotId: string; conversationId?: string; agentType?: string; role?: string }> = [];
   try {
@@ -669,43 +667,43 @@ async function runTurnOnLead(
       error: 'Lead session is already handling a turn for this team',
     };
   }
-  const result = await new Promise<
-    { ok: true; text: string } | { ok: false; reason: string; error: string }
-  >((resolve) => {
-    session.currentTurn = { accumulator: '', resolve, finishReason: null };
-    // Timeout wrapper — mirrors the master's enforced budget so we
-    // never hold the ack longer than the master is willing to wait.
-    const timer = setTimeout(() => {
-      if (session.currentTurn) {
-        session.currentTurn = null;
-        resolve({
-          ok: false,
-          reason: 'runtime_timeout',
-          error: `Lead turn exceeded ${String(timeoutMs)}ms`,
-        });
-      }
-    }, timeoutMs);
-    // Kick off the send — failure here throws synchronously from the
-    // CLI path. We treat that as a send-layer failure, not a
-    // runtime error.
-    void session.agent.sendMessage({ content: prompt, msg_id: jobId }).catch((e) => {
-      if (session.currentTurn) {
-        session.currentTurn = null;
+  const result = await new Promise<{ ok: true; text: string } | { ok: false; reason: string; error: string }>(
+    (resolve) => {
+      session.currentTurn = { accumulator: '', resolve, finishReason: null };
+      // Timeout wrapper — mirrors the master's enforced budget so we
+      // never hold the ack longer than the master is willing to wait.
+      const timer = setTimeout(() => {
+        if (session.currentTurn) {
+          session.currentTurn = null;
+          resolve({
+            ok: false,
+            reason: 'runtime_timeout',
+            error: `Lead turn exceeded ${String(timeoutMs)}ms`,
+          });
+        }
+      }, timeoutMs);
+      // Kick off the send — failure here throws synchronously from the
+      // CLI path. We treat that as a send-layer failure, not a
+      // runtime error.
+      void session.agent.sendMessage({ content: prompt, msg_id: jobId }).catch((e) => {
+        if (session.currentTurn) {
+          session.currentTurn = null;
+          clearTimeout(timer);
+          resolve({
+            ok: false,
+            reason: 'runtime_send_failed',
+            error: e instanceof Error ? e.message : String(e),
+          });
+        }
+      });
+      // Clear timer on resolve — wraps the user-supplied resolve.
+      const originalResolve = session.currentTurn.resolve;
+      session.currentTurn.resolve = (r) => {
         clearTimeout(timer);
-        resolve({
-          ok: false,
-          reason: 'runtime_send_failed',
-          error: e instanceof Error ? e.message : String(e),
-        });
-      }
-    });
-    // Clear timer on resolve — wraps the user-supplied resolve.
-    const originalResolve = session.currentTurn.resolve;
-    session.currentTurn.resolve = (r) => {
-      clearTimeout(timer);
-      originalResolve(r);
-    };
-  });
+        originalResolve(r);
+      };
+    }
+  );
 
   scheduleLeadIdleTeardown(session);
 
@@ -728,9 +726,7 @@ async function executeViaLead(
   parsed: ExecuteParams,
   timeoutMs: number
 ): Promise<
-  | null
-  | { ok: true; assistantText: string; leadConversationId: string }
-  | { ok: false; reason: string; error: string }
+  null | { ok: true; assistantText: string; leadConversationId: string } | { ok: false; reason: string; error: string }
 > {
   if (!parsed.teamId) return null;
   const db = await getDatabase();
@@ -772,8 +768,7 @@ async function executeViaAcp(
   backend: AcpBackend,
   timeoutMs: number
 ): Promise<
-  | { ok: true; assistantText: string; usage?: Record<string, unknown> }
-  | { ok: false; reason: string; error: string }
+  { ok: true; assistantText: string; usage?: Record<string, unknown> } | { ok: false; reason: string; error: string }
 > {
   // v2.3.1 — look up the CLI path the slave's own detector found
   // at boot. Without this, AcpConnection.connect() throws
@@ -1027,11 +1022,7 @@ export async function handleAgentExecute(rawParams: Record<string, unknown>): Pr
     } catch (e) {
       logNonCritical('fleet.agent-execute.job-finish-lead-fail', e);
     }
-    upsertSlaveMirror(
-      driver,
-      parsed,
-      `Lead-routed turn failed (${failure.reason}): ${failure.error}`
-    );
+    upsertSlaveMirror(driver, parsed, `Lead-routed turn failed (${failure.reason}): ${failure.error}`);
     return {
       status: 'failed',
       result: {

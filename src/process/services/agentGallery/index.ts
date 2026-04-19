@@ -31,6 +31,16 @@ export type GalleryAgent = {
   maxBudgetCents?: number;
   allowedTools: string[];
   instructionsMd?: string;
+  /**
+   * v2.5.0 Phase C3 — fleet-learned persona patch. Populated by the
+   * master's dream pass via the config bundle; slaves write it on
+   * applyConfigBundle; agent spawn appends it to `instructionsMd`
+   * so an agent gets both the template's base instructions AND the
+   * fleet's aggregated wisdom at once. NULL / undefined = no patch.
+   * Kept separate from instructionsMd so an admin can inspect /
+   * roll back patches without touching the base template text.
+   */
+  fleetInstructionsMd?: string;
   skillsMd?: string;
   heartbeatMd?: string;
   heartbeatIntervalSec: number;
@@ -304,6 +314,29 @@ export function isPublishedToFleet(db: ISqliteDriver, agentId: string): boolean 
   return row?.published_to_fleet === 1;
 }
 
+/**
+ * v2.5.0 Phase C3 — returns the effective instructions for an agent
+ * by concatenating the template's base `instructionsMd` with the
+ * fleet-learned persona patch (`fleetInstructionsMd`) if present.
+ * A clear separator + heading is emitted so the runtime prompt
+ * visually distinguishes the base persona from fleet-aggregated
+ * rules, and so an operator reading the prompt can tell at a glance
+ * which text came from the dream pass.
+ *
+ * Returns undefined when both fields are empty — lets callers branch
+ * on presence rather than dealing with empty strings.
+ */
+export function getEffectiveInstructions(agent: GalleryAgent): string | undefined {
+  const base = agent.instructionsMd?.trim();
+  const patch = agent.fleetInstructionsMd?.trim();
+  if (!base && !patch) return undefined;
+  if (!patch) return base;
+  if (!base) {
+    return `## Fleet-Learned Rules\n\n${patch}`;
+  }
+  return `${base}\n\n---\n\n## Fleet-Learned Rules\n\n_The following patterns have been aggregated from fleet-wide learning:_\n\n${patch}`;
+}
+
 function rowToAgent(row: Record<string, unknown>): GalleryAgent {
   const source = (row.source as string) ?? 'local';
   return {
@@ -321,6 +354,12 @@ function rowToAgent(row: Record<string, unknown>): GalleryAgent {
     maxBudgetCents: (row.max_budget_cents as number) ?? undefined,
     allowedTools: JSON.parse((row.allowed_tools as string) || '[]'),
     instructionsMd: (row.instructions_md as string) ?? undefined,
+    // v2.5.0 Phase C3 — fleet-learned persona patch (migration v72).
+    // Kept as a separate field so admin UIs can display base vs patch
+    // independently and so unpublish can clear the patch without
+    // destroying the template's own text. Callers that need the
+    // effective runtime persona should use `getEffectiveInstructions()`.
+    fleetInstructionsMd: (row.fleet_instructions_md as string) ?? undefined,
     skillsMd: (row.skills_md as string) ?? undefined,
     heartbeatMd: (row.heartbeat_md as string) ?? undefined,
     heartbeatIntervalSec: (row.heartbeat_interval_sec as number) ?? 0,

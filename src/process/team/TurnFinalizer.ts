@@ -94,24 +94,65 @@ export class TurnFinalizer {
     const serialActions = outcome.actions.filter((a) => a.type !== 'send_message');
     if (serialActions.length === 0) return;
     try {
+      // v2.5.0 Phase B2 — capture failures too. Pre-v2.5 only stored
+      // turns with successScore >= 0.7 (implicitly, by only writing
+      // the completed/active branch with 0.8). Failures were
+      // discarded — throwing away half the learning signal. Now we
+      // stamp `failure_pattern = 1` on non-success turns so Phase
+      // C's distillation prompt can extract avoidance rules
+      // ("don't do X, it fails on Y") alongside winning paths.
+      const isSuccess = outcome.agent.status === 'completed' || outcome.agent.status === 'active';
+
+      // v2.5.0 final — workspace scope. Look up the team row for
+      // `outcome.teamId` once and stamp the workspace on the
+      // trajectory. Keeps cross-tenant retrieval walls intact.
+      // Best-effort: if the row is missing or malformed, we fall
+      // back to a fleet-wide (null-workspace) trajectory.
+      let workspaceId: string | undefined;
+      try {
+        const row = driver.prepare('SELECT workspace FROM teams WHERE id = ?').get(outcome.teamId) as
+          | { workspace: string | null }
+          | undefined;
+        if (row?.workspace && row.workspace.trim().length > 0) workspaceId = row.workspace;
+      } catch {
+        /* table may not exist in tests; leave workspaceId undefined */
+      }
+
+      // v2.5.0 final — richer trajectory capture. Instead of stamping
+      // the same truncated accumulatedText as the result on every
+      // step, include the full (truncated) agent reasoning once at the
+      // trajectory level via the first step's result, then leave the
+      // remaining steps with a short action-specific marker. This
+      // gives the master's distillation prompt enough context to
+      // understand WHY the tool sequence worked, without blowing up
+      // the trajectory payload beyond Phase D's 500KB budget.
+      const reasoningSnippet = outcome.accumulatedText.slice(0, 1000);
+      const steps = serialActions.map((a, i) => ({
+        toolName: a.type,
+        args: { ...(a as Record<string, unknown>) },
+        result: i === 0 ? reasoningSnippet : `step ${String(i + 1)} of ${String(serialActions.length)}`,
+        durationMs: 0,
+      }));
+
       const trajectoryId = reasoningBank.storeTrajectory(driver, {
         taskDescription: `${outcome.agent.agentName}: ${outcome.accumulatedText.slice(0, 100)}`,
-        steps: serialActions.map((a) => ({
-          toolName: a.type,
-          args: { ...(a as Record<string, unknown>) },
-          result: outcome.accumulatedText.slice(0, 200),
-          durationMs: 0,
-        })),
-        successScore: outcome.agent.status === 'completed' || outcome.agent.status === 'active' ? 0.8 : 0.5,
+        steps,
+        successScore: isSuccess ? 0.8 : 0.3,
+        failurePattern: !isSuccess,
+        workspaceId,
       });
       activityLogService.logActivity(driver, {
         userId: 'system_default_user',
         actorType: 'agent',
         actorId: outcome.agent.agentName,
-        action: 'reasoning_bank.trajectory_stored',
+        action: isSuccess ? 'reasoning_bank.trajectory_stored' : 'reasoning_bank.failure_stored',
         entityType: 'reasoning_bank',
         entityId: trajectoryId,
-        details: { steps: serialActions.length, agent: outcome.agent.agentName },
+        details: {
+          steps: serialActions.length,
+          agent: outcome.agent.agentName,
+          failurePattern: !isSuccess,
+        },
       });
     } catch (e) {
       logNonCritical('team.turn-finalizer.reasoning-bank', e);

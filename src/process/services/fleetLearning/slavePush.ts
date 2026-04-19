@@ -42,12 +42,42 @@ function resolveInterval(): number {
   return LEARNING_PUSH_INTERVAL_MS;
 }
 
-let _pushTimer: ReturnType<typeof setInterval> | null = null;
+let _pushTimer: ReturnType<typeof setTimeout> | null = null;
 let _inFlight = false;
 let _lastMasterUrl: string | undefined;
 
+/**
+ * v2.5.0 final — in-memory exponential-backoff state for push failures.
+ * When a push fails (network error, non-2xx response, or master reject)
+ * we extend the interval before the next attempt: 1× → 2× → 4× → 8×
+ * the base cadence, capped at 8× (so a 2h base caps at 16h). The
+ * counter resets on the first successful push.
+ *
+ * State lives in-memory (not SQLite): backoff is a live retry signal,
+ * not a historical record. Process restart clears it — which is the
+ * right behavior since whatever caused the outage might already be
+ * resolved by the time we come back up.
+ */
+let _consecutiveFailures = 0;
+const MAX_BACKOFF_MULTIPLIER = 8;
+
+function currentBackoffDelayMs(): number {
+  if (_consecutiveFailures === 0) return PUSH_INTERVAL_MS;
+  const multiplier = Math.min(MAX_BACKOFF_MULTIPLIER, 2 ** _consecutiveFailures);
+  return PUSH_INTERVAL_MS * multiplier;
+}
+
+// v2.5.0 final — `setTimeout` and `setInterval` both return Timeout-
+// like handles but TypeScript's conditional generic narrowing drops
+// the timeout variant in Node type environments. We store a nullable
+// unknown and use type-erased clearTimeout/clearInterval paths that
+// work for either. This helper keeps the "running?" boolean honest.
+function isLoopRunning(): boolean {
+  return _pushTimer != null;
+}
+
 export async function getLearningPushStatus(): Promise<LearningPushStatus> {
-  const running = _pushTimer != null;
+  const running = isLoopRunning();
   try {
     const db = await getDatabase();
     const state = getLearningState(db.getDriver());
@@ -72,17 +102,35 @@ export async function getLearningPushStatus(): Promise<LearningPushStatus> {
  * Start the push loop. Safe to call repeatedly. Fires one push pass
  * immediately on start so a slave that booted after an offline stretch
  * catches up without waiting a full 24h.
+ *
+ * v2.5.0 final — uses `setTimeout` instead of `setInterval` so the
+ * exponential-backoff window (on consecutive failures) actually
+ * extends between attempts. `setInterval` would keep hammering at
+ * the base cadence no matter how many 502s we saw.
  */
 export function startLearningPushLoop(masterUrl: string): void {
   _lastMasterUrl = masterUrl;
   if (_pushTimer) return;
-  void pushOnce(masterUrl);
-  _pushTimer = setInterval(() => void pushOnce(masterUrl), PUSH_INTERVAL_MS);
+  void pushOnce(masterUrl).then(() => scheduleNext(masterUrl));
+}
+
+function scheduleNext(masterUrl: string): void {
+  if (_pushTimer) return; // scheduleNext shouldn't stack if stopLearningPushLoop hasn't cleared
+  const delay = currentBackoffDelayMs();
+  if (_consecutiveFailures > 0) {
+    console.warn(
+      `[LearningPush] Backing off ${String(_consecutiveFailures)}× after consecutive failures — next attempt in ${String(Math.round(delay / 60000))} min`
+    );
+  }
+  _pushTimer = setTimeout(() => {
+    _pushTimer = null;
+    void pushOnce(masterUrl).then(() => scheduleNext(masterUrl));
+  }, delay);
 }
 
 export function stopLearningPushLoop(): void {
   if (_pushTimer) {
-    clearInterval(_pushTimer);
+    clearTimeout(_pushTimer);
     _pushTimer = null;
   }
 }
@@ -91,6 +139,7 @@ export function __resetLearningPushForTests(): void {
   stopLearningPushLoop();
   _inFlight = false;
   _lastMasterUrl = undefined;
+  _consecutiveFailures = 0;
 }
 
 /** Admin-triggered "Push now" from the renderer. */
@@ -120,6 +169,9 @@ export async function pushOnce(masterUrl: string): Promise<void> {
     const enabled = await isLearningEnabledForDevice();
     if (!enabled) {
       await recordError('learning export disabled by admin');
+      // A disabled-by-admin state is steady-state, not a transient
+      // failure — don't escalate backoff. The next config pull can
+      // flip it back on without waiting through a retry window.
       return;
     }
 
@@ -148,6 +200,9 @@ export async function pushOnce(masterUrl: string): Promise<void> {
         lastPushAt: Date.now(),
         lastPushError: null,
       });
+      // An empty window is a quiet success: clear the backoff so
+      // the next non-empty window pushes on the base cadence.
+      _consecutiveFailures = 0;
       return;
     }
 
@@ -162,12 +217,21 @@ export async function pushOnce(masterUrl: string): Promise<void> {
     });
 
     if (!response.ok) {
-      await recordError(`learning push failed: HTTP ${String(response.status)}`);
+      _consecutiveFailures += 1;
+      await recordError(
+        `learning push failed: HTTP ${String(response.status)} (backoff ${String(_consecutiveFailures)}×)`
+      );
       return;
     }
 
     const payload = (await response.json()) as Partial<LearningIngestResult>;
     if (payload.ok === false) {
+      // `rate_limited` from master is explicitly a backoff signal.
+      // `learning_globally_disabled` / `device_opted_out` are steady
+      // states — treat like gate 1, don't escalate backoff.
+      if (payload.rejectedReason === 'rate_limited') {
+        _consecutiveFailures += 1;
+      }
       await recordError(`learning push rejected: ${payload.rejectedReason ?? 'unknown'}`);
       return;
     }
@@ -176,13 +240,37 @@ export async function pushOnce(masterUrl: string): Promise<void> {
     // Record which rows were pushed so the next envelope skips them.
     markEnvelopePushed(driver, envelope);
 
+    // v2.5.0 Phase B1 — reset consumption counters on successful push
+    // so we don't double-count on the next envelope. Match by
+    // trajectory_hash → resolve to local ids via a cheap lookup.
+    if (envelope.consumptionFeedback && envelope.consumptionFeedback.length > 0) {
+      try {
+        const hashes = envelope.consumptionFeedback.map((c) => c.trajectoryHash);
+        const placeholders = hashes.map(() => '?').join(',');
+        const rows = driver
+          .prepare(`SELECT id FROM reasoning_bank WHERE trajectory_hash IN (${placeholders})`)
+          .all(...hashes) as Array<{ id: string }>;
+        const { resetConsumptionCounters } = await import('@process/services/reasoningBank');
+        resetConsumptionCounters(
+          driver,
+          rows.map((r) => r.id)
+        );
+      } catch (e) {
+        logNonCritical('fleet.learning.reset-consumption', e);
+      }
+    }
+
     setLearningState(driver, {
       lastWindowEnd: nextWindowStart,
       lastPushAt: Date.now(),
       lastPushError: null,
     });
+    // Success path — clear exponential backoff so subsequent pushes
+    // run at the base cadence again.
+    _consecutiveFailures = 0;
   } catch (e) {
-    await recordError(e instanceof Error ? e.message : String(e));
+    _consecutiveFailures += 1;
+    await recordError(`${e instanceof Error ? e.message : String(e)} (backoff ${String(_consecutiveFailures)}×)`);
     logNonCritical('fleet.learning.push', e);
   } finally {
     _inFlight = false;
@@ -216,16 +304,24 @@ async function isLearningEnabledForDevice(): Promise<boolean> {
   }
   try {
     const db = await getDatabase();
-    // fleet.learning.enabled travels through the managed_config_keys
-    // table (Phase C config-bundle extension). We read it via the
-    // security_features pathway since that's where managed feature
-    // toggles land from bundle apply.
+    // v2.5.0 Phase A1 — default-on for fleet-enrolled slaves. The
+    // learning push loop only starts AFTER successful enrollment
+    // (fleetSlave/index.ts:118), so if we're running this gate we're
+    // already a slave with a device JWT. Absent row = not explicitly
+    // disabled by master = opt-in by default. An explicit row with
+    // enabled=0 still wins (master can kill-switch per device via
+    // the config bundle). The pre-v2.5 behavior (absent row = off)
+    // meant the fleet never self-evolved out of the box — documented
+    // gap in the dream-mode architecture review.
     const row = db
       .getDriver()
       .prepare(`SELECT enabled FROM security_features WHERE feature = 'fleet.learning.enabled' LIMIT 1`)
       .get() as { enabled: number } | undefined;
-    return row?.enabled === 1;
+    if (!row) return true;
+    return row.enabled === 1;
   } catch {
+    // On any read failure, stay conservative and skip — next cycle
+    // will retry the check.
     return false;
   }
 }

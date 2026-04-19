@@ -20,6 +20,7 @@ import type { ISqliteDriver } from '../database/drivers/ISqliteDriver';
 import { deepScrubForExport } from '@process/utils/redaction';
 import { logActivity } from '../activityLog';
 import { logNonCritical } from '@process/utils/logNonCritical';
+import { drainConsumptionFeedback } from '@process/services/reasoningBank';
 import {
   LEARNING_EXPORT_LIMITS,
   type ConsolidatedLearningsPayload,
@@ -156,14 +157,48 @@ export function buildLearningEnvelope(
   const trajectories = selectTrajectories(db, windowStart, windowEnd);
   const memorySummaries = selectMemorySummaries(db, windowStart, windowEnd);
 
-  if (trajectories.length === 0 && memorySummaries.length === 0) return null;
+  // v2.5.0 Phase B1 — drain pending consumption counters and ship
+  // them as part of the envelope. Only non-empty ones (count > 0
+  // enforced by drainConsumptionFeedback's WHERE clause).
+  const consumptionRaw = drainConsumptionFeedback(db);
+  const consumptionFeedback = consumptionRaw.map((r) => ({
+    trajectoryHash: r.trajectoryHash,
+    usedCount: r.usedCount,
+    successCount: r.successCount,
+    fromFleet: r.sourceTag === 'fleet_consolidated',
+  }));
+
+  if (trajectories.length === 0 && memorySummaries.length === 0 && consumptionFeedback.length === 0) {
+    return null;
+  }
+
+  // v2.5.0 Phase D3 — post-redaction secret audit. deepScrubForExport
+  // already replaces known-pattern secrets with [REDACTED], but it's
+  // pattern-based — a base64'd API key, a non-standard private key,
+  // or a customer-specific identifier can slip through. This second
+  // pass scans the final JSON payload for high-entropy strings +
+  // well-known provider prefixes (sk-, ghp_, xoxb-, etc) and drops
+  // offending trajectories / summaries before they leave the slave.
+  const auditedTrajectories = trajectories.filter((t) => !looksLikeSecretPayload(t.trajectoryJson));
+  const auditedSummaries = memorySummaries.filter((s) => !looksLikeSecretPayload(s.contentJson));
+  if (auditedTrajectories.length < trajectories.length) {
+    logNonCritical('fleet.learning.secret-audit-dropped', {
+      trajectories: trajectories.length - auditedTrajectories.length,
+    });
+  }
+  if (auditedSummaries.length < memorySummaries.length) {
+    logNonCritical('fleet.learning.secret-audit-dropped', {
+      memorySummaries: memorySummaries.length - auditedSummaries.length,
+    });
+  }
 
   // Enforce payload byte budget — drop lowest-signal trajectories first.
   const envelope: LearningExportEnvelope = {
     windowStart,
     windowEnd,
-    trajectories,
-    memorySummaries,
+    trajectories: auditedTrajectories,
+    memorySummaries: auditedSummaries,
+    consumptionFeedback: consumptionFeedback.length > 0 ? consumptionFeedback : undefined,
   };
   const clamped = clampEnvelopeToBytes(envelope, LEARNING_EXPORT_LIMITS.MAX_PAYLOAD_BYTES);
   return clamped;
@@ -174,29 +209,56 @@ function selectTrajectories(db: ISqliteDriver, windowStart: number, _windowEnd: 
   // (source_table, source_id, window_end) index — a NOT EXISTS subquery
   // is simpler than a LEFT JOIN here and the exports table stays small
   // because old cursors are swept.
-  const rows = db
-    .prepare(
-      `SELECT rb.id, rb.trajectory_hash, rb.task_description, rb.trajectory, rb.success_score, rb.usage_count
-       FROM reasoning_bank rb
-       WHERE rb.source_tag IS NULL
-         AND rb.updated_at >= ?
-         AND NOT EXISTS (
-           SELECT 1 FROM learning_exports le
-           WHERE le.source_table = 'reasoning_bank'
-             AND le.source_id = rb.id
-             AND le.pushed_at IS NOT NULL
-         )
-       ORDER BY rb.success_score * rb.usage_count DESC, rb.updated_at DESC
-       LIMIT ?`
-    )
-    .all(windowStart, LEARNING_EXPORT_LIMITS.MAX_TRAJECTORIES_PER_WINDOW) as Array<{
+  //
+  // v2.5.0 final — select `workspace_id` too so the envelope can
+  // carry the scope to master. Falls back gracefully on DBs where
+  // migration v72 hasn't yet added the column (wrapped in try/catch).
+  type Row = {
     id: string;
     trajectory_hash: string;
     task_description: string;
     trajectory: string;
     success_score: number;
     usage_count: number;
-  }>;
+    failure_pattern: number;
+    workspace_id?: string | null;
+  };
+  let rows: Row[];
+  try {
+    rows = db
+      .prepare(
+        `SELECT rb.id, rb.trajectory_hash, rb.task_description, rb.trajectory, rb.success_score, rb.usage_count, rb.failure_pattern, rb.workspace_id
+         FROM reasoning_bank rb
+         WHERE rb.source_tag IS NULL
+           AND rb.updated_at >= ?
+           AND NOT EXISTS (
+             SELECT 1 FROM learning_exports le
+             WHERE le.source_table = 'reasoning_bank'
+               AND le.source_id = rb.id
+               AND le.pushed_at IS NOT NULL
+           )
+         ORDER BY rb.success_score * rb.usage_count DESC, rb.updated_at DESC
+         LIMIT ?`
+      )
+      .all(windowStart, LEARNING_EXPORT_LIMITS.MAX_TRAJECTORIES_PER_WINDOW) as Row[];
+  } catch {
+    rows = db
+      .prepare(
+        `SELECT rb.id, rb.trajectory_hash, rb.task_description, rb.trajectory, rb.success_score, rb.usage_count, rb.failure_pattern
+         FROM reasoning_bank rb
+         WHERE rb.source_tag IS NULL
+           AND rb.updated_at >= ?
+           AND NOT EXISTS (
+             SELECT 1 FROM learning_exports le
+             WHERE le.source_table = 'reasoning_bank'
+               AND le.source_id = rb.id
+               AND le.pushed_at IS NOT NULL
+           )
+         ORDER BY rb.success_score * rb.usage_count DESC, rb.updated_at DESC
+         LIMIT ?`
+      )
+      .all(windowStart, LEARNING_EXPORT_LIMITS.MAX_TRAJECTORIES_PER_WINDOW) as Row[];
+  }
 
   return rows.map((r) => ({
     trajectoryHash: r.trajectory_hash,
@@ -206,6 +268,12 @@ function selectTrajectories(db: ISqliteDriver, windowStart: number, _windowEnd: 
     trajectoryJson: JSON.stringify(deepScrubForExport(safeParseArray(r.trajectory))),
     successScore: r.success_score,
     usageCountLocal: r.usage_count,
+    // v2.5.0 Phase B2 — forward the failure flag to master.
+    failurePattern: r.failure_pattern === 1,
+    // v2.5.0 final — forward the workspace scope to master so the
+    // dream pass can consolidate per-workspace clusters instead of
+    // leaking tenant-specific patterns fleet-wide.
+    workspaceId: r.workspace_id ?? undefined,
   }));
 }
 
@@ -281,6 +349,73 @@ function safeParseArray(s: string): unknown[] {
 }
 
 /**
+ * v2.5.0 Phase D3 — belt-and-suspenders secret detector.
+ *
+ * deepScrubForExport already replaces known patterns with [REDACTED].
+ * This second layer scans the final JSON string for things that look
+ * like credentials the scrubber might have missed:
+ *   - Explicit provider prefixes (sk-, sk-ant-, ghp_, gho_, ghu_,
+ *     github_pat_, xoxb-, xoxp-, AKIA, ASIA, AIza, ya29.)
+ *   - Long high-entropy base64 / hex-ish runs (≥40 chars, ≥4 bits/char entropy)
+ *   - PEM private key BEGIN markers
+ *   - JSON Web Token shape (three base64url segments separated by dots)
+ *
+ * Returns true if the payload should be DROPPED from the envelope.
+ * False positives (legitimate code output that happens to look like
+ * a secret) are preferred over leaking a real one — the trajectory
+ * just doesn't contribute to the fleet's learning for that window.
+ */
+function looksLikeSecretPayload(payload: string): boolean {
+  if (!payload || payload.length === 0) return false;
+  // Known-provider prefixes — cheap indexOf sweep.
+  const providerPrefixes = [
+    'sk-ant-',
+    'sk-',
+    'ghp_',
+    'gho_',
+    'ghu_',
+    'github_pat_',
+    'xoxb-',
+    'xoxp-',
+    'AKIA',
+    'ASIA',
+    'AIza',
+    'ya29.',
+  ];
+  for (const p of providerPrefixes) {
+    if (payload.includes(p)) return true;
+  }
+  // PEM private keys.
+  if (payload.includes('-----BEGIN') && payload.includes('PRIVATE KEY')) return true;
+  // JWT shape: three base64url segments, middle of which decodes to
+  // something with `"alg":`. Quick string check avoids full decoding.
+  if (/eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/.test(payload)) return true;
+  // Long high-entropy runs. Scan character classes over a sliding
+  // window of 40 chars; if any window has 4+ bits/char Shannon
+  // entropy on its 40-char content, flag it. Keep the check bounded
+  // to avoid quadratic cost on large payloads — sample the first 8KB.
+  const sample = payload.slice(0, 8192);
+  const suspectRun = /[A-Za-z0-9_+/=-]{40,}/g;
+  let m: RegExpExecArray | null;
+  while ((m = suspectRun.exec(sample)) !== null) {
+    if (shannonEntropy(m[0]) >= 4) return true;
+  }
+  return false;
+}
+
+function shannonEntropy(s: string): number {
+  if (s.length === 0) return 0;
+  const counts = new Map<string, number>();
+  for (const ch of s) counts.set(ch, (counts.get(ch) ?? 0) + 1);
+  let h = 0;
+  for (const c of counts.values()) {
+    const p = c / s.length;
+    h -= p * Math.log2(p);
+  }
+  return h;
+}
+
+/**
  * Mark the envelope's source rows as pushed. Called AFTER master
  * returns 2xx so we don't record a push that didn't actually land.
  * Idempotent via the unique index — retrying the same window is safe.
@@ -332,42 +467,124 @@ export function ingestLearningEnvelope(
   let trajectories = 0;
   let memorySummaries = 0;
 
-  const insertStmt = db.prepare(
-    `INSERT INTO fleet_learnings
-     (id, device_id, learning_type, payload, success_score, usage_count_local, received_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
-  );
+  // v2.5.0 final — prefer the workspace-aware insert shape when the
+  // fleet_learnings table has the column. Falls back to the
+  // pre-workspace shape on DBs that haven't run migration v72.
+  const hasWorkspaceColumn = (() => {
+    try {
+      const info = db.prepare(`PRAGMA table_info(fleet_learnings)`).all() as Array<{ name: string }>;
+      return info.some((c) => c.name === 'workspace_id');
+    } catch {
+      return false;
+    }
+  })();
+
+  const insertStmt = hasWorkspaceColumn
+    ? db.prepare(
+        `INSERT INTO fleet_learnings
+         (id, device_id, learning_type, payload, success_score, usage_count_local, received_at, workspace_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+    : db.prepare(
+        `INSERT INTO fleet_learnings
+         (id, device_id, learning_type, payload, success_score, usage_count_local, received_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      );
 
   const now = Date.now();
 
+  // v2.5.0 final — ingestion-time dedup. Within a single envelope
+  // the same trajectory hash (same pattern captured in both the
+  // locally-stored bank AND a consumption record) can arrive twice.
+  // We dedup at insertion so master never fans one slave's single
+  // pattern into multiple fleet_learnings rows for the same device
+  // + hash + window, and the dream pass doesn't over-count.
+  const seenTrajectoryHashes = new Set<string>();
+
   for (const tr of envelope.trajectories) {
-    insertStmt.run(
-      crypto.randomUUID(),
-      deviceId,
-      'trajectory',
-      JSON.stringify({
-        trajectoryHash: tr.trajectoryHash,
-        taskDescription: tr.taskDescription,
-        trajectoryJson: tr.trajectoryJson,
-      }),
-      tr.successScore,
-      tr.usageCountLocal,
-      now
-    );
+    const dedupKey = `${tr.trajectoryHash}|${tr.workspaceId ?? ''}`;
+    if (seenTrajectoryHashes.has(dedupKey)) continue;
+    seenTrajectoryHashes.add(dedupKey);
+
+    const payload = JSON.stringify({
+      trajectoryHash: tr.trajectoryHash,
+      taskDescription: tr.taskDescription,
+      trajectoryJson: tr.trajectoryJson,
+      // v2.5.0 Phase B2 — persist failure flag so the dream pass
+      // can segregate avoidance rules from preferred paths.
+      failurePattern: tr.failurePattern === true,
+      // v2.5.0 final — denormalize workspace_id into the payload so
+      // dream code that predates the column migration still sees it.
+      workspaceId: tr.workspaceId ?? null,
+    });
+    if (hasWorkspaceColumn) {
+      insertStmt.run(
+        crypto.randomUUID(),
+        deviceId,
+        'trajectory',
+        payload,
+        tr.successScore,
+        tr.usageCountLocal,
+        now,
+        tr.workspaceId ?? null
+      );
+    } else {
+      insertStmt.run(crypto.randomUUID(), deviceId, 'trajectory', payload, tr.successScore, tr.usageCountLocal, now);
+    }
     trajectories += 1;
   }
 
   for (const sum of envelope.memorySummaries) {
-    insertStmt.run(
-      crypto.randomUUID(),
-      deviceId,
-      'memory_summary',
-      JSON.stringify({ agentSlotHash: sum.agentSlotHash, contentJson: sum.contentJson }),
-      null,
-      null,
-      now
-    );
+    const payload = JSON.stringify({ agentSlotHash: sum.agentSlotHash, contentJson: sum.contentJson });
+    if (hasWorkspaceColumn) {
+      insertStmt.run(
+        crypto.randomUUID(),
+        deviceId,
+        'memory_summary',
+        payload,
+        null,
+        null,
+        now,
+        null /* memory summaries aren't workspace-tagged yet; keep fleet-wide */
+      );
+    } else {
+      insertStmt.run(crypto.randomUUID(), deviceId, 'memory_summary', payload, null, null, now);
+    }
     memorySummaries += 1;
+  }
+
+  // v2.5.0 Phase B1 — consumption feedback. Folded into existing
+  // consolidated_learnings rows: increment usage_count_fleetwide +
+  // track a new adoption signal for future ranking. A new
+  // consolidated_feedback row per envelope captures the raw
+  // per-device per-trajectory counts for audit; re-ranking happens
+  // in the next dream pass when it consumes these rows.
+  let consumption = 0;
+  if (envelope.consumptionFeedback && envelope.consumptionFeedback.length > 0) {
+    try {
+      const feedbackInsert = db.prepare(
+        `INSERT INTO fleet_learnings (id, device_id, learning_type, payload, success_score, usage_count_local, received_at)
+         VALUES (?, ?, 'consumption_feedback', ?, ?, ?, ?)`
+      );
+      for (const f of envelope.consumptionFeedback) {
+        if (!f.fromFleet) continue; // only fleet-consolidated adoption matters for re-ranking
+        feedbackInsert.run(
+          crypto.randomUUID(),
+          deviceId,
+          JSON.stringify({
+            trajectoryHash: f.trajectoryHash,
+            usedCount: f.usedCount,
+            successCount: f.successCount,
+          }),
+          f.usedCount > 0 ? f.successCount / f.usedCount : 0,
+          f.usedCount,
+          now
+        );
+        consumption += 1;
+      }
+    } catch (e) {
+      logNonCritical('fleet.learning.ingest-consumption', e);
+    }
   }
 
   try {
@@ -381,6 +598,7 @@ export function ingestLearningEnvelope(
       details: {
         trajectories,
         memorySummaries,
+        consumption,
         windowStart: envelope.windowStart,
         windowEnd: envelope.windowEnd,
       },

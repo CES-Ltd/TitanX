@@ -40,15 +40,15 @@ This guide covers:
   <img src="https://img.shields.io/badge/Slave%20%E2%80%A2%20Farm-remote%20compute-FF7D00?style=for-the-badge" alt="Slave Farm">
 </p>
 
-| Capability | Regular | Master | Slave / Workforce | Slave / Farm |
-|---|:---:|:---:|:---:|:---:|
-| Local teams + ACP agents | ✅ | ✅ | ✅ | ✅ |
-| Fleet webserver (enrollments, config bundles, signed commands) | — | ✅ | — | — |
-| Push telemetry → master (60s cadence, runtime summary) | — | — | ✅ | ✅ |
-| Pull IAM / security-toggle / agent-template bundles | — | — | ✅ | ✅ |
-| Accept destructive commands (`cache.clear`, `credential.rotate`, `agent.restart`, `force.upgrade`) | — | — | ✅ | ✅ |
-| Accept farm commands (`team.farm_provision`, `agent.execute`) | — | — | — | ✅ |
-| Host persistent Lead ACP session for a master-mirrored team | — | — | — | ✅ |
+| Capability                                                                                         | Regular | Master | Slave / Workforce | Slave / Farm |
+| -------------------------------------------------------------------------------------------------- | :-----: | :----: | :---------------: | :----------: |
+| Local teams + ACP agents                                                                           |   ✅    |   ✅   |        ✅         |      ✅      |
+| Fleet webserver (enrollments, config bundles, signed commands)                                     |    —    |   ✅   |         —         |      —       |
+| Push telemetry → master (60s cadence, runtime summary)                                             |    —    |   —    |        ✅         |      ✅      |
+| Pull IAM / security-toggle / agent-template bundles                                                |    —    |   —    |        ✅         |      ✅      |
+| Accept destructive commands (`cache.clear`, `credential.rotate`, `agent.restart`, `force.upgrade`) |    —    |   —    |        ✅         |      ✅      |
+| Accept farm commands (`team.farm_provision`, `agent.execute`)                                      |    —    |   —    |         —         |      ✅      |
+| Host persistent Lead ACP session for a master-mirrored team                                        |    —    |   —    |         —         |      ✅      |
 
 ---
 
@@ -118,12 +118,12 @@ Destructive commands (§7) additionally require the admin to re-auth with their 
 
 ### Loops
 
-| Loop | Cadence | Purpose |
-|---|---|---|
-| Heartbeat | 5s | liveness, drain pending commands, advance connection status |
-| Config sync | 30s | pull latest bundle (IAM policies, security toggles, agent templates) |
-| Telemetry push | 60s | post cost, activity, tool-calls, policy violations, detected runtimes |
-| Learning push (opt-in) | 24h | slave → master learning export for Dream Mode consolidation |
+| Loop                   | Cadence | Purpose                                                               |
+| ---------------------- | ------- | --------------------------------------------------------------------- |
+| Heartbeat              | 5s      | liveness, drain pending commands, advance connection status           |
+| Config sync            | 30s     | pull latest bundle (IAM policies, security toggles, agent templates)  |
+| Telemetry push         | 60s     | post cost, activity, tool-calls, policy violations, detected runtimes |
+| Learning push (opt-in) | 24h     | slave → master learning export for Dream Mode consolidation           |
 
 ### What it accepts
 
@@ -188,16 +188,16 @@ The mirror team renders **read-only** with a blue "Mirror of master's farm slot 
 
 ## 7. Command types
 
-| Command | Tier | Admin re-auth | Destructive? | Who sends | Slave behavior |
-|---|---|:---:|:---:|---|---|
-| `force_config_sync` | Non-destructive | — | — | Any user | Re-pull bundle immediately |
-| `force_telemetry_push` | Non-destructive | — | — | Any user | Push telemetry immediately |
-| `cache.clear` | Destructive | ✅ | ✅ | Admin | Clear local caches |
-| `credential.rotate` | Destructive | ✅ | ✅ | Admin | Rotate device JWT + master keys |
-| `agent.restart` | Destructive | ✅ | ✅ | Admin | Restart named team |
-| `force.upgrade` | Destructive | ✅ | ✅ | Admin | Download signed installer, relaunch |
-| `agent.execute` | Signed non-destructive | — | — | Farm hire | Run one turn on slave Lead (farm only) |
-| `team.farm_provision` | Signed non-destructive | — | — | Farm hire | Create mirror team + Lead + teammate (farm only) |
+| Command                | Tier                   | Admin re-auth | Destructive? | Who sends | Slave behavior                                   |
+| ---------------------- | ---------------------- | :-----------: | :----------: | --------- | ------------------------------------------------ |
+| `force_config_sync`    | Non-destructive        |       —       |      —       | Any user  | Re-pull bundle immediately                       |
+| `force_telemetry_push` | Non-destructive        |       —       |      —       | Any user  | Push telemetry immediately                       |
+| `cache.clear`          | Destructive            |      ✅       |      ✅      | Admin     | Clear local caches                               |
+| `credential.rotate`    | Destructive            |      ✅       |      ✅      | Admin     | Rotate device JWT + master keys                  |
+| `agent.restart`        | Destructive            |      ✅       |      ✅      | Admin     | Restart named team                               |
+| `force.upgrade`        | Destructive            |      ✅       |      ✅      | Admin     | Download signed installer, relaunch              |
+| `agent.execute`        | Signed non-destructive |       —       |      —       | Farm hire | Run one turn on slave Lead (farm only)           |
+| `team.farm_provision`  | Signed non-destructive |       —       |      —       | Farm hire | Create mirror team + Lead + teammate (farm only) |
 
 ---
 
@@ -216,14 +216,14 @@ Every 60s each slave POSTs `/api/fleet/telemetry` with:
   "agentCount": 5,
   "topActions": [
     { "action": "agent.wake", "count": 3 },
-    { "action": "cost_event.record", "count": 2 }
+    { "action": "cost_event.record", "count": 2 },
   ],
   // v2.2.1 — detected ACP runtimes (NO API keys, shape only)
   "runtimes": [
-    { "backend": "claude",   "name": "Claude Code",  "cliAvailable": true },
-    { "backend": "opencode", "name": "OpenCode",     "cliAvailable": true },
-    { "backend": "gemini",   "name": "Gemini CLI",   "cliAvailable": true }
-  ]
+    { "backend": "claude", "name": "Claude Code", "cliAvailable": true },
+    { "backend": "opencode", "name": "OpenCode", "cliAvailable": true },
+    { "backend": "gemini", "name": "Gemini CLI", "cliAvailable": true },
+  ],
 }
 ```
 
@@ -235,19 +235,19 @@ Master persists in `fleet_telemetry_reports` keyed by `(device_id, window_end)`.
 
 ## 9. Troubleshooting by ack reason code
 
-| `reason` | Surface | Likely cause | Fix |
-|---|---|---|---|
-| `not_farm_role` | `team.farm_provision` / `agent.execute` ack | Slave is enrolled as workforce | Slave flips role in titlebar; re-enrolls as farm |
-| `invalid_params` | any | Master sent a malformed envelope body | Check master's build version — upgrade to v2.3.0+ |
-| `template_not_found` | `agent.execute` | Farm template isn't synced on this slave | Publish template from master's Template Library; wait for next config poll (≤30s) |
-| `no_provider_configured` | `agent.execute` (legacy path) | Slave on v2.2.x with no LLM API provider and no ACP runtime picked | Upgrade slave to v2.3.0+; pick an ACP runtime at hire |
-| `runtime_not_detected` | `agent.execute` (ACP path) | Operator chose a backend the slave doesn't have installed | Install the CLI on that slave and restart TitanX (ACP detector runs at boot) |
-| `runtime_start_failed` | `agent.execute` | CLI spawn threw — auth, missing config, bad path, CLI killed | Check slave's log (e.g. `~/Library/Logs/TitanX/*.log`); run the CLI interactively there once (`claude`, `opencode`, etc.) to clear any first-run prompts |
-| `runtime_send_failed` | `agent.execute` | CLI rejected the prompt after connect | Usually transient — the Lead session is evicted so next turn re-spawns |
-| `runtime_workspace_failed` | `agent.execute` | Couldn't create `/tmp/titanx-farm-lead-<teamId>` | Check disk space / permissions on `/tmp` |
-| `runtime_timeout` | `agent.execute` | CLI didn't signal `finish` within `timeoutMs` | Long-running prompts need `timeoutMs` bump on the envelope (default 120s); or the CLI hung — evicted, next turn fresh |
-| `runtime_busy` | `agent.execute` | Previous turn still running (shouldn't happen — master serializes) | Master-side serialization bug; file issue |
-| `runtime_error` | `agent.execute` | CLI emitted ACP protocol `error` signal | Inspect slave's farm mirror conversation — includes the error reason inline |
+| `reason`                   | Surface                                     | Likely cause                                                       | Fix                                                                                                                                                      |
+| -------------------------- | ------------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `not_farm_role`            | `team.farm_provision` / `agent.execute` ack | Slave is enrolled as workforce                                     | Slave flips role in titlebar; re-enrolls as farm                                                                                                         |
+| `invalid_params`           | any                                         | Master sent a malformed envelope body                              | Check master's build version — upgrade to v2.3.0+                                                                                                        |
+| `template_not_found`       | `agent.execute`                             | Farm template isn't synced on this slave                           | Publish template from master's Template Library; wait for next config poll (≤30s)                                                                        |
+| `no_provider_configured`   | `agent.execute` (legacy path)               | Slave on v2.2.x with no LLM API provider and no ACP runtime picked | Upgrade slave to v2.3.0+; pick an ACP runtime at hire                                                                                                    |
+| `runtime_not_detected`     | `agent.execute` (ACP path)                  | Operator chose a backend the slave doesn't have installed          | Install the CLI on that slave and restart TitanX (ACP detector runs at boot)                                                                             |
+| `runtime_start_failed`     | `agent.execute`                             | CLI spawn threw — auth, missing config, bad path, CLI killed       | Check slave's log (e.g. `~/Library/Logs/TitanX/*.log`); run the CLI interactively there once (`claude`, `opencode`, etc.) to clear any first-run prompts |
+| `runtime_send_failed`      | `agent.execute`                             | CLI rejected the prompt after connect                              | Usually transient — the Lead session is evicted so next turn re-spawns                                                                                   |
+| `runtime_workspace_failed` | `agent.execute`                             | Couldn't create `/tmp/titanx-farm-lead-<teamId>`                   | Check disk space / permissions on `/tmp`                                                                                                                 |
+| `runtime_timeout`          | `agent.execute`                             | CLI didn't signal `finish` within `timeoutMs`                      | Long-running prompts need `timeoutMs` bump on the envelope (default 120s); or the CLI hung — evicted, next turn fresh                                    |
+| `runtime_busy`             | `agent.execute`                             | Previous turn still running (shouldn't happen — master serializes) | Master-side serialization bug; file issue                                                                                                                |
+| `runtime_error`            | `agent.execute`                             | CLI emitted ACP protocol `error` signal                            | Inspect slave's farm mirror conversation — includes the error reason inline                                                                              |
 
 ---
 

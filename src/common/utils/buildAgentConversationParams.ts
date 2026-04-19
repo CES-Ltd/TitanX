@@ -105,6 +105,19 @@ export function buildAgentConversationParams(input: BuildAgentConversationInput)
     if (backend === 'custom' && customAgentId) {
       extra.customAgentId = customAgentId;
     }
+    // v2.5.0 Phase C3 — gallery-sourced persona + fleet-learned rules.
+    // Gallery-hired teammates are non-preset ACP agents, so the preset
+    // branch above skips them. Pipe `presetResources.rules` through the
+    // same `presetContext` wrapper AcpAgentManager already understands,
+    // so gallery instructionsMd + fleet_instructions_md land in the
+    // first-message system prompt. Only set when we actually have
+    // rules — avoids clobbering with an empty/undefined value.
+    if (presetResources?.rules) {
+      extra.presetContext = presetResources.rules;
+      if (presetResources.enabledSkills) {
+        extra.enabledSkills = presetResources.enabledSkills;
+      }
+    }
   }
 
   if (sessionMode) extra.sessionMode = sessionMode;

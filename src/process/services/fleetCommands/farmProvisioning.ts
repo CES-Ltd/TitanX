@@ -252,14 +252,7 @@ export async function handleTeamFarmProvision(rawParams: Record<string, unknown>
           `INSERT INTO teams (id, user_id, name, workspace, workspace_mode, lead_agent_id, agents, created_at, updated_at)
            VALUES (?, 'system_default_user', ?, '', 'shared', ?, ?, ?, ?)`
         )
-        .run(
-          parsed.teamId,
-          parsed.teamName,
-          leadSlot.slotId,
-          JSON.stringify([leadSlot, teammate.slot]),
-          now,
-          now
-        );
+        .run(parsed.teamId, parsed.teamName, leadSlot.slotId, JSON.stringify([leadSlot, teammate.slot]), now, now);
     } catch (e) {
       logNonCritical('fleet.farm-provision.create-team', e);
       return {

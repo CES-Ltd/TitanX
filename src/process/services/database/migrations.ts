@@ -3018,6 +3018,170 @@ const migration_v71: IMigration = {
   },
 };
 
+/**
+ * Migration v71 -> v72: Dream Mode Phase B + C columns (v2.5.0).
+ *
+ * Phase B1 — consolidated-usage feedback loop. Slaves track usage of
+ * fleet-consolidated trajectories (picked by findSimilarTrajectories
+ * and used in a successful turn) and piggyback the counter to master
+ * on the next learning push. Two new columns on reasoning_bank:
+ *   - `consumption_count` — how many times THIS slave used the entry
+ *     since last push
+ *   - `consumption_success_count` — of those, how many ended in a
+ *     successful turn
+ * Both default 0 and increment locally; reset after a successful push
+ * acks. Master's next dream pass folds them into usage_count_fleetwide
+ * so adoption signal feeds into ranking.
+ *
+ * Phase B2 — failure trajectory capture. A new `failure_pattern`
+ * column on reasoning_bank marks rows that came from a failed turn
+ * (success_score < 0.5). Phase C's distillation prompt uses these to
+ * extract avoidance rules, not just preferred paths.
+ *
+ * Phase C3 — template evolution. New `fleet_instructions_md` column on
+ * agent_gallery holds a persona patch produced by the dream pass —
+ * small appended instruction text that slaves concatenate onto the
+ * template's instructionsMd when spawning an agent. NULL = no patch
+ * (default).
+ *
+ * All columns default-safe; ALTER TABLE ADD COLUMN is atomic in SQLite.
+ */
+const migration_v72: IMigration = {
+  version: 72,
+  name: 'Dream Mode v2.5.0 columns — consumption feedback, failure patterns, template evolution',
+  up: (db) => {
+    const addColumn = (table: string, column: string, type: string): void => {
+      try {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (!/duplicate column name/i.test(msg)) throw e;
+      }
+    };
+    addColumn('reasoning_bank', 'consumption_count', 'INTEGER NOT NULL DEFAULT 0');
+    addColumn('reasoning_bank', 'consumption_success_count', 'INTEGER NOT NULL DEFAULT 0');
+    addColumn('reasoning_bank', 'failure_pattern', 'INTEGER NOT NULL DEFAULT 0');
+    addColumn('agent_gallery', 'fleet_instructions_md', 'TEXT');
+    // v2.5.0 Phase D4 — workspace-scope tagging for multi-tenant
+    // isolation. Nullable; absence means "fleet-wide" (current
+    // behavior). When set, consolidated retrieval will only match
+    // trajectories to agents running in the same workspace. Full
+    // propagation (envelope → fleet_learnings → consolidated output
+    // → slave retrieval filter) lands in v2.6.0; for v2.5.0 the
+    // column exists so operators can start tagging trajectories by
+    // workspace without a later schema migration.
+    addColumn('reasoning_bank', 'workspace_id', 'TEXT');
+    addColumn('fleet_learnings', 'workspace_id', 'TEXT');
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_reasoning_bank_workspace ON reasoning_bank(workspace_id) WHERE workspace_id IS NOT NULL'
+    );
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_fleet_learnings_workspace ON fleet_learnings(workspace_id) WHERE workspace_id IS NOT NULL'
+    );
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_reasoning_bank_consumption ON reasoning_bank(consumption_count) WHERE consumption_count > 0'
+    );
+
+    // Widen the fleet_learnings.learning_type CHECK to accept Phase
+    // B1's consumption_feedback rows. SQLite doesn't support ALTER
+    // TABLE on CHECK constraints — recreate the table.
+    db.exec(`CREATE TABLE IF NOT EXISTS fleet_learnings_new (
+      id TEXT PRIMARY KEY,
+      device_id TEXT NOT NULL,
+      learning_type TEXT NOT NULL CHECK(learning_type IN ('trajectory','memory_summary','consumption_feedback')),
+      payload TEXT NOT NULL,
+      success_score REAL,
+      usage_count_local INTEGER,
+      received_at INTEGER NOT NULL,
+      consolidated_version INTEGER
+    )`);
+    db.exec(`INSERT INTO fleet_learnings_new (id, device_id, learning_type, payload, success_score, usage_count_local, received_at, consolidated_version)
+      SELECT id, device_id, learning_type, payload, success_score, usage_count_local, received_at, consolidated_version FROM fleet_learnings`);
+    db.exec('DROP TABLE fleet_learnings');
+    db.exec('ALTER TABLE fleet_learnings_new RENAME TO fleet_learnings');
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_fleet_learnings_unconsolidated ON fleet_learnings(consolidated_version) WHERE consolidated_version IS NULL'
+    );
+    db.exec('CREATE INDEX IF NOT EXISTS idx_fleet_learnings_device ON fleet_learnings(device_id, received_at DESC)');
+    console.log(
+      '[Migration v72] Added consumption_count / consumption_success_count / failure_pattern on reasoning_bank + fleet_instructions_md on agent_gallery'
+    );
+  },
+  down: (db) => {
+    // SQLite 3.35+ supports DROP COLUMN; guard in try/catch for older
+    // (vendored) variants — if DROP isn't available, leave columns
+    // in place (they're default-safe and ignored by older code).
+    const dropColumn = (table: string, column: string): void => {
+      try {
+        db.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+      } catch {
+        /* leave in place */
+      }
+    };
+    db.exec('DROP INDEX IF EXISTS idx_reasoning_bank_consumption');
+    db.exec('DROP INDEX IF EXISTS idx_reasoning_bank_workspace');
+    db.exec('DROP INDEX IF EXISTS idx_fleet_learnings_workspace');
+    dropColumn('fleet_learnings', 'workspace_id');
+    dropColumn('reasoning_bank', 'workspace_id');
+    dropColumn('agent_gallery', 'fleet_instructions_md');
+    dropColumn('reasoning_bank', 'failure_pattern');
+    dropColumn('reasoning_bank', 'consumption_success_count');
+    dropColumn('reasoning_bank', 'consumption_count');
+  },
+};
+
+/**
+ * Migration v73 — Dream Mode follow-up (v2.5.0 final).
+ *
+ * The Phase C2 broadcast sends `memorySummaries` back to slaves so
+ * fleet-aggregated domain knowledge can enrich local agent reasoning.
+ * Phase C2 builds them master-side; Phase C2's slave-side applier
+ * (added in v2.5.0 final) writes them into the local `agent_memory`
+ * table alongside locally-captured summaries. To keep the two
+ * sources distinguishable — so operators can inspect which knowledge
+ * came from the fleet, and so local pruning can prefer dropping
+ * local entries before consolidated ones — we stamp a `source_tag`
+ * column on agent_memory (mirroring the same column that already
+ * exists on reasoning_bank since v70).
+ *
+ * NULL = local (pre-v73 and freshly captured entries).
+ * 'fleet_consolidated' = broadcast from master's dream pass.
+ *
+ * Also adds a compound index so the applier's dedup check
+ * (agent_slot_id, source_tag, team_id) is O(log n).
+ */
+const migration_v73: IMigration = {
+  version: 73,
+  name: 'Dream Mode v2.5.0 — agent_memory source_tag for consolidated summaries',
+  up: (db) => {
+    const addColumn = (table: string, column: string, type: string): void => {
+      try {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (!/duplicate column name/i.test(msg)) throw e;
+      }
+    };
+    addColumn('agent_memory', 'source_tag', 'TEXT');
+    // Matches the exact dedup pattern the applier uses: lookup rows
+    // by (agent_slot_id, source_tag) when deciding whether a given
+    // consolidated summary already landed locally. Partial index
+    // keeps it tiny for the common case (all NULL / local entries).
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_agent_memory_source_tag ON agent_memory(agent_slot_id, source_tag) WHERE source_tag IS NOT NULL`
+    );
+    console.log('[Migration v73] Added source_tag column to agent_memory');
+  },
+  down: (db) => {
+    db.exec('DROP INDEX IF EXISTS idx_agent_memory_source_tag');
+    try {
+      db.exec('ALTER TABLE agent_memory DROP COLUMN source_tag');
+    } catch {
+      /* older SQLite; leave column in place */
+    }
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -3033,6 +3197,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v54, migration_v55, migration_v56, migration_v57, migration_v58, migration_v59,
   migration_v60, migration_v61, migration_v62, migration_v63, migration_v64, migration_v65,
   migration_v66, migration_v67, migration_v68, migration_v69, migration_v70, migration_v71,
+  migration_v72, migration_v73,
 ];
 
 /**

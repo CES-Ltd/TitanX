@@ -106,9 +106,7 @@ const FarmChat: React.FC<{
         <FlexFullContainer>
           <MessageList className='flex-1'></MessageList>
         </FlexFullContainer>
-        {!readOnly && (
-          <FarmSendBox conversation_id={conversation_id} teamId={teamId} agentSlotId={agentSlotId} />
-        )}
+        {!readOnly && <FarmSendBox conversation_id={conversation_id} teamId={teamId} agentSlotId={agentSlotId} />}
       </div>
     </ConversationProvider>
   );

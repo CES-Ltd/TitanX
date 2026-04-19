@@ -27,6 +27,7 @@ import { resolveLocaleKey } from '@/common/utils';
 import { getDatabase } from '@process/services/database';
 import * as activityLogService from '@process/services/activityLog';
 import { resolveConversationType as registryResolveConversationType } from './conversationTypes';
+import { getAgent as getGalleryAgent, getEffectiveInstructions } from '@process/services/agentGallery';
 
 export class TeamSessionService {
   private readonly sessions: Map<string, TeamSession> = new Map();
@@ -303,8 +304,37 @@ export class TeamSessionService {
     );
     const preferredModelId =
       getConversationTypeForBackend(backend) === 'acp' ? await this.resolvePreferredAcpModelId(backend) : undefined;
-    const presetResources =
+    let presetResources =
       isPreset && agent.customAgentId ? await this.loadPresetResources(agent.customAgentId) : undefined;
+
+    // v2.5.0 Phase C3 — merge gallery persona + fleet-learned rules into
+    // presetResources.rules when this agent is bound to a gallery row.
+    // The gallery template's `instructionsMd` is the admin-curated base
+    // persona; the fleet patch (`fleet_instructions_md`, written by the
+    // master's dream pass) carries aggregated lessons. Both need to land
+    // in the runtime prompt at spawn, not just live in the DB. We keep
+    // them separate on the row (audit / rollback), and concatenate only
+    // at read time via `getEffectiveInstructions()`. Failures here are
+    // observability, not fatal — the agent can still run with whatever
+    // presetResources was already computed above.
+    if (agent.agentGalleryId) {
+      try {
+        const db = await getDatabase();
+        const galleryAgent = getGalleryAgent(db.getDriver(), agent.agentGalleryId);
+        const galleryRules = galleryAgent ? getEffectiveInstructions(galleryAgent) : undefined;
+        if (galleryRules) {
+          const existingRules = presetResources?.rules?.trim();
+          const mergedRules = existingRules ? `${existingRules}\n\n---\n\n${galleryRules}` : galleryRules;
+          presetResources = {
+            rules: mergedRules,
+            enabledSkills: presetResources?.enabledSkills,
+          };
+        }
+      } catch (e) {
+        console.warn('[TeamSessionService] Gallery instruction merge failed:', e);
+      }
+    }
+
     const model = await this.resolveConversationModel({
       backend,
       isPreset,
