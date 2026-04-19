@@ -44,12 +44,16 @@
  */
 
 import crypto from 'crypto';
+import fs from 'fs/promises';
+import os from 'os';
+import path from 'path';
 import { getDatabase } from '@process/services/database';
 import { ProcessConfig } from '@process/utils/initStorage';
 import { logActivity } from '../activityLog';
 import { logNonCritical } from '@process/utils/logNonCritical';
 import type { ISqliteDriver } from '../database/drivers/ISqliteDriver';
 import type { AckStatus } from './types';
+import type { AcpBackend } from '@/common/types/acpTypes';
 
 export type HandlerOutcome = {
   status: AckStatus;
@@ -362,6 +366,212 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 }
 
 /**
+ * v2.3.0 — ACP runtimes the farm executor can dispatch turns to via
+ * the existing AcpAgent spawn path. When an operator hires a farm
+ * agent with one of these backends, the slave bypasses
+ * `resolveProvider` entirely — the CLI handles its own auth +
+ * inference, no LLM API key required on the slave. Anything outside
+ * this set still falls through to the LangChain provider path.
+ */
+const ACP_DISPATCH_BACKENDS: ReadonlySet<string> = new Set([
+  'claude',
+  'gemini',
+  'qwen',
+  'iflow',
+  'codex',
+  'codebuddy',
+  'droid',
+  'goose',
+  'auggie',
+  'kimi',
+  'opencode',
+  'copilot',
+  'qoder',
+  'vibe',
+  'cursor',
+  'kiro',
+  'deepagents',
+]);
+
+/**
+ * v2.3.0 — serialize the envelope's messages[] into a single prompt
+ * the CLI can consume as one user turn. System messages become a
+ * prefix; prior user/assistant pairs become a short transcript; the
+ * most-recent user message is the actual request. Keeps the ACP
+ * session a pure one-shot (no persistent history across envelopes).
+ */
+function buildAcpPrompt(messages: ExecuteParams['messages']): string {
+  const systemParts: string[] = [];
+  const history: string[] = [];
+  let finalUser: string | null = null;
+
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    if (!m) continue;
+    if (m.role === 'system') {
+      systemParts.push(m.content.trim());
+      continue;
+    }
+    // The most recent user message is the "active" request. Anything
+    // before it is transcript context.
+    const isLastUser = m.role === 'user' && messages.slice(i + 1).every((later) => later.role !== 'user');
+    if (isLastUser) {
+      finalUser = m.content;
+      continue;
+    }
+    const prefix = m.role === 'user' ? `[${m.name ?? 'user'}]:` : '[assistant]:';
+    history.push(`${prefix} ${m.content.trim()}`);
+  }
+
+  const parts: string[] = [];
+  if (systemParts.length > 0) parts.push(systemParts.join('\n\n'));
+  if (history.length > 0) parts.push(`Prior conversation:\n${history.join('\n')}`);
+  parts.push(finalUser ?? '(no user request supplied)');
+  return parts.join('\n\n---\n\n');
+}
+
+/**
+ * v2.3.0 — run a single turn through the chosen ACP runtime. Spawns
+ * the CLI into a per-job temp workspace, fires one prompt, collects
+ * the assistant response chunks, kills the subprocess, and cleans up.
+ *
+ * Returns a structured result either way — the outer handleAgentExecute
+ * decides the AckStatus (completed/failed/skipped) based on shape.
+ */
+async function executeViaAcp(
+  parsed: ExecuteParams,
+  backend: AcpBackend,
+  timeoutMs: number
+): Promise<
+  | { ok: true; assistantText: string; usage?: Record<string, unknown> }
+  | { ok: false; reason: string; error: string }
+> {
+  const tmpWorkspace = path.join(os.tmpdir(), `titanx-farm-${parsed.jobId}`);
+  try {
+    await fs.mkdir(tmpWorkspace, { recursive: true });
+  } catch (e) {
+    return {
+      ok: false,
+      reason: 'runtime_workspace_failed',
+      error: e instanceof Error ? e.message : String(e),
+    };
+  }
+
+  // Lazy import — AcpAgent pulls in the CLI connection layer which
+  // is heavy. Keep farmExecutor's hot path lean for paths that don't
+  // use ACP.
+  const { AcpAgent } = await import('@process/agent/acp');
+
+  let accumulated = '';
+  let finishedOk = false;
+  let finishReason: string | null = null;
+  let resolveFinish: (ok: boolean) => void = () => undefined;
+  const finished = new Promise<boolean>((resolve) => {
+    resolveFinish = resolve;
+  });
+
+  const agent = new AcpAgent({
+    id: parsed.jobId,
+    backend,
+    workingDir: tmpWorkspace,
+    extra: {
+      workspace: tmpWorkspace,
+      backend,
+      customWorkspace: false,
+      yoloMode: true, // Headless — auto-approve tool prompts.
+    },
+    onStreamEvent: (evt) => {
+      if (evt.type === 'content') {
+        // data is either the chunk text or a JSON-stringified object
+        // (see AcpAgent.handleContentChunk fallback). Append raw text.
+        if (typeof evt.data === 'string') {
+          accumulated += evt.data;
+        } else if (evt.data && typeof evt.data === 'object') {
+          const text = (evt.data as { content?: unknown }).content;
+          if (typeof text === 'string') accumulated += text;
+        }
+      }
+      // Everything else (thought, agent_status, acp_context_usage,
+      // acp_tool_call, acp_permission …) is ignored in headless mode.
+    },
+    onSignalEvent: (evt) => {
+      if (evt.type === 'finish') {
+        finishedOk = true;
+        resolveFinish(true);
+      } else if (evt.type === 'error') {
+        finishReason = typeof evt.data === 'string' ? evt.data : 'runtime_error';
+        resolveFinish(false);
+      }
+    },
+  });
+
+  const cleanup = async () => {
+    try {
+      await agent.kill();
+    } catch (e) {
+      logNonCritical('fleet.farm.acp.kill', e);
+    }
+    try {
+      await fs.rm(tmpWorkspace, { recursive: true, force: true });
+    } catch (e) {
+      logNonCritical('fleet.farm.acp.cleanup', e);
+    }
+  };
+
+  try {
+    await agent.start();
+  } catch (e) {
+    await cleanup();
+    return {
+      ok: false,
+      reason: 'runtime_start_failed',
+      error: e instanceof Error ? e.message : String(e),
+    };
+  }
+
+  const prompt = buildAcpPrompt(parsed.messages);
+  try {
+    // sendMessage returns when the CLI acks the prompt; the actual
+    // turn completion is signaled via onSignalEvent('finish').
+    await agent.sendMessage({ content: prompt, msg_id: parsed.jobId });
+  } catch (e) {
+    await cleanup();
+    return {
+      ok: false,
+      reason: 'runtime_send_failed',
+      error: e instanceof Error ? e.message : String(e),
+    };
+  }
+
+  // Race the finish signal against the master's timeout.
+  const timer = new Promise<boolean>((resolve) => {
+    setTimeout(() => {
+      if (!finishedOk) {
+        finishReason = 'timeout';
+        resolve(false);
+      }
+    }, timeoutMs);
+  });
+
+  const ok = await Promise.race([finished, timer]);
+  await cleanup();
+
+  if (!ok) {
+    return {
+      ok: false,
+      reason: finishReason ?? 'runtime_timeout',
+      error: finishReason === 'timeout' ? `ACP turn exceeded ${String(timeoutMs)}ms` : (finishReason ?? 'unknown'),
+    };
+  }
+
+  const trimmed = accumulated.trim();
+  return {
+    ok: true,
+    assistantText: trimmed.length > 0 ? trimmed : '(runtime returned empty response)',
+  };
+}
+
+/**
  * Main handler. Returns a HandlerOutcome the slave executor will
  * serialize into the ack payload.
  */
@@ -398,6 +608,80 @@ export async function handleAgentExecute(rawParams: Record<string, unknown>): Pr
     };
   }
 
+  const timeoutMs = Math.max(1000, (parsed.timeoutMs ?? DEFAULT_TIMEOUT_MS) - TIMEOUT_SAFETY_MARGIN_MS);
+
+  // v2.3.0 — ACP runtime dispatch. When the operator picked an ACP
+  // backend at hire time (runtimeBackend in the envelope), route the
+  // turn through that CLI instead of the LangChain/API path. The CLI
+  // owns its own auth + model selection; the slave doesn't need a
+  // `model.config` LLM provider.
+  if (parsed.runtimeBackend && ACP_DISPATCH_BACKENDS.has(parsed.runtimeBackend)) {
+    const acpResult = await executeViaAcp(parsed, parsed.runtimeBackend as AcpBackend, timeoutMs);
+    if (acpResult.ok) {
+      const result = {
+        jobId: parsed.jobId,
+        assistantText: acpResult.assistantText,
+        usage: acpResult.usage,
+        agentTemplateId: parsed.agentTemplateId,
+        templateName: template.name,
+        runtimeBackend: parsed.runtimeBackend,
+      };
+      try {
+        recordJobFinish(driver, parsed.jobId, 'completed', result);
+      } catch (e) {
+        logNonCritical('fleet.agent-execute.job-finish-acp-ok', e);
+      }
+      try {
+        logActivity(driver, {
+          userId: 'system_default_user',
+          actorType: 'system',
+          actorId: 'fleet_farm_executor',
+          action: 'fleet.agent.execute.completed',
+          entityType: 'fleet_command',
+          entityId: parsed.jobId,
+          details: {
+            agentTemplateId: parsed.agentTemplateId,
+            messagesCount: parsed.messages.length,
+            textLength: acpResult.assistantText.length,
+            runtimeBackend: parsed.runtimeBackend,
+            path: 'acp',
+          },
+          agentId: parsed.agentTemplateId,
+        });
+      } catch (e) {
+        logNonCritical('fleet.agent-execute.audit-acp-ok', e);
+      }
+      upsertSlaveMirror(driver, parsed, acpResult.assistantText);
+      return { status: 'succeeded', result };
+    }
+    // ACP start/send/timeout failure path. TS can't narrow acpResult
+    // through the `if (acpResult.ok) return` above across the function
+    // boundary — explicit cast to the failure arm.
+    const failure = acpResult as { ok: false; reason: string; error: string };
+    try {
+      recordJobFinish(driver, parsed.jobId, 'failed', {}, `${failure.reason}:${failure.error}`);
+    } catch (e) {
+      logNonCritical('fleet.agent-execute.job-finish-acp-fail', e);
+    }
+    upsertSlaveMirror(
+      driver,
+      parsed,
+      `ACP runtime '${parsed.runtimeBackend}' failed (${failure.reason}): ${failure.error}`
+    );
+    return {
+      status: 'failed',
+      result: {
+        reason: failure.reason,
+        error: failure.error,
+        runtimeBackend: parsed.runtimeBackend,
+        jobId: parsed.jobId,
+      },
+    };
+  }
+
+  // Legacy LangChain path — runtimeBackend absent or not an ACP CLI.
+  // Lives on for 'remote' / 'aionrs' / direct-API backends, and for
+  // pre-v2.2.2 farm slots that don't stamp runtimeBackend.
   const provider = await resolveProvider(parsed.model);
   if (!provider) {
     try {
@@ -408,8 +692,6 @@ export async function handleAgentExecute(rawParams: Record<string, unknown>): Pr
     upsertSlaveMirror(driver, parsed, 'No ACP runtime / LLM provider configured on this device.');
     return { status: 'skipped', result: { reason: 'no_provider_configured' } };
   }
-
-  const timeoutMs = Math.max(1000, (parsed.timeoutMs ?? DEFAULT_TIMEOUT_MS) - TIMEOUT_SAFETY_MARGIN_MS);
 
   // LangChain's BaseChatModel uses a message array shape that's
   // slightly different from our envelope's {role, content}. The
