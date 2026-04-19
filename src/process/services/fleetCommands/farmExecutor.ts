@@ -438,18 +438,20 @@ function buildAcpPrompt(messages: ExecuteParams['messages']): string {
  * acpDetector already probes `which <cli>` at boot and stashes the
  * result on each DetectedAgent, so we just look it up.
  *
- * Returns undefined if the backend isn't detected. The caller
- * surfaces that as `runtime_not_detected` so the operator knows
- * to install or re-login the CLI on the slave.
+ * v2.3.2 — uses `await import()` instead of `require()`. The
+ * bundler (esbuild/vite) rewrites path aliases for static and
+ * dynamic `import()` statements, but leaves `require()` strings
+ * literal, so the packaged app couldn't find the module at runtime.
+ *
+ * Returns `null` if the backend isn't detected. The caller surfaces
+ * that as `runtime_not_detected` so the operator knows to install
+ * or re-login the CLI on the slave.
  */
-function resolveCliPathForBackend(backend: AcpBackend):
-  | { cliPath?: string; detectedName?: string }
-  | null {
-  // Lazy import to keep the farmExecutor hot path light — the
-  // detector owns a cached list after boot.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { acpDetector } = require('@process/agent/acp/AcpDetector') as typeof import('@process/agent/acp/AcpDetector');
-  const detected = acpDetector.getDetectedAgents();
+async function resolveCliPathForBackend(
+  backend: AcpBackend
+): Promise<{ cliPath?: string; detectedName?: string } | null> {
+  const mod = await import('@process/agent/acp/AcpDetector');
+  const detected = mod.acpDetector.getDetectedAgents();
   const match = detected.find((a) => a.backend === backend);
   if (!match) return null;
   return { cliPath: match.cliPath, detectedName: match.name };
@@ -474,7 +476,7 @@ async function executeViaAcp(
   // v2.3.1 — look up the CLI path the slave's own detector found
   // at boot. Without this, AcpConnection.connect() throws
   // "CLI path is required for <backend>" for most backends.
-  const detection = resolveCliPathForBackend(backend);
+  const detection = await resolveCliPathForBackend(backend);
   if (!detection) {
     return {
       ok: false,
