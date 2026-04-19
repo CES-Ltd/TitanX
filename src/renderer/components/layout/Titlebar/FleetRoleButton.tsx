@@ -223,7 +223,11 @@ const FleetRoleButton: React.FC<Props> = ({ iconSize, isMobile }) => {
     <Popover
       content={content}
       trigger='click'
-      position='bottom'
+      // Anchor to the button's right edge — titlebar buttons live near
+      // the right side of the window so a centered `bottom` popup
+      // clips off-screen on narrower widths. Matches FleetModeButton's
+      // fix for the same clipping bug.
+      position='br'
       popupVisible={popVisible}
       onVisibleChange={setPopVisible}
     >

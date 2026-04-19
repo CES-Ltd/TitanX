@@ -21,7 +21,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
-import { Alert, Button, Input, InputNumber, Message, Popover, Radio, Tag, Tooltip } from '@arco-design/web-react';
+import { Alert, Button, Input, InputNumber, Message, Modal, Radio, Tag, Tooltip } from '@arco-design/web-react';
 import { Computer, Server, Link } from '@icon-park/react';
 import { ipcBridge } from '@/common';
 import type { FleetMode, FleetSetupInput } from '@/common/types/fleetTypes';
@@ -104,174 +104,17 @@ const FleetModeButton: React.FC<Props> = ({ iconSize, isMobile }) => {
   const isActive = currentMode !== 'regular';
   const glowColor = currentMode === 'master' ? '#3370FF' : currentMode === 'slave' ? '#00B42A' : undefined;
 
-  const content = (
-    <div style={{ width: 440, padding: 4 }}>
-      <div className='flex items-center gap-2 mb-2' style={{ fontSize: 14, fontWeight: 600 }}>
-        {MODE_ICONS[currentMode]}
-        {t('fleet.topbar.title', { defaultValue: 'Fleet mode' })}
-        {isActive && (
-          <Tag size='small' color={MODE_COLORS[currentMode]}>
-            {t(`fleet.mode.${currentMode}.name`, { defaultValue: currentMode })}
-          </Tag>
-        )}
-        {/* v2.4.x — Master + Slave modes are alpha. Regular stays untagged. */}
-        {currentMode !== 'regular' && (
-          <Tag size='small' color='orange' bordered>
-            {t('fleet.topbar.alphaTag', { defaultValue: 'Alpha' })}
-          </Tag>
-        )}
-      </div>
-      <div className='text-11px text-t-tertiary mb-3'>
-        {t('fleet.topbar.subtitle', {
-          defaultValue: 'Switch between single-machine, organization master, and managed slave modes.',
-        })}
-      </div>
-      {currentMode !== 'regular' && (
-        <div
-          className='text-11px mb-3 p-2 rd-6px'
-          style={{
-            background: 'color-mix(in srgb, var(--color-warning-6) 10%, transparent)',
-            color: 'var(--color-text-2)',
-            border: '1px solid var(--color-warning-4)',
-          }}
-        >
-          {t('fleet.topbar.alphaHint', {
-            defaultValue:
-              'Fleet Mode is in Alpha. Pin master + slave to the same version; expect breaking protocol changes across v2.x. See docs/feature/fleet for the operator guide.',
-          })}
-        </div>
-      )}
-
-      <Radio.Group
-        value={selectedMode}
-        onChange={(v) => setSelectedMode(v as FleetMode)}
-        direction='vertical'
-        style={{ width: '100%' }}
-      >
-        {(['regular', 'master', 'slave'] as FleetMode[]).map((m) => (
-          <Radio key={m} value={m}>
-            <div className='flex items-start gap-2 py-1'>
-              <span style={{ marginTop: 2 }}>{MODE_ICONS[m]}</span>
-              <div className='flex-1 min-w-0'>
-                <div className='text-13px font-medium'>{t(`fleet.mode.${m}.name`, { defaultValue: m })}</div>
-                <div className='text-11px text-t-tertiary leading-tight'>
-                  {t(`fleet.mode.${m}.description`, { defaultValue: '' })}
-                </div>
-              </div>
-            </div>
-          </Radio>
-        ))}
-      </Radio.Group>
-
-      {/* Master-mode inline config */}
-      {selectedMode === 'master' && (
-        <div className='mt-3 p-2 bg-fill-2 rd-6px'>
-          <div className='text-11px font-medium mb-1'>
-            {t('fleet.wizard.master.portLabel', { defaultValue: 'Port' })}
-          </div>
-          <InputNumber
-            value={masterPort}
-            onChange={(v) => setMasterPort(typeof v === 'number' ? v : 8888)}
-            min={1}
-            max={65535}
-            size='small'
-            style={{ width: 140 }}
-          />
-          <div className='text-11px font-medium mt-2 mb-1'>
-            {t('fleet.wizard.master.bindLabel', { defaultValue: 'Bind' })}
-          </div>
-          <Radio.Group
-            value={masterBindAll ? 'all' : 'local'}
-            onChange={(v) => setMasterBindAll(v === 'all')}
-            size='small'
-          >
-            <Radio value='local'>
-              <span className='text-12px'>
-                {t('fleet.wizard.master.bindLocalName', { defaultValue: 'Localhost only' })}
-              </span>
-            </Radio>
-            <Radio value='all'>
-              <span className='text-12px'>
-                {t('fleet.wizard.master.bindAllName', { defaultValue: 'All interfaces' })}
-              </span>
-            </Radio>
-          </Radio.Group>
-          {masterBindAll && (
-            <Alert
-              type='info'
-              className='mt-2 text-11px'
-              content={t('fleet.wizard.master.firewallHint', {
-                defaultValue: 'Slaves on your network can reach this master. Check firewall rules.',
-              })}
-            />
-          )}
-        </div>
-      )}
-
-      {/* Slave-mode inline config — only shown when switching TO slave from
-          a non-slave mode. Already-enrolled slaves just keep their state. */}
-      {selectedMode === 'slave' && currentMode !== 'slave' && (
-        <div className='mt-3 p-2 bg-fill-2 rd-6px space-y-2'>
-          <div>
-            <div className='text-11px font-medium mb-1'>
-              {t('fleet.wizard.slave.urlLabel', { defaultValue: 'Master URL' })}
-            </div>
-            <Input
-              value={slaveMasterUrl}
-              onChange={setSlaveMasterUrl}
-              size='small'
-              placeholder='https://10.0.0.195:8888'
-            />
-          </div>
-          <div>
-            <div className='text-11px font-medium mb-1'>
-              {t('fleet.wizard.slave.tokenLabel', { defaultValue: 'Enrollment token' })}
-            </div>
-            <Input.Password
-              value={slaveToken}
-              onChange={setSlaveToken}
-              size='small'
-              placeholder={t('fleet.wizard.slave.tokenPlaceholder', {
-                defaultValue: 'Paste the one-time token from your admin',
-              })}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Action row — apply+restart when a change is pending, or dismiss */}
-      <div className='mt-3 flex justify-end gap-2'>
-        <Button size='small' onClick={() => setPopVisible(false)} disabled={submitting}>
-          {t('fleet.topbar.cancel', { defaultValue: 'Cancel' })}
-        </Button>
-        <Button
-          size='small'
-          type='primary'
-          loading={submitting}
-          disabled={!needsRestart || slaveNeedsConfig}
-          onClick={() => void handleApply()}
-        >
-          {t('fleet.topbar.applyRestart', { defaultValue: 'Save & restart' })}
-        </Button>
-      </div>
-      {needsRestart && (
-        <div className='text-11px text-t-tertiary mt-2'>
-          {t('fleet.topbar.restartHint', {
-            defaultValue: 'Mode change requires a restart. Your teams and conversations are preserved.',
-          })}
-        </div>
-      )}
-    </div>
-  );
+  // v2.5.0 — switched from a right-anchored Popover to a centered
+  // Modal. The Popover's Arco implementation auto-widens its popup
+  // wrapper to max-content of the tallest descendant and ignored
+  // every attempt to clamp it (content-div width, popupStyle, overflow
+  // hidden), resulting in an off-screen overflow near the titlebar's
+  // right edge. The Modal is centered, focus-trapped, and scrollable
+  // if a tenant has a very tall locale — a cleaner home for this
+  // control without the positioning fight.
 
   return (
-    <Popover
-      content={content}
-      trigger='click'
-      position='bottom'
-      popupVisible={popVisible}
-      onVisibleChange={setPopVisible}
-    >
+    <>
       <Tooltip
         content={
           isActive
@@ -289,6 +132,7 @@ const FleetModeButton: React.FC<Props> = ({ iconSize, isMobile }) => {
           className={classNames('app-titlebar__button', isMobile && 'app-titlebar__button--mobile')}
           aria-label='Fleet mode'
           style={isActive && glowColor ? { color: glowColor, filter: `drop-shadow(0 0 4px ${glowColor})` } : {}}
+          onClick={() => setPopVisible(true)}
         >
           {/* Cast the icon size at render time so we don't stretch the 14px
               version defined in MODE_ICONS. */}
@@ -297,7 +141,171 @@ const FleetModeButton: React.FC<Props> = ({ iconSize, isMobile }) => {
           })}
         </button>
       </Tooltip>
-    </Popover>
+
+      <Modal
+        title={
+          <div className='flex items-center gap-2' style={{ fontSize: 16, fontWeight: 600 }}>
+            {MODE_ICONS[currentMode]}
+            {t('fleet.topbar.title', { defaultValue: 'Fleet mode' })}
+            {isActive && (
+              <Tag size='small' color={MODE_COLORS[currentMode]}>
+                {t(`fleet.mode.${currentMode}.name`, { defaultValue: currentMode })}
+              </Tag>
+            )}
+            {currentMode !== 'regular' && (
+              <Tag size='small' color='orange' bordered>
+                {t('fleet.topbar.alphaTag', { defaultValue: 'Alpha' })}
+              </Tag>
+            )}
+          </div>
+        }
+        visible={popVisible}
+        onCancel={() => !submitting && setPopVisible(false)}
+        maskClosable={!submitting}
+        style={{ width: 520 }}
+        footer={
+          <div className='flex justify-end gap-2'>
+            <Button onClick={() => setPopVisible(false)} disabled={submitting}>
+              {t('fleet.topbar.cancel', { defaultValue: 'Cancel' })}
+            </Button>
+            <Button
+              type='primary'
+              loading={submitting}
+              disabled={!needsRestart || slaveNeedsConfig}
+              onClick={() => void handleApply()}
+            >
+              {t('fleet.topbar.applyRestart', { defaultValue: 'Save & restart' })}
+            </Button>
+          </div>
+        }
+      >
+        <div className='text-12px text-t-tertiary mb-3'>
+          {t('fleet.topbar.subtitle', {
+            defaultValue: 'Switch between single-machine, organization master, and managed slave modes.',
+          })}
+        </div>
+        {currentMode !== 'regular' && (
+          <div
+            className='text-12px mb-3 p-2 rd-6px'
+            style={{
+              background: 'color-mix(in srgb, var(--color-warning-6) 10%, transparent)',
+              color: 'var(--color-text-2)',
+              border: '1px solid var(--color-warning-4)',
+            }}
+          >
+            {t('fleet.topbar.alphaHint', {
+              defaultValue:
+                'Fleet Mode is in Alpha. Pin master + slave to the same version; expect breaking protocol changes across v2.x. See docs/feature/fleet for the operator guide.',
+            })}
+          </div>
+        )}
+
+        <Radio.Group
+          value={selectedMode}
+          onChange={(v) => setSelectedMode(v as FleetMode)}
+          direction='vertical'
+          style={{ width: '100%' }}
+        >
+          {(['regular', 'master', 'slave'] as FleetMode[]).map((m) => (
+            <Radio key={m} value={m}>
+              <div className='py-1'>
+                <div className='text-13px font-medium flex items-center gap-2'>
+                  <span style={{ display: 'inline-flex' }}>{MODE_ICONS[m]}</span>
+                  {t(`fleet.mode.${m}.name`, { defaultValue: m })}
+                </div>
+                <div className='text-11px text-t-tertiary leading-tight mt-1'>
+                  {t(`fleet.mode.${m}.description`, { defaultValue: '' })}
+                </div>
+              </div>
+            </Radio>
+          ))}
+        </Radio.Group>
+
+        {/* Master-mode inline config */}
+        {selectedMode === 'master' && (
+          <div className='mt-3 p-3 bg-fill-2 rd-6px'>
+            <div className='text-12px font-medium mb-1'>
+              {t('fleet.wizard.master.portLabel', { defaultValue: 'Port' })}
+            </div>
+            <InputNumber
+              value={masterPort}
+              onChange={(v) => setMasterPort(typeof v === 'number' ? v : 8888)}
+              min={1}
+              max={65535}
+              size='small'
+              style={{ width: 160 }}
+            />
+            <div className='text-12px font-medium mt-2 mb-1'>
+              {t('fleet.wizard.master.bindLabel', { defaultValue: 'Bind' })}
+            </div>
+            <Radio.Group
+              value={masterBindAll ? 'all' : 'local'}
+              onChange={(v) => setMasterBindAll(v === 'all')}
+              size='small'
+            >
+              <Radio value='local'>
+                <span className='text-12px'>
+                  {t('fleet.wizard.master.bindLocalName', { defaultValue: 'Localhost only' })}
+                </span>
+              </Radio>
+              <Radio value='all'>
+                <span className='text-12px'>
+                  {t('fleet.wizard.master.bindAllName', { defaultValue: 'All interfaces' })}
+                </span>
+              </Radio>
+            </Radio.Group>
+            {masterBindAll && (
+              <Alert
+                type='info'
+                className='mt-2 text-11px'
+                content={t('fleet.wizard.master.firewallHint', {
+                  defaultValue: 'Slaves on your network can reach this master. Check firewall rules.',
+                })}
+              />
+            )}
+          </div>
+        )}
+
+        {/* Slave-mode inline config — only shown when switching TO slave from
+            a non-slave mode. Already-enrolled slaves just keep their state. */}
+        {selectedMode === 'slave' && currentMode !== 'slave' && (
+          <div className='mt-3 p-3 bg-fill-2 rd-6px space-y-2'>
+            <div>
+              <div className='text-12px font-medium mb-1'>
+                {t('fleet.wizard.slave.urlLabel', { defaultValue: 'Master URL' })}
+              </div>
+              <Input
+                value={slaveMasterUrl}
+                onChange={setSlaveMasterUrl}
+                size='small'
+                placeholder='https://10.0.0.195:8888'
+              />
+            </div>
+            <div>
+              <div className='text-12px font-medium mb-1'>
+                {t('fleet.wizard.slave.tokenLabel', { defaultValue: 'Enrollment token' })}
+              </div>
+              <Input.Password
+                value={slaveToken}
+                onChange={setSlaveToken}
+                size='small'
+                placeholder={t('fleet.wizard.slave.tokenPlaceholder', {
+                  defaultValue: 'Paste the one-time token from your admin',
+                })}
+              />
+            </div>
+          </div>
+        )}
+
+        {needsRestart && (
+          <div className='text-11px text-t-tertiary mt-3'>
+            {t('fleet.topbar.restartHint', {
+              defaultValue: 'Mode change requires a restart. Your teams and conversations are preserved.',
+            })}
+          </div>
+        )}
+      </Modal>
+    </>
   );
 };
 
