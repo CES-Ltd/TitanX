@@ -3062,6 +3062,22 @@ const migration_v72: IMigration = {
     addColumn('reasoning_bank', 'consumption_success_count', 'INTEGER NOT NULL DEFAULT 0');
     addColumn('reasoning_bank', 'failure_pattern', 'INTEGER NOT NULL DEFAULT 0');
     addColumn('agent_gallery', 'fleet_instructions_md', 'TEXT');
+    // v2.5.0 Phase D4 — workspace-scope tagging for multi-tenant
+    // isolation. Nullable; absence means "fleet-wide" (current
+    // behavior). When set, consolidated retrieval will only match
+    // trajectories to agents running in the same workspace. Full
+    // propagation (envelope → fleet_learnings → consolidated output
+    // → slave retrieval filter) lands in v2.6.0; for v2.5.0 the
+    // column exists so operators can start tagging trajectories by
+    // workspace without a later schema migration.
+    addColumn('reasoning_bank', 'workspace_id', 'TEXT');
+    addColumn('fleet_learnings', 'workspace_id', 'TEXT');
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_reasoning_bank_workspace ON reasoning_bank(workspace_id) WHERE workspace_id IS NOT NULL'
+    );
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_fleet_learnings_workspace ON fleet_learnings(workspace_id) WHERE workspace_id IS NOT NULL'
+    );
     db.exec(
       'CREATE INDEX IF NOT EXISTS idx_reasoning_bank_consumption ON reasoning_bank(consumption_count) WHERE consumption_count > 0'
     );
@@ -3103,6 +3119,10 @@ const migration_v72: IMigration = {
       }
     };
     db.exec('DROP INDEX IF EXISTS idx_reasoning_bank_consumption');
+    db.exec('DROP INDEX IF EXISTS idx_reasoning_bank_workspace');
+    db.exec('DROP INDEX IF EXISTS idx_fleet_learnings_workspace');
+    dropColumn('fleet_learnings', 'workspace_id');
+    dropColumn('reasoning_bank', 'workspace_id');
     dropColumn('agent_gallery', 'fleet_instructions_md');
     dropColumn('reasoning_bank', 'failure_pattern');
     dropColumn('reasoning_bank', 'consumption_success_count');

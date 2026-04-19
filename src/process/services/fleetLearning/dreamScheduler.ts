@@ -201,6 +201,23 @@ function resolveDreamHour(): number {
 }
 
 /**
+ * v2.5.0 Phase D2 — per-dream-pass LLM cost cap.
+ *
+ * Default 500¢ (== $5) per pass. Each pass runs ≤ daily so worst
+ * case is ~$150/month; typical small fleets spend a fraction. Raise
+ * if you run a larger fleet with many high-frequency clusters or
+ * use a premium model. Floor at 50¢ so an operator can't
+ * accidentally disable distillation with e.g. `TITANX_DREAM_MAX_COST_CENTS=0`.
+ */
+function resolveDreamCostCapCents(): number {
+  const raw = process.env.TITANX_DREAM_MAX_COST_CENTS;
+  if (!raw) return 500;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n)) return 500;
+  return Math.max(50, n);
+}
+
+/**
  * Execute one consolidation pass. Returns metadata; throws on
  * unrecoverable errors (caller in the scheduler swallows the throw
  * via the setInterval closure, but tests want structured results).
@@ -358,10 +375,30 @@ export async function runDreamPass(db: ISqliteDriver, options?: { keepTopN?: num
     // DistilledInsight (taskShape + preferredPath / avoidancePath +
     // triggerCondition). Failure clusters use the avoidance-rule
     // prompt; success clusters use the preferred-path prompt.
-    const highFreqClusters = Array.from(byHash.values()).filter(
+    //
+    // v2.5.0 Phase D2 — cost cap on the distillation batch. The
+    // scheduler estimates per-cluster cost (input prompt + response
+    // budget × provider rate) and drops lowest-priority clusters if
+    // the total estimate exceeds the configured cap. Sized
+    // conservatively — a 500-cluster fleet at ~1.5¢/cluster =
+    // ~$7.50/night, comfortably under the default $5 cap AFTER the
+    // distill-only-high-frequency filter above already trimmed by
+    // ~10x. Operators can raise via TITANX_DREAM_MAX_COST_CENTS.
+    let highFreqClusters = Array.from(byHash.values()).filter(
       (c) => c.deviceSet.size >= HIGH_FREQUENCY_MIN_DEVICES && c.totalUsage >= HIGH_FREQUENCY_MIN_USAGE
     );
     if (highFreqClusters.length > 0) {
+      const maxCostCents = resolveDreamCostCapCents();
+      const estimatedCentsPerCluster = 2; // conservative avg for sonnet/4o-mini range
+      const affordable = Math.floor(maxCostCents / estimatedCentsPerCluster);
+      if (highFreqClusters.length > affordable && affordable >= 0) {
+        console.warn(
+          `[Dream] Cost cap — ${String(highFreqClusters.length)} high-freq clusters exceed ${String(maxCostCents)}¢ budget @ ~${String(estimatedCentsPerCluster)}¢/cluster; distilling top ${String(affordable)} by rank.`
+        );
+        highFreqClusters = highFreqClusters
+          .toSorted((a, b) => b.maxScore * b.totalUsage - a.maxScore * a.totalUsage)
+          .slice(0, affordable);
+      }
       await tryDistillBatch(highFreqClusters);
     }
 

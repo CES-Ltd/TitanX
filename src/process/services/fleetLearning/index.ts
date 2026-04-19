@@ -172,12 +172,32 @@ export function buildLearningEnvelope(
     return null;
   }
 
+  // v2.5.0 Phase D3 — post-redaction secret audit. deepScrubForExport
+  // already replaces known-pattern secrets with [REDACTED], but it's
+  // pattern-based — a base64'd API key, a non-standard private key,
+  // or a customer-specific identifier can slip through. This second
+  // pass scans the final JSON payload for high-entropy strings +
+  // well-known provider prefixes (sk-, ghp_, xoxb-, etc) and drops
+  // offending trajectories / summaries before they leave the slave.
+  const auditedTrajectories = trajectories.filter((t) => !looksLikeSecretPayload(t.trajectoryJson));
+  const auditedSummaries = memorySummaries.filter((s) => !looksLikeSecretPayload(s.contentJson));
+  if (auditedTrajectories.length < trajectories.length) {
+    logNonCritical('fleet.learning.secret-audit-dropped', {
+      trajectories: trajectories.length - auditedTrajectories.length,
+    });
+  }
+  if (auditedSummaries.length < memorySummaries.length) {
+    logNonCritical('fleet.learning.secret-audit-dropped', {
+      memorySummaries: memorySummaries.length - auditedSummaries.length,
+    });
+  }
+
   // Enforce payload byte budget — drop lowest-signal trajectories first.
   const envelope: LearningExportEnvelope = {
     windowStart,
     windowEnd,
-    trajectories,
-    memorySummaries,
+    trajectories: auditedTrajectories,
+    memorySummaries: auditedSummaries,
     consumptionFeedback: consumptionFeedback.length > 0 ? consumptionFeedback : undefined,
   };
   const clamped = clampEnvelopeToBytes(envelope, LEARNING_EXPORT_LIMITS.MAX_PAYLOAD_BYTES);
@@ -296,6 +316,73 @@ function safeParseArray(s: string): unknown[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * v2.5.0 Phase D3 — belt-and-suspenders secret detector.
+ *
+ * deepScrubForExport already replaces known patterns with [REDACTED].
+ * This second layer scans the final JSON string for things that look
+ * like credentials the scrubber might have missed:
+ *   - Explicit provider prefixes (sk-, sk-ant-, ghp_, gho_, ghu_,
+ *     github_pat_, xoxb-, xoxp-, AKIA, ASIA, AIza, ya29.)
+ *   - Long high-entropy base64 / hex-ish runs (≥40 chars, ≥4 bits/char entropy)
+ *   - PEM private key BEGIN markers
+ *   - JSON Web Token shape (three base64url segments separated by dots)
+ *
+ * Returns true if the payload should be DROPPED from the envelope.
+ * False positives (legitimate code output that happens to look like
+ * a secret) are preferred over leaking a real one — the trajectory
+ * just doesn't contribute to the fleet's learning for that window.
+ */
+function looksLikeSecretPayload(payload: string): boolean {
+  if (!payload || payload.length === 0) return false;
+  // Known-provider prefixes — cheap indexOf sweep.
+  const providerPrefixes = [
+    'sk-ant-',
+    'sk-',
+    'ghp_',
+    'gho_',
+    'ghu_',
+    'github_pat_',
+    'xoxb-',
+    'xoxp-',
+    'AKIA',
+    'ASIA',
+    'AIza',
+    'ya29.',
+  ];
+  for (const p of providerPrefixes) {
+    if (payload.includes(p)) return true;
+  }
+  // PEM private keys.
+  if (payload.includes('-----BEGIN') && payload.includes('PRIVATE KEY')) return true;
+  // JWT shape: three base64url segments, middle of which decodes to
+  // something with `"alg":`. Quick string check avoids full decoding.
+  if (/eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/.test(payload)) return true;
+  // Long high-entropy runs. Scan character classes over a sliding
+  // window of 40 chars; if any window has 4+ bits/char Shannon
+  // entropy on its 40-char content, flag it. Keep the check bounded
+  // to avoid quadratic cost on large payloads — sample the first 8KB.
+  const sample = payload.slice(0, 8192);
+  const suspectRun = /[A-Za-z0-9_+/=-]{40,}/g;
+  let m: RegExpExecArray | null;
+  while ((m = suspectRun.exec(sample)) !== null) {
+    if (shannonEntropy(m[0]) >= 4) return true;
+  }
+  return false;
+}
+
+function shannonEntropy(s: string): number {
+  if (s.length === 0) return 0;
+  const counts = new Map<string, number>();
+  for (const ch of s) counts.set(ch, (counts.get(ch) ?? 0) + 1);
+  let h = 0;
+  for (const c of counts.values()) {
+    const p = c / s.length;
+    h -= p * Math.log2(p);
+  }
+  return h;
 }
 
 /**
