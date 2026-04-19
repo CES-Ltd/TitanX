@@ -216,15 +216,15 @@ TitanX v2.4 ships **Fleet Mode** — a control-plane extension that lets one ins
 
 ### Mode matrix
 
-| Capability | Regular | Master | Slave / Workforce | Slave / Farm |
-|---|:---:|:---:|:---:|:---:|
-| Local teams + ACP agents | ✅ | ✅ | ✅ | ✅ |
-| Fleet webserver (enrollments, config bundles, signed commands) | — | ✅ | — | — |
-| Push telemetry → master (60s cadence, runtime summary) | — | — | ✅ | ✅ |
-| Pull IAM / security-toggle / agent-template bundles | — | — | ✅ | ✅ |
-| Accept destructive commands (`cache.clear`, `credential.rotate`, `agent.restart`, `force.upgrade`) | — | — | ✅ | ✅ |
-| Accept farm commands (`team.farm_provision`, `agent.execute`) | — | — | — | ✅ |
-| Host Lead ACP session for a master-mirrored team | — | — | — | ✅ |
+| Capability                                                                                         | Regular | Master | Slave / Workforce | Slave / Farm |
+| -------------------------------------------------------------------------------------------------- | :-----: | :----: | :---------------: | :----------: |
+| Local teams + ACP agents                                                                           |   ✅    |   ✅   |        ✅         |      ✅      |
+| Fleet webserver (enrollments, config bundles, signed commands)                                     |    —    |   ✅   |         —         |      —       |
+| Push telemetry → master (60s cadence, runtime summary)                                             |    —    |   —    |        ✅         |      ✅      |
+| Pull IAM / security-toggle / agent-template bundles                                                |    —    |   —    |        ✅         |      ✅      |
+| Accept destructive commands (`cache.clear`, `credential.rotate`, `agent.restart`, `force.upgrade`) |    —    |   —    |        ✅         |      ✅      |
+| Accept farm commands (`team.farm_provision`, `agent.execute`)                                      |    —    |   —    |         —         |      ✅      |
+| Host Lead ACP session for a master-mirrored team                                                   |    —    |   —    |         —         |      ✅      |
 
 ### 🏛 Master Mode <img src="https://img.shields.io/badge/NEW-v2.4-FF6B6B?style=flat-square" alt="NEW"> <img src="https://img.shields.io/badge/status-Alpha-FFB020?style=flat-square&logo=semver&logoColor=white" alt="Alpha">
 
@@ -246,7 +246,7 @@ TitanX v2.4 ships **Fleet Mode** — a control-plane extension that lets one ins
 
 ### 🚜 Slave / Farm <img src="https://img.shields.io/badge/NEW-v2.4-FF6B6B?style=flat-square" alt="NEW"> <img src="https://img.shields.io/badge/status-Alpha-FFB020?style=flat-square&logo=semver&logoColor=white" alt="Alpha"> <img src="https://img.shields.io/badge/remote%20compute-node-FF7D00?style=flat-square" alt="Remote Compute">
 
-*Farm mode is everything Workforce does, plus the slave acts as a remote-compute node for master's teams.*
+_Farm mode is everything Workforce does, plus the slave acts as a remote-compute node for master's teams._
 
 - **Hire-time mirror provisioning** — `team.farm_provision` fires the moment master clicks Hire; slave creates a mirror team with a local **Lead ACP session** (using the operator's chosen runtime) + the farm teammate, and the team shows up immediately in the slave's Teams UI
 - **Persistent Lead CLI session** — 30min idle-cached ACP agent per team; multi-turn conversations preserve context without respawning the CLI every message (2–5s saved per turn)
@@ -481,15 +481,15 @@ TitanX/
 
 TitanX adds **40+ tables** via **71 migrations** on top of AionUI's base schema:
 
-| Category         | Tables                                                                                                                                                                  |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Security**     | iam_policies, agent_policy_bindings, credential_access_tokens, agent_session_tokens, network_policies, network_policy_rules, security_feature_toggles, agent_blueprints |
-| **Multi-Tenant** | workspaces, workspace_members                                                                                                                                           |
-| **Workflows**    | workflow_definitions, workflow_executions, workflow_node_executions                                                                                                     |
-| **Intelligence** | agent_memory, agent_plans, reasoning_bank, caveman_savings                                                                                                              |
-| **Traces**       | trace_runs, trace_feedback                                                                                                                                              |
-| **Operations**   | activity_log (HMAC + device signed), secrets, secret_versions, cost_events, budget_policies, budget_incidents, agent_runs, approvals, workflow_rules                    |
-| **Teams**        | teams, team_tasks (with progress_notes + lifecycle_state), sprint_tasks, sprint_counters, agent_gallery, agent_snapshots, inference_routing_rules, project_plans        |
+| Category                                                                                                                                                                                                              | Tables                                                                                                                                                                                                                       |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Security**                                                                                                                                                                                                          | iam_policies, agent_policy_bindings, credential_access_tokens, agent_session_tokens, network_policies, network_policy_rules, security_feature_toggles, agent_blueprints                                                      |
+| **Multi-Tenant**                                                                                                                                                                                                      | workspaces, workspace_members                                                                                                                                                                                                |
+| **Workflows**                                                                                                                                                                                                         | workflow_definitions, workflow_executions, workflow_node_executions                                                                                                                                                          |
+| **Intelligence**                                                                                                                                                                                                      | agent_memory, agent_plans, reasoning_bank, caveman_savings                                                                                                                                                                   |
+| **Traces**                                                                                                                                                                                                            | trace_runs, trace_feedback                                                                                                                                                                                                   |
+| **Operations**                                                                                                                                                                                                        | activity_log (HMAC + device signed), secrets, secret_versions, cost_events, budget_policies, budget_incidents, agent_runs, approvals, workflow_rules                                                                         |
+| **Teams**                                                                                                                                                                                                             | teams, team_tasks (with progress_notes + lifecycle_state), sprint_tasks, sprint_counters, agent_gallery, agent_snapshots, inference_routing_rules, project_plans                                                             |
 | **Fleet** <img src="https://img.shields.io/badge/NEW-v2.4-FF6B6B?style=flat-square" alt="NEW"> <img src="https://img.shields.io/badge/status-Alpha-FFB020?style=flat-square&logo=semver&logoColor=white" alt="Alpha"> | fleet_enrollments, fleet_config_version, fleet_telemetry_reports, fleet_telemetry_state, fleet_commands, fleet_command_acks, fleet_farm_devices, fleet_agent_jobs, fleet_learnings, consolidated_learnings, learning_exports |
 
 ---

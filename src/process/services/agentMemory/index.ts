@@ -50,6 +50,88 @@ export function addToBuffer(
   };
 }
 
+/**
+ * v2.5.0 final — write a consolidated (fleet-broadcast) summary into
+ * local agent_memory. Stamped with `source_tag='fleet_consolidated'`
+ * so local code can distinguish it from locally-captured entries,
+ * prune it independently, and so the retrieval layer can prefer
+ * local entries when both exist.
+ *
+ * Idempotent on (agent_slot_id, source_tag, summary-hash). The master
+ * broadcasts the same consolidated payload every config pull until a
+ * newer dream pass runs; without dedup we'd accumulate duplicates on
+ * every 30-second slave poll. We hash the summary content itself and
+ * keep the newest wins policy.
+ *
+ * Returns `'inserted' | 'updated' | 'skipped'` so the applier can
+ * report per-bundle statistics without a second SELECT.
+ */
+export function upsertConsolidatedSummary(
+  db: ISqliteDriver,
+  agentSlotId: string,
+  teamId: string,
+  summary: string,
+  tokenCount: number,
+  contributingDevices: number
+): 'inserted' | 'updated' | 'skipped' {
+  if (!summary || summary.trim().length === 0) return 'skipped';
+  const contentHash = crypto.createHash('sha256').update(summary).digest('hex').slice(0, 32);
+  const deterministicId = `fleet-mem-${agentSlotId.slice(0, 8)}-${contentHash.slice(0, 16)}`;
+  const now = Date.now();
+  // Check if we already have this exact (slot, hash) pair. Uses the
+  // deterministic id so we don't have to scan content blobs.
+  const existing = db.prepare('SELECT id, updated_at FROM agent_memory WHERE id = ?').get(deterministicId) as
+    | { id: string; updated_at: number }
+    | undefined;
+  if (existing) {
+    db.prepare('UPDATE agent_memory SET updated_at = ? WHERE id = ?').run(now, deterministicId);
+    return 'updated';
+  }
+  // Use relevance_score as a rough "fleet-wide" strength signal:
+  // more contributing devices → higher retrieval priority. Clamped
+  // to [0.3, 0.95] so a fleet entry never outranks a freshly-written
+  // local 'buffer' row (which is 1.0) for the same slot.
+  const relevance = Math.max(0.3, Math.min(0.95, 0.5 + Math.min(contributingDevices, 5) * 0.08));
+  try {
+    db.prepare(
+      'INSERT INTO agent_memory (id, agent_slot_id, team_id, memory_type, content, token_count, relevance_score, created_at, updated_at, source_tag) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(
+      deterministicId,
+      agentSlotId,
+      teamId,
+      'summary',
+      JSON.stringify({ summary, contributingDevices }),
+      tokenCount,
+      relevance,
+      now,
+      now,
+      'fleet_consolidated'
+    );
+    return 'inserted';
+  } catch (e) {
+    // If the column didn't migrate yet (v72 but not v73), fall back
+    // to a local-tagged insert. Next migration pass upgrades it.
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/no such column: source_tag/i.test(msg)) {
+      db.prepare(
+        'INSERT INTO agent_memory (id, agent_slot_id, team_id, memory_type, content, token_count, relevance_score, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      ).run(
+        deterministicId,
+        agentSlotId,
+        teamId,
+        'summary',
+        JSON.stringify({ summary, contributingDevices, fleet: true }),
+        tokenCount,
+        relevance,
+        now,
+        now
+      );
+      return 'inserted';
+    }
+    throw e;
+  }
+}
+
 /** Store a summary (replaces old buffer entries) */
 export function storeSummary(
   db: ISqliteDriver,

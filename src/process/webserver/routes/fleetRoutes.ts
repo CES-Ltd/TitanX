@@ -364,7 +364,7 @@ export function registerFleetRoutes(app: Express): void {
         // ingestor stashes it in the JSON payload column; absent on
         // pre-v2.2.1 slaves, handled downstream as "unknown".
         runtimes: Array.isArray((r as { runtimes?: unknown }).runtimes)
-          ? ((r as { runtimes: TelemetryReport['runtimes'] }).runtimes)
+          ? (r as { runtimes: TelemetryReport['runtimes'] }).runtimes
           : undefined,
       };
 
@@ -501,7 +501,7 @@ export function registerFleetRoutes(app: Express): void {
         // v2.5.0 Phase B1 — consumption feedback is optional;
         // validated element-by-element below.
         consumptionFeedback: Array.isArray((e as { consumptionFeedback?: unknown }).consumptionFeedback)
-          ? ((e as { consumptionFeedback: Array<Record<string, unknown>> }).consumptionFeedback).map((c) => ({
+          ? (e as { consumptionFeedback: Array<Record<string, unknown>> }).consumptionFeedback.map((c) => ({
               trajectoryHash: String(c.trajectoryHash ?? ''),
               usedCount: typeof c.usedCount === 'number' ? c.usedCount : 0,
               successCount: typeof c.successCount === 'number' ? c.successCount : 0,

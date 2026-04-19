@@ -20,11 +20,13 @@
  * leave a slave half-updated.
  */
 
+import crypto from 'crypto';
 import type { ISqliteDriver } from '../database/drivers/ISqliteDriver';
 import { logActivity } from '../activityLog';
 import { logNonCritical } from '@process/utils/logNonCritical';
 import type { IAMPolicy } from '../iamPolicies';
 import type { SecurityFeature } from '../securityFeatures';
+import { upsertConsolidatedSummary } from '../agentMemory';
 import type {
   ApplyBundleResult,
   BumpReason,
@@ -187,8 +189,7 @@ export function buildConfigBundle(db: ISqliteDriver, sinceVersion: number): Flee
       } else if (parsed !== null && typeof parsed === 'object') {
         const rec = parsed as { trajectories?: unknown; memorySummaries?: unknown };
         if (Array.isArray(rec.trajectories)) entries = rec.trajectories as Array<Record<string, unknown>>;
-        if (Array.isArray(rec.memorySummaries))
-          memorySummaries = rec.memorySummaries as Array<Record<string, unknown>>;
+        if (Array.isArray(rec.memorySummaries)) memorySummaries = rec.memorySummaries as Array<Record<string, unknown>>;
       }
       consolidatedLearnings = {
         version: row.version,
@@ -418,6 +419,33 @@ export function applyConfigBundle(db: ISqliteDriver, bundle: FleetConfigBundle):
     }
   }
 
+  // v2.5.0 final — slave-side applier for consolidated memorySummaries.
+  // The master's Phase C2 dream pass packs per-agent-slot memory
+  // summaries (aggregated across all contributing devices) into
+  // `consolidatedLearnings.memorySummaries[]`. Each entry has an
+  // `agentSlotHash` (SHA256(slotId)[:16]) — the same hash the
+  // slave uses when it exports summaries, so we can dedup/upsert
+  // locally by matching our own slot ids back.
+  //
+  // We walk local agent rows and resolve each `agentSlotHash` to the
+  // local slot_id it originated from. That gives us the team_id to
+  // write against. Slots whose hash doesn't match any local agent
+  // (e.g. summary came from a slot that's been decommissioned locally)
+  // are skipped — their data belongs to another device's agent roster
+  // and has no local consumer.
+  if (bundle.consolidatedLearnings?.memorySummaries && bundle.consolidatedLearnings.memorySummaries.length > 0) {
+    try {
+      const result = applyConsolidatedMemorySummaries(db, bundle.consolidatedLearnings.memorySummaries);
+      if (result.inserted > 0 || result.updated > 0) {
+        console.log(
+          `[FleetConfig] Applied consolidated memory summaries: ${String(result.inserted)} new, ${String(result.updated)} refreshed, ${String(result.skipped)} skipped`
+        );
+      }
+    } catch (e) {
+      logNonCritical('fleet.config.apply-consolidated-memory-summaries', e);
+    }
+  }
+
   // Bump local version to the bundle's version (skipping the usual +1,
   // because the slave is *adopting* master's version, not adding to it).
   db.prepare(
@@ -489,22 +517,56 @@ function applyConsolidatedLearnings(
   }
 
   const now = Date.now();
-  // Upsert on (trajectory_hash, source_tag). The composite isn't a
-  // unique index yet (migration-v70 kept it light), so we do a manual
-  // lookup + UPDATE/INSERT rather than relying on ON CONFLICT.
-  const lookup = db.prepare(
+  // v2.5.0 final — detect workspace_id column so we can persist the
+  // scope that came with each broadcast entry. Consolidated rows
+  // now keep their workspace scope locally so retrieval honors
+  // tenant boundaries.
+  const hasWorkspaceColumn = (() => {
+    try {
+      const info = db.prepare(`PRAGMA table_info(reasoning_bank)`).all() as Array<{ name: string }>;
+      return info.some((c) => c.name === 'workspace_id');
+    } catch {
+      return false;
+    }
+  })();
+
+  // Upsert on (trajectory_hash, source_tag, workspace_id). The composite
+  // isn't a unique index yet (migration-v70/v72 kept it light), so we
+  // do a manual lookup + UPDATE/INSERT rather than relying on ON
+  // CONFLICT. Workspace partitioning: two consolidated entries for
+  // the same trajectory_hash but different workspace_ids are distinct
+  // rows, so fleet-wide and workspace-specific versions co-exist.
+  const lookupNoWs = db.prepare(
     `SELECT id FROM reasoning_bank WHERE trajectory_hash = ? AND source_tag = 'fleet_consolidated' LIMIT 1`
   );
+  const lookupWithWs = hasWorkspaceColumn
+    ? db.prepare(
+        `SELECT id FROM reasoning_bank WHERE trajectory_hash = ? AND source_tag = 'fleet_consolidated' AND workspace_id IS ? LIMIT 1`
+      )
+    : null;
   const updateStmt = db.prepare(
     `UPDATE reasoning_bank SET task_description = ?, trajectory = ?, success_score = ?, usage_count = ?, updated_at = ? WHERE id = ?`
   );
-  const insertStmt = db.prepare(
-    `INSERT INTO reasoning_bank (id, trajectory_hash, task_description, trajectory, success_score, usage_count, created_at, updated_at, source_tag)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'fleet_consolidated')`
-  );
+  const insertStmt = hasWorkspaceColumn
+    ? db.prepare(
+        `INSERT INTO reasoning_bank (id, trajectory_hash, task_description, trajectory, success_score, usage_count, created_at, updated_at, source_tag, workspace_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'fleet_consolidated', ?)`
+      )
+    : db.prepare(
+        `INSERT INTO reasoning_bank (id, trajectory_hash, task_description, trajectory, success_score, usage_count, created_at, updated_at, source_tag)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'fleet_consolidated')`
+      );
   let upserted = 0;
   for (const entry of payload.entries) {
-    const existing = lookup.get(entry.trajectoryHash) as { id: string } | undefined;
+    const workspaceId = entry.workspaceId ?? null;
+    // `IS ?` with a NULL parameter matches rows where workspace_id IS
+    // NULL; with a string it matches that exact string. This preserves
+    // workspace partitioning on the dedup lookup.
+    const existing = (
+      hasWorkspaceColumn && lookupWithWs
+        ? lookupWithWs.get(entry.trajectoryHash, workspaceId)
+        : lookupNoWs.get(entry.trajectoryHash)
+    ) as { id: string } | undefined;
     if (existing) {
       updateStmt.run(
         entry.taskDescription,
@@ -517,22 +579,145 @@ function applyConsolidatedLearnings(
     } else {
       // Use a deterministic-looking id so inspection tooling can see
       // at a glance that this row came from the fleet consolidation
-      // pipeline (rather than a UUID that looks like local).
-      const id = `fleet-cons-${entry.trajectoryHash.slice(0, 16)}`;
-      insertStmt.run(
-        id,
-        entry.trajectoryHash,
-        entry.taskDescription,
-        entry.trajectoryJson,
-        entry.successScore,
-        entry.usageCountFleetwide,
-        now,
-        now
-      );
+      // pipeline (rather than a UUID that looks like local). Include
+      // a workspace suffix for cross-workspace disambiguation.
+      const wsSuffix = workspaceId
+        ? `-ws-${crypto.createHash('sha256').update(workspaceId).digest('hex').slice(0, 6)}`
+        : '';
+      const id = `fleet-cons-${entry.trajectoryHash.slice(0, 16)}${wsSuffix}`;
+      if (hasWorkspaceColumn) {
+        insertStmt.run(
+          id,
+          entry.trajectoryHash,
+          entry.taskDescription,
+          entry.trajectoryJson,
+          entry.successScore,
+          entry.usageCountFleetwide,
+          now,
+          now,
+          workspaceId
+        );
+      } else {
+        insertStmt.run(
+          id,
+          entry.trajectoryHash,
+          entry.taskDescription,
+          entry.trajectoryJson,
+          entry.successScore,
+          entry.usageCountFleetwide,
+          now,
+          now
+        );
+      }
     }
     upserted += 1;
   }
   return upserted;
+}
+
+/**
+ * v2.5.0 final — apply consolidated memory summaries broadcast in the
+ * config bundle. Each entry carries an `agentSlotHash` (SHA256 of the
+ * producer's slot id, truncated to 16) and an array of per-device
+ * entries (one contentJson per contributing device).
+ *
+ * Mapping back to local slots: we scan all active `team_agents` rows
+ * (via the teams table JSON) and match by SHA256(local_slot_id)[:16]
+ * against the incoming hash. When matched, we write one summary per
+ * device-contribution into `agent_memory` under that slot_id with
+ * `source_tag='fleet_consolidated'`. Unmatched hashes are simply
+ * skipped — they belong to agents that exist on other devices.
+ *
+ * Why match by hash rather than sending raw slot ids? Privacy: the
+ * master never sees a slot id in plaintext across devices. Hash
+ * collisions at 16 hex chars are astronomically unlikely for the
+ * handful of slots on a single device.
+ *
+ * Returns per-entry apply statistics so the caller can log.
+ */
+function applyConsolidatedMemorySummaries(
+  db: ISqliteDriver,
+  summaries: NonNullable<NonNullable<FleetConfigBundle['consolidatedLearnings']>['memorySummaries']>
+): { inserted: number; updated: number; skipped: number; unmatchedHashes: number } {
+  // Build local hash → (slotId, teamId) map by scanning all teams.
+  // Teams are low-volume (tens per device), agent lists are small
+  // (single digits each), so a full scan every apply is fine.
+  const slotMap = new Map<string, { slotId: string; teamId: string }>();
+  try {
+    const rows = db.prepare(`SELECT id AS team_id, agents FROM teams`).all() as Array<{
+      team_id: string;
+      agents: string;
+    }>;
+    for (const r of rows) {
+      let agents: Array<{ slotId?: string }> = [];
+      try {
+        agents = JSON.parse(r.agents || '[]') as Array<{ slotId?: string }>;
+      } catch {
+        continue;
+      }
+      for (const a of agents) {
+        if (!a.slotId) continue;
+        const hash = crypto.createHash('sha256').update(a.slotId).digest('hex').slice(0, 16);
+        slotMap.set(hash, { slotId: a.slotId, teamId: r.team_id });
+      }
+    }
+  } catch (e) {
+    logNonCritical('fleet.config.consolidated-memory.slot-scan', e);
+    return { inserted: 0, updated: 0, skipped: 0, unmatchedHashes: summaries.length };
+  }
+
+  let inserted = 0;
+  let updated = 0;
+  let skipped = 0;
+  let unmatchedHashes = 0;
+
+  for (const summary of summaries) {
+    const match = slotMap.get(summary.agentSlotHash);
+    if (!match) {
+      unmatchedHashes += 1;
+      continue;
+    }
+    for (const entry of summary.entries) {
+      // contentJson is the slave-exported summary payload; extract the
+      // actual summary text. Pre-v2.5 contentJson is a plain string; v2.5+
+      // wraps it as `{summary: string}` for structured access.
+      let text = '';
+      try {
+        const parsed = JSON.parse(entry.contentJson) as unknown;
+        if (typeof parsed === 'string') {
+          text = parsed;
+        } else if (parsed && typeof parsed === 'object' && 'summary' in parsed) {
+          const s = (parsed as { summary: unknown }).summary;
+          if (typeof s === 'string') text = s;
+        }
+      } catch {
+        // Non-JSON payload — treat the whole string as the summary.
+        text = entry.contentJson;
+      }
+      if (!text) {
+        skipped += 1;
+        continue;
+      }
+      const tokenCount = Math.ceil(text.length / 4);
+      try {
+        const result = upsertConsolidatedSummary(
+          db,
+          match.slotId,
+          match.teamId,
+          text,
+          tokenCount,
+          summary.contributingDevices
+        );
+        if (result === 'inserted') inserted += 1;
+        else if (result === 'updated') updated += 1;
+        else skipped += 1;
+      } catch (e) {
+        logNonCritical('fleet.config.consolidated-memory.upsert', e);
+        skipped += 1;
+      }
+    }
+  }
+  return { inserted, updated, skipped, unmatchedHashes };
 }
 
 // ── Managed-key inspection (UI consumption) ─────────────────────────────

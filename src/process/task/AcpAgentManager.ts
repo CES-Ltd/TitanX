@@ -586,11 +586,7 @@ class AcpAgentManager extends BaseAgentManager<AcpAgentManagerData, AcpPermissio
               try {
                 void getDatabase().then((db) => {
                   if (this._pendingConsumedTrajectoryId) {
-                    reasoningBank.recordTrajectoryConsumed(
-                      db.getDriver(),
-                      this._pendingConsumedTrajectoryId,
-                      true
-                    );
+                    reasoningBank.recordTrajectoryConsumed(db.getDriver(), this._pendingConsumedTrajectoryId, true);
                   }
                 });
               } catch {
@@ -735,7 +731,16 @@ class AcpAgentManager extends BaseAgentManager<AcpAgentManagerData, AcpPermissio
     // ─── Agent OS: ReasoningBank RETRIEVE ────────────────────────
     try {
       const db = await getDatabase();
-      const similar = reasoningBank.findSimilarTrajectories(db.getDriver(), data.content, 3);
+      // v2.5.0 final — workspace scope. When the conversation knows
+      // its workspace, pass it so retrieval only surfaces trajectories
+      // captured in the same workspace or fleet-wide ones (workspace=null).
+      // Cross-tenant leakage is the worry we're mitigating here.
+      const similar = reasoningBank.findSimilarTrajectories(
+        db.getDriver(),
+        data.content,
+        3,
+        this.workspace && this.workspace.trim().length > 0 ? this.workspace : undefined
+      );
       for (const trajectory of similar) {
         const relevance = reasoningBank.judgeRelevance(trajectory, data.content);
         if (relevance > 0.7) {

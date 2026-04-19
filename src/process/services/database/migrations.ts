@@ -3130,6 +3130,58 @@ const migration_v72: IMigration = {
   },
 };
 
+/**
+ * Migration v73 — Dream Mode follow-up (v2.5.0 final).
+ *
+ * The Phase C2 broadcast sends `memorySummaries` back to slaves so
+ * fleet-aggregated domain knowledge can enrich local agent reasoning.
+ * Phase C2 builds them master-side; Phase C2's slave-side applier
+ * (added in v2.5.0 final) writes them into the local `agent_memory`
+ * table alongside locally-captured summaries. To keep the two
+ * sources distinguishable — so operators can inspect which knowledge
+ * came from the fleet, and so local pruning can prefer dropping
+ * local entries before consolidated ones — we stamp a `source_tag`
+ * column on agent_memory (mirroring the same column that already
+ * exists on reasoning_bank since v70).
+ *
+ * NULL = local (pre-v73 and freshly captured entries).
+ * 'fleet_consolidated' = broadcast from master's dream pass.
+ *
+ * Also adds a compound index so the applier's dedup check
+ * (agent_slot_id, source_tag, team_id) is O(log n).
+ */
+const migration_v73: IMigration = {
+  version: 73,
+  name: 'Dream Mode v2.5.0 — agent_memory source_tag for consolidated summaries',
+  up: (db) => {
+    const addColumn = (table: string, column: string, type: string): void => {
+      try {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (!/duplicate column name/i.test(msg)) throw e;
+      }
+    };
+    addColumn('agent_memory', 'source_tag', 'TEXT');
+    // Matches the exact dedup pattern the applier uses: lookup rows
+    // by (agent_slot_id, source_tag) when deciding whether a given
+    // consolidated summary already landed locally. Partial index
+    // keeps it tiny for the common case (all NULL / local entries).
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_agent_memory_source_tag ON agent_memory(agent_slot_id, source_tag) WHERE source_tag IS NOT NULL`
+    );
+    console.log('[Migration v73] Added source_tag column to agent_memory');
+  },
+  down: (db) => {
+    db.exec('DROP INDEX IF EXISTS idx_agent_memory_source_tag');
+    try {
+      db.exec('ALTER TABLE agent_memory DROP COLUMN source_tag');
+    } catch {
+      /* older SQLite; leave column in place */
+    }
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -3145,7 +3197,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v54, migration_v55, migration_v56, migration_v57, migration_v58, migration_v59,
   migration_v60, migration_v61, migration_v62, migration_v63, migration_v64, migration_v65,
   migration_v66, migration_v67, migration_v68, migration_v69, migration_v70, migration_v71,
-  migration_v72,
+  migration_v72, migration_v73,
 ];
 
 /**

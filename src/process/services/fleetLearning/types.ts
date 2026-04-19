@@ -38,6 +38,13 @@ export type ExportedTrajectory = {
    * pre-v2.5 slaves.
    */
   failurePattern?: boolean;
+  /**
+   * v2.5.0 final — workspace scope. When present, master only
+   * consolidates this trajectory into clusters scoped to the same
+   * workspace. Absent / null = fleet-wide. Pre-v2.5 slaves won't
+   * emit this; master treats that as fleet-wide for back-compat.
+   */
+  workspaceId?: string;
 };
 
 /** A single exported agent-memory summary — slave side. */
@@ -144,6 +151,14 @@ export type ConsolidatedLearning = {
    * `taskDescription` alone.
    */
   insight?: DistilledInsightPayload;
+  /**
+   * v2.5.0 final — workspace scope carried through from the source
+   * trajectories. When present, slaves should only surface this
+   * cluster to agents running in the matching workspace. When
+   * absent / null, the cluster is fleet-wide (consolidated from
+   * untagged trajectories, available to every workspace).
+   */
+  workspaceId?: string;
 };
 
 /**

@@ -40,6 +40,15 @@ export type TrajectoryInput = {
    * capture lets agents learn from the fleet's mistakes too.
    */
   failurePattern?: boolean;
+  /**
+   * v2.5.0 final — workspace scope. Tagged at capture time so
+   * retrieval can filter by the requesting agent's workspace,
+   * slave push can partition by workspace, and master's dream
+   * pass can consolidate per-workspace clusters. NULL / undefined =
+   * "fleet-wide" (available to every workspace). Pass the team's
+   * workspace path or a stable tenant id here.
+   */
+  workspaceId?: string;
 };
 
 /** Hash a trajectory for deduplication. Uses task description + tool sequence. */
@@ -73,19 +82,46 @@ export function storeTrajectory(db: ISqliteDriver, input: TrajectoryInput): stri
   // v2.5.0 Phase B2 — stamp failure_pattern = 1 when the caller
   // flagged this as a failed turn. Default 0 preserves existing
   // behavior for v2.4.x callers and other non-turn writers.
-  db.prepare(
-    `INSERT INTO reasoning_bank (id, trajectory_hash, task_description, trajectory, success_score, usage_count, failure_pattern, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)`
-  ).run(
-    id,
-    hash,
-    input.taskDescription,
-    JSON.stringify(input.steps),
-    input.successScore,
-    input.failurePattern ? 1 : 0,
-    Date.now(),
-    Date.now()
-  );
+  // v2.5.0 final — stamp workspace_id when present so the rest of
+  // the learning pipeline (slave push → master consolidation →
+  // slave retrieval) can honor tenant boundaries. Older DBs that
+  // haven't run migration v72 lack the workspace_id column; fall
+  // back to the pre-workspace shape on those.
+  try {
+    db.prepare(
+      `INSERT INTO reasoning_bank (id, trajectory_hash, task_description, trajectory, success_score, usage_count, failure_pattern, workspace_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`
+    ).run(
+      id,
+      hash,
+      input.taskDescription,
+      JSON.stringify(input.steps),
+      input.successScore,
+      input.failurePattern ? 1 : 0,
+      input.workspaceId ?? null,
+      Date.now(),
+      Date.now()
+    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/no such column: workspace_id/i.test(msg)) {
+      db.prepare(
+        `INSERT INTO reasoning_bank (id, trajectory_hash, task_description, trajectory, success_score, usage_count, failure_pattern, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)`
+      ).run(
+        id,
+        hash,
+        input.taskDescription,
+        JSON.stringify(input.steps),
+        input.successScore,
+        input.failurePattern ? 1 : 0,
+        Date.now(),
+        Date.now()
+      );
+    } else {
+      throw e;
+    }
+  }
 
   console.log(
     `[ReasoningBank] Stored new ${input.failurePattern ? 'failure' : 'success'} trajectory ${id} (${String(input.steps.length)} steps, score: ${String(input.successScore)})`
@@ -96,8 +132,20 @@ export function storeTrajectory(db: ISqliteDriver, input: TrajectoryInput): stri
 /**
  * RETRIEVE: Find similar trajectories for a given task description.
  * Uses simple keyword matching (future: semantic search with HNSW).
+ *
+ * v2.5.0 final — optional `workspaceId` filter. When provided, only
+ * trajectories whose `workspace_id` matches OR whose `workspace_id`
+ * is NULL (fleet-wide) are eligible. This enforces tenant isolation
+ * while still letting shared fleet knowledge (un-scoped trajectories)
+ * enrich every workspace. Omit the param to match historical behavior
+ * (return everything).
  */
-export function findSimilarTrajectories(db: ISqliteDriver, taskDescription: string, limit: number = 3): Trajectory[] {
+export function findSimilarTrajectories(
+  db: ISqliteDriver,
+  taskDescription: string,
+  limit: number = 3,
+  workspaceId?: string
+): Trajectory[] {
   // Simple keyword matching — extract key terms and search
   const keywords = taskDescription
     .toLowerCase()
@@ -109,7 +157,18 @@ export function findSimilarTrajectories(db: ISqliteDriver, taskDescription: stri
 
   // Build LIKE clauses for each keyword
   const conditions = keywords.map(() => 'task_description LIKE ?').join(' OR ');
-  const params = keywords.map((k) => `%${k}%`);
+  const params: unknown[] = keywords.map((k) => `%${k}%`);
+
+  // v2.5.0 final — workspace scope filter. Match rows tagged with the
+  // same workspace OR rows with no workspace tag at all (fleet-wide).
+  // Older DBs lack the column; catch and fall back to the unfiltered
+  // query.
+  let workspaceClause = '';
+  if (workspaceId) {
+    workspaceClause = ' AND (workspace_id IS NULL OR workspace_id = ?)';
+    params.push(workspaceId);
+  }
+  params.push(limit);
 
   // v2.5.0 Phase A3 — explicit fleet-consolidated preference. Fleet-
   // wisdom (source_tag='fleet_consolidated', aggregated across many
@@ -120,16 +179,30 @@ export function findSimilarTrajectories(db: ISqliteDriver, taskDescription: stri
   // a slave that repeats one local pattern 50 times could outrank a
   // fleet pattern seen 10 times on 5 devices — exactly the opposite of
   // what we want. Sort by source_tag first, then the existing keys.
-  const rows = db
-    .prepare(
-      `SELECT * FROM reasoning_bank
-       WHERE (${conditions}) AND success_score >= 0.7
-       ORDER BY (source_tag = 'fleet_consolidated') DESC, usage_count DESC, success_score DESC
-       LIMIT ?`
-    )
-    .all(...params, limit) as Array<Record<string, unknown>>;
-
-  return rows.map(rowToTrajectory);
+  try {
+    const rows = db
+      .prepare(
+        `SELECT * FROM reasoning_bank
+         WHERE (${conditions}) AND success_score >= 0.7${workspaceClause}
+         ORDER BY (source_tag = 'fleet_consolidated') DESC, usage_count DESC, success_score DESC
+         LIMIT ?`
+      )
+      .all(...params) as Array<Record<string, unknown>>;
+    return rows.map(rowToTrajectory);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (!workspaceId || !/no such column: workspace_id/i.test(msg)) throw e;
+    // Fallback for pre-v72 DBs: drop the workspace clause entirely.
+    const fallbackRows = db
+      .prepare(
+        `SELECT * FROM reasoning_bank
+         WHERE (${conditions}) AND success_score >= 0.7
+         ORDER BY (source_tag = 'fleet_consolidated') DESC, usage_count DESC, success_score DESC
+         LIMIT ?`
+      )
+      .all(...keywords.map((k) => `%${k}%`), limit) as Array<Record<string, unknown>>;
+    return fallbackRows.map(rowToTrajectory);
+  }
 }
 
 /**
@@ -146,11 +219,7 @@ export function findSimilarTrajectories(db: ISqliteDriver, taskDescription: stri
  * the original ingestion signal. Fire-and-forget — logging a usage
  * never fails the caller's hot path.
  */
-export function recordTrajectoryConsumed(
-  db: ISqliteDriver,
-  trajectoryId: string,
-  turnSucceeded: boolean
-): void {
+export function recordTrajectoryConsumed(db: ISqliteDriver, trajectoryId: string, turnSucceeded: boolean): void {
   try {
     if (turnSucceeded) {
       db.prepare(

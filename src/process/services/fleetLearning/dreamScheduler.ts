@@ -72,12 +72,90 @@ let _firstRunTimeout: ReturnType<typeof setTimeout> | null = null;
 let _thresholdPollTimer: ReturnType<typeof setInterval> | null = null;
 let _inFlight = false;
 
+/**
+ * v2.5.0 final — retry policy for a full dream pass that throws.
+ * The three inner stages (feedback load, distillation, memory
+ * consolidation) already swallow their own errors and continue on a
+ * best-effort basis; the retry wrapper below exists for the case
+ * where a pass throws all the way out (DB corruption, transient
+ * disk issue, etc.).
+ *
+ * Schedule: 1 min → 5 min → 30 min → give up for this window.
+ * Next nightly / threshold-triggered pass tries again fresh.
+ */
+const DREAM_RETRY_DELAYS_MS = [60_000, 5 * 60_000, 30 * 60_000] as const;
+let _dreamRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleDreamRetry(db: ISqliteDriver, attempt: number, lastError: unknown): void {
+  if (attempt >= DREAM_RETRY_DELAYS_MS.length) {
+    console.warn(
+      `[Dream] Giving up after ${String(attempt)} failed passes — next scheduled window will retry fresh. Last error: ${String(lastError instanceof Error ? lastError.message : lastError)}`
+    );
+    return;
+  }
+  if (_dreamRetryTimer) clearTimeout(_dreamRetryTimer);
+  const delay = DREAM_RETRY_DELAYS_MS[attempt];
+  console.warn(
+    `[Dream] Pass failed — retry ${String(attempt + 1)}/${String(DREAM_RETRY_DELAYS_MS.length)} in ${String(Math.round(delay / 60_000))} min. Error: ${String(lastError instanceof Error ? lastError.message : lastError)}`
+  );
+  _dreamRetryTimer = setTimeout(() => {
+    _dreamRetryTimer = null;
+    void runDreamPassWithRetry(db, attempt + 1);
+  }, delay);
+}
+
+/**
+ * v2.5.0 final — invoke `runDreamPass` with a retry-on-throw wrapper.
+ * All scheduled triggers (hourly, threshold poll, catch-up on boot)
+ * should go through this wrapper so transient failures don't leave
+ * the fleet without consolidated learnings for a full 24h window.
+ */
+export async function runDreamPassWithRetry(db: ISqliteDriver, attempt: number = 0): Promise<DreamPassResult> {
+  try {
+    const result = await runDreamPass(db);
+    if (result.fatalError) {
+      scheduleDreamRetry(db, attempt, new Error(result.fatalError));
+    }
+    return result;
+  } catch (e) {
+    scheduleDreamRetry(db, attempt, e);
+    // Surface an empty-ish result so the governance UI doesn't crash
+    // on a missing return. The fatalError field communicates the
+    // state.
+    return {
+      version: 0,
+      publishedAt: 0,
+      trajectoryCount: 0,
+      contributingDevices: 0,
+      elapsedMs: 0,
+      fatalError: e instanceof Error ? e.message : String(e),
+    };
+  }
+}
+
 export type DreamPassResult = {
   version: number;
   publishedAt: number;
   trajectoryCount: number;
   contributingDevices: number;
   elapsedMs: number;
+  /**
+   * v2.5.0 final — per-stage swallowed failures. Zero everywhere means
+   * a clean pass; non-zero entries indicate a stage degraded but the
+   * pass continued. Useful for the governance UI / ops dashboards to
+   * surface "the dream pass ran but memory summaries failed to
+   * consolidate".
+   */
+  stageFailures?: {
+    feedback: number;
+    trajectoryLoad: number;
+    distillation: number;
+    memorySummaries: number;
+    rank: number;
+    write: number;
+  };
+  /** v2.5.0 final — when the pass failed entirely, set to the last error. */
+  fatalError?: string;
 };
 
 /**
@@ -118,15 +196,15 @@ export function startDreamScheduler(db: ISqliteDriver): void {
     console.log(
       `[Dream] Last consolidation is stale (>24h) — firing catch-up pass in ${String(Math.round(jitterMs / 1000))}s`
     );
-    setTimeout(() => void runDreamPass(db), jitterMs);
+    setTimeout(() => void runDreamPassWithRetry(db), jitterMs);
   }
 
   console.log(
     `[Dream] Scheduler started — first run in ${String(Math.round(delayMs / 1000 / 60))} min (${String(hour)}:00 local), then every 24h`
   );
   _firstRunTimeout = setTimeout(() => {
-    void runDreamPass(db);
-    _dreamTimer = setInterval(() => void runDreamPass(db), DAY_MS);
+    void runDreamPassWithRetry(db);
+    _dreamTimer = setInterval(() => void runDreamPassWithRetry(db), DAY_MS);
   }, delayMs);
 
   // v2.5.0 Phase A2 — threshold poll. Every 10 min, check how many
@@ -138,7 +216,7 @@ export function startDreamScheduler(db: ISqliteDriver): void {
       const count = countUnconsolidated(db);
       if (count >= CONSOLIDATION_THRESHOLD && !_inFlight) {
         console.log(`[Dream] Threshold reached (${String(count)} unconsolidated) — firing pass now`);
-        void runDreamPass(db);
+        void runDreamPassWithRetry(db);
       }
     } catch (e) {
       console.warn('[Dream] threshold poll failed:', e);
@@ -164,7 +242,9 @@ function isConsolidationStale(db: ISqliteDriver): boolean {
 function countUnconsolidated(db: ISqliteDriver): number {
   try {
     const row = db
-      .prepare("SELECT COUNT(*) AS n FROM fleet_learnings WHERE consolidated_version IS NULL AND learning_type = 'trajectory'")
+      .prepare(
+        "SELECT COUNT(*) AS n FROM fleet_learnings WHERE consolidated_version IS NULL AND learning_type = 'trajectory'"
+      )
       .get() as { n: number } | undefined;
     return row?.n ?? 0;
   } catch {
@@ -184,6 +264,10 @@ export function stopDreamScheduler(): void {
   if (_thresholdPollTimer) {
     clearInterval(_thresholdPollTimer);
     _thresholdPollTimer = null;
+  }
+  if (_dreamRetryTimer) {
+    clearTimeout(_dreamRetryTimer);
+    _dreamRetryTimer = null;
   }
 }
 
@@ -235,19 +319,39 @@ export async function runDreamPass(db: ISqliteDriver, options?: { keepTopN?: num
   const keepTopN = options?.keepTopN ?? DEFAULT_KEEP_TOP_N;
   const started = Date.now();
 
+  // v2.5.0 final — failure instrumentation counters. Each failure we
+  // swallow at the stage boundary increments one of these; success
+  // path logs a 0-row entry so operators can tell "no failures" apart
+  // from "never ran". The counters are also returned via DreamPassResult
+  // so the governance UI can surface partial-pass states.
+  const stageFailures = {
+    feedback: 0,
+    trajectoryLoad: 0,
+    distillation: 0,
+    memorySummaries: 0,
+    rank: 0,
+    write: 0,
+  };
+
   try {
     // v2.5.0 Phase B1 — build a consumption-feedback index first so
     // Pass 1's cluster scoring can boost clusters that slaves have
     // actually used successfully. Each fleet_learnings row with
     // learning_type='consumption_feedback' has a JSON payload with
     // { trajectoryHash, usedCount, successCount }.
-    const feedbackRows = db
-      .prepare(
-        `SELECT device_id, payload, usage_count_local
-         FROM fleet_learnings
-         WHERE learning_type = 'consumption_feedback' AND consolidated_version IS NULL`
-      )
-      .all() as Array<{ device_id: string; payload: string; usage_count_local: number | null }>;
+    let feedbackRows: Array<{ device_id: string; payload: string; usage_count_local: number | null }> = [];
+    try {
+      feedbackRows = db
+        .prepare(
+          `SELECT device_id, payload, usage_count_local
+           FROM fleet_learnings
+           WHERE learning_type = 'consumption_feedback' AND consolidated_version IS NULL`
+        )
+        .all() as Array<{ device_id: string; payload: string; usage_count_local: number | null }>;
+    } catch (e) {
+      stageFailures.feedback += 1;
+      logNonCritical('dream.feedback-load', e);
+    }
     const feedbackByHash = new Map<
       string,
       { usedCount: number; successCount: number; deviceSet: Set<string>; sourceIds: string[] }
@@ -310,8 +414,20 @@ export async function runDreamPass(db: ISqliteDriver, options?: { keepTopN?: num
       insight?: DistilledInsight | null;
       /** Raw counts for the failure/success majority decision. */
       _failureCount?: number;
+      /**
+       * v2.5.0 final — workspace scope. Cluster key is
+       * `${trajectoryHash}|${workspaceId ?? ''}` so a pattern seen
+       * in workspace A doesn't merge with the identical pattern
+       * seen in workspace B. Broadcast back out with this scope
+       * preserved.
+       */
+      workspaceId?: string;
     };
     const byHash = new Map<string, Cluster>();
+
+    // Key helper — keeps workspace partitioning consistent across the
+    // cluster-building loop and the ranking / broadcast path below.
+    const clusterKey = (hash: string, workspaceId?: string): string => `${hash}|${workspaceId ?? ''}`;
 
     for (const row of trajectoryRows) {
       let payload: {
@@ -319,6 +435,7 @@ export async function runDreamPass(db: ISqliteDriver, options?: { keepTopN?: num
         taskDescription?: string;
         trajectoryJson?: string;
         failurePattern?: boolean;
+        workspaceId?: string | null;
       };
       try {
         payload = JSON.parse(row.payload) as typeof payload;
@@ -327,13 +444,15 @@ export async function runDreamPass(db: ISqliteDriver, options?: { keepTopN?: num
       }
       if (!payload.trajectoryHash || typeof payload.trajectoryHash !== 'string') continue;
       const hash = payload.trajectoryHash;
+      const workspaceId = payload.workspaceId ?? undefined;
       const score = row.success_score ?? 0;
       const usage = row.usage_count_local ?? 0;
       const isFailure = payload.failurePattern === true;
 
-      const existing = byHash.get(hash);
+      const key = clusterKey(hash, workspaceId);
+      const existing = byHash.get(key);
       if (!existing) {
-        byHash.set(hash, {
+        byHash.set(key, {
           trajectoryHash: hash,
           taskDescription: payload.taskDescription ?? '',
           trajectoryJson: payload.trajectoryJson ?? '[]',
@@ -342,6 +461,7 @@ export async function runDreamPass(db: ISqliteDriver, options?: { keepTopN?: num
           deviceSet: new Set([row.device_id]),
           sourceIds: [row.id],
           _failureCount: isFailure ? 1 : 0,
+          workspaceId,
         });
         continue;
       }
@@ -399,7 +519,16 @@ export async function runDreamPass(db: ISqliteDriver, options?: { keepTopN?: num
           .toSorted((a, b) => b.maxScore * b.totalUsage - a.maxScore * a.totalUsage)
           .slice(0, affordable);
       }
-      await tryDistillBatch(highFreqClusters);
+      try {
+        await tryDistillBatch(highFreqClusters);
+      } catch (e) {
+        // `tryDistillBatch` is already best-effort, but if the whole
+        // batch throws (e.g. missing API key, rate-limit storm) we
+        // note it and continue — the pass still produces a
+        // consolidated_learnings entry, just without LLM insights.
+        stageFailures.distillation += 1;
+        logNonCritical('dream.distill-batch', e);
+      }
     }
 
     // Pass 3: RANK + top-N truncation.
@@ -428,6 +557,9 @@ export async function runDreamPass(db: ISqliteDriver, options?: { keepTopN?: num
           rankScore,
           adoptionUsage,
           adoptionSuccess,
+          // v2.5.0 final — preserve workspace scope through ranking so
+          // the broadcast payload stays partitioned per tenant.
+          workspaceId: c.workspaceId,
         };
       })
       .toSorted((a, b) => b.rankScore - a.rankScore)
@@ -435,7 +567,7 @@ export async function runDreamPass(db: ISqliteDriver, options?: { keepTopN?: num
       .map((c) => {
         // Look up the full cluster to recover insight / failurePattern
         // (the slim ranking object above dropped them for sort speed).
-        const fullCluster = byHash.get(c.trajectoryHash);
+        const fullCluster = byHash.get(clusterKey(c.trajectoryHash, c.workspaceId));
         return {
           trajectoryHash: c.trajectoryHash,
           taskDescription: c.taskDescription,
@@ -447,6 +579,9 @@ export async function runDreamPass(db: ISqliteDriver, options?: { keepTopN?: num
           // flag into the broadcast payload.
           failurePattern: fullCluster?.failurePattern === true ? true : undefined,
           insight: fullCluster?.insight ?? undefined,
+          // v2.5.0 final — broadcast the workspace scope so the slave
+          // applier can keep retrieval isolated.
+          workspaceId: c.workspaceId,
         };
       });
 
@@ -457,13 +592,19 @@ export async function runDreamPass(db: ISqliteDriver, options?: { keepTopN?: num
     // agentSlotHash (same "domain owner") and keep the top N by
     // token_count as representatives of that domain. No LLM call —
     // summaries are already distilled by the slave's memory system.
-    const summaryRows = db
-      .prepare(
-        `SELECT id, device_id, payload, received_at
-         FROM fleet_learnings
-         WHERE learning_type = 'memory_summary' AND consolidated_version IS NULL`
-      )
-      .all() as Array<{ id: string; device_id: string; payload: string; received_at: number }>;
+    let summaryRows: Array<{ id: string; device_id: string; payload: string; received_at: number }> = [];
+    try {
+      summaryRows = db
+        .prepare(
+          `SELECT id, device_id, payload, received_at
+           FROM fleet_learnings
+           WHERE learning_type = 'memory_summary' AND consolidated_version IS NULL`
+        )
+        .all() as Array<{ id: string; device_id: string; payload: string; received_at: number }>;
+    } catch (e) {
+      stageFailures.memorySummaries += 1;
+      logNonCritical('dream.memory-summary-load', e);
+    }
     type SummaryBucket = {
       agentSlotHash: string;
       entries: Array<{ contentJson: string; deviceId: string; receivedAt: number }>;
@@ -597,6 +738,9 @@ export async function runDreamPass(db: ISqliteDriver, options?: { keepTopN?: num
       trajectoryCount: ranked.length,
       contributingDevices: contributingDeviceCount,
       elapsedMs,
+      // v2.5.0 final — surface any per-stage swallowed failures so
+      // governance / ops can see partial-pass degradation.
+      stageFailures,
     };
   } finally {
     _inFlight = false;

@@ -209,22 +209,11 @@ function selectTrajectories(db: ISqliteDriver, windowStart: number, _windowEnd: 
   // (source_table, source_id, window_end) index — a NOT EXISTS subquery
   // is simpler than a LEFT JOIN here and the exports table stays small
   // because old cursors are swept.
-  const rows = db
-    .prepare(
-      `SELECT rb.id, rb.trajectory_hash, rb.task_description, rb.trajectory, rb.success_score, rb.usage_count, rb.failure_pattern
-       FROM reasoning_bank rb
-       WHERE rb.source_tag IS NULL
-         AND rb.updated_at >= ?
-         AND NOT EXISTS (
-           SELECT 1 FROM learning_exports le
-           WHERE le.source_table = 'reasoning_bank'
-             AND le.source_id = rb.id
-             AND le.pushed_at IS NOT NULL
-         )
-       ORDER BY rb.success_score * rb.usage_count DESC, rb.updated_at DESC
-       LIMIT ?`
-    )
-    .all(windowStart, LEARNING_EXPORT_LIMITS.MAX_TRAJECTORIES_PER_WINDOW) as Array<{
+  //
+  // v2.5.0 final — select `workspace_id` too so the envelope can
+  // carry the scope to master. Falls back gracefully on DBs where
+  // migration v72 hasn't yet added the column (wrapped in try/catch).
+  type Row = {
     id: string;
     trajectory_hash: string;
     task_description: string;
@@ -232,7 +221,44 @@ function selectTrajectories(db: ISqliteDriver, windowStart: number, _windowEnd: 
     success_score: number;
     usage_count: number;
     failure_pattern: number;
-  }>;
+    workspace_id?: string | null;
+  };
+  let rows: Row[];
+  try {
+    rows = db
+      .prepare(
+        `SELECT rb.id, rb.trajectory_hash, rb.task_description, rb.trajectory, rb.success_score, rb.usage_count, rb.failure_pattern, rb.workspace_id
+         FROM reasoning_bank rb
+         WHERE rb.source_tag IS NULL
+           AND rb.updated_at >= ?
+           AND NOT EXISTS (
+             SELECT 1 FROM learning_exports le
+             WHERE le.source_table = 'reasoning_bank'
+               AND le.source_id = rb.id
+               AND le.pushed_at IS NOT NULL
+           )
+         ORDER BY rb.success_score * rb.usage_count DESC, rb.updated_at DESC
+         LIMIT ?`
+      )
+      .all(windowStart, LEARNING_EXPORT_LIMITS.MAX_TRAJECTORIES_PER_WINDOW) as Row[];
+  } catch {
+    rows = db
+      .prepare(
+        `SELECT rb.id, rb.trajectory_hash, rb.task_description, rb.trajectory, rb.success_score, rb.usage_count, rb.failure_pattern
+         FROM reasoning_bank rb
+         WHERE rb.source_tag IS NULL
+           AND rb.updated_at >= ?
+           AND NOT EXISTS (
+             SELECT 1 FROM learning_exports le
+             WHERE le.source_table = 'reasoning_bank'
+               AND le.source_id = rb.id
+               AND le.pushed_at IS NOT NULL
+           )
+         ORDER BY rb.success_score * rb.usage_count DESC, rb.updated_at DESC
+         LIMIT ?`
+      )
+      .all(windowStart, LEARNING_EXPORT_LIMITS.MAX_TRAJECTORIES_PER_WINDOW) as Row[];
+  }
 
   return rows.map((r) => ({
     trajectoryHash: r.trajectory_hash,
@@ -244,6 +270,10 @@ function selectTrajectories(db: ISqliteDriver, windowStart: number, _windowEnd: 
     usageCountLocal: r.usage_count,
     // v2.5.0 Phase B2 — forward the failure flag to master.
     failurePattern: r.failure_pattern === 1,
+    // v2.5.0 final — forward the workspace scope to master so the
+    // dream pass can consolidate per-workspace clusters instead of
+    // leaking tenant-specific patterns fleet-wide.
+    workspaceId: r.workspace_id ?? undefined,
   }));
 }
 
@@ -437,44 +467,89 @@ export function ingestLearningEnvelope(
   let trajectories = 0;
   let memorySummaries = 0;
 
-  const insertStmt = db.prepare(
-    `INSERT INTO fleet_learnings
-     (id, device_id, learning_type, payload, success_score, usage_count_local, received_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
-  );
+  // v2.5.0 final — prefer the workspace-aware insert shape when the
+  // fleet_learnings table has the column. Falls back to the
+  // pre-workspace shape on DBs that haven't run migration v72.
+  const hasWorkspaceColumn = (() => {
+    try {
+      const info = db.prepare(`PRAGMA table_info(fleet_learnings)`).all() as Array<{ name: string }>;
+      return info.some((c) => c.name === 'workspace_id');
+    } catch {
+      return false;
+    }
+  })();
+
+  const insertStmt = hasWorkspaceColumn
+    ? db.prepare(
+        `INSERT INTO fleet_learnings
+         (id, device_id, learning_type, payload, success_score, usage_count_local, received_at, workspace_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+    : db.prepare(
+        `INSERT INTO fleet_learnings
+         (id, device_id, learning_type, payload, success_score, usage_count_local, received_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      );
 
   const now = Date.now();
 
+  // v2.5.0 final — ingestion-time dedup. Within a single envelope
+  // the same trajectory hash (same pattern captured in both the
+  // locally-stored bank AND a consumption record) can arrive twice.
+  // We dedup at insertion so master never fans one slave's single
+  // pattern into multiple fleet_learnings rows for the same device
+  // + hash + window, and the dream pass doesn't over-count.
+  const seenTrajectoryHashes = new Set<string>();
+
   for (const tr of envelope.trajectories) {
-    insertStmt.run(
-      crypto.randomUUID(),
-      deviceId,
-      'trajectory',
-      JSON.stringify({
-        trajectoryHash: tr.trajectoryHash,
-        taskDescription: tr.taskDescription,
-        trajectoryJson: tr.trajectoryJson,
-        // v2.5.0 Phase B2 — persist failure flag so the dream pass
-        // can segregate avoidance rules from preferred paths.
-        failurePattern: tr.failurePattern === true,
-      }),
-      tr.successScore,
-      tr.usageCountLocal,
-      now
-    );
+    const dedupKey = `${tr.trajectoryHash}|${tr.workspaceId ?? ''}`;
+    if (seenTrajectoryHashes.has(dedupKey)) continue;
+    seenTrajectoryHashes.add(dedupKey);
+
+    const payload = JSON.stringify({
+      trajectoryHash: tr.trajectoryHash,
+      taskDescription: tr.taskDescription,
+      trajectoryJson: tr.trajectoryJson,
+      // v2.5.0 Phase B2 — persist failure flag so the dream pass
+      // can segregate avoidance rules from preferred paths.
+      failurePattern: tr.failurePattern === true,
+      // v2.5.0 final — denormalize workspace_id into the payload so
+      // dream code that predates the column migration still sees it.
+      workspaceId: tr.workspaceId ?? null,
+    });
+    if (hasWorkspaceColumn) {
+      insertStmt.run(
+        crypto.randomUUID(),
+        deviceId,
+        'trajectory',
+        payload,
+        tr.successScore,
+        tr.usageCountLocal,
+        now,
+        tr.workspaceId ?? null
+      );
+    } else {
+      insertStmt.run(crypto.randomUUID(), deviceId, 'trajectory', payload, tr.successScore, tr.usageCountLocal, now);
+    }
     trajectories += 1;
   }
 
   for (const sum of envelope.memorySummaries) {
-    insertStmt.run(
-      crypto.randomUUID(),
-      deviceId,
-      'memory_summary',
-      JSON.stringify({ agentSlotHash: sum.agentSlotHash, contentJson: sum.contentJson }),
-      null,
-      null,
-      now
-    );
+    const payload = JSON.stringify({ agentSlotHash: sum.agentSlotHash, contentJson: sum.contentJson });
+    if (hasWorkspaceColumn) {
+      insertStmt.run(
+        crypto.randomUUID(),
+        deviceId,
+        'memory_summary',
+        payload,
+        null,
+        null,
+        now,
+        null /* memory summaries aren't workspace-tagged yet; keep fleet-wide */
+      );
+    } else {
+      insertStmt.run(crypto.randomUUID(), deviceId, 'memory_summary', payload, null, null, now);
+    }
     memorySummaries += 1;
   }
 
