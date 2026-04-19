@@ -23,13 +23,14 @@
   &nbsp;
   <img src="https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript">
   &nbsp;
-  <img src="https://img.shields.io/badge/SQLite-58%20migrations-003B57?style=flat-square&logo=sqlite&logoColor=white" alt="SQLite">
+  <img src="https://img.shields.io/badge/SQLite-71%20migrations-003B57?style=flat-square&logo=sqlite&logoColor=white" alt="SQLite">
   &nbsp;
   <img src="https://img.shields.io/badge/OpenTelemetry-enabled-7B68EE?style=flat-square&logo=opentelemetry&logoColor=white" alt="OpenTelemetry">
 </p>
 
 <p align="center">
   <a href="#-key-features">Features</a> &middot;
+  <a href="#-fleet-mode">Fleet Mode</a> <img src="https://img.shields.io/badge/NEW-v2.4-FF6B6B?style=flat-square" alt="NEW"> <img src="https://img.shields.io/badge/status-Alpha-FFB020?style=flat-square&logo=semver&logoColor=white" alt="Alpha"> &middot;
   <a href="#-screenshots">Screenshots</a> &middot;
   <a href="#-security--governance">Security</a> &middot;
   <a href="#-observability">Observability</a> &middot;
@@ -197,6 +198,74 @@ https://github.com/CES-Ltd/TitanX/raw/main/docs/screenshots/demo-security.mp4
 
 ---
 
+## 🌐 Fleet Mode <img src="https://img.shields.io/badge/NEW-v2.4-FF6B6B?style=flat-square" alt="NEW"> <img src="https://img.shields.io/badge/status-Alpha-FFB020?style=flat-square&logo=semver&logoColor=white" alt="Alpha"> <img src="https://img.shields.io/badge/enterprise-ready-4FC3F7?style=flat-square" alt="Enterprise Ready">
+
+> ⚠️ **Alpha — v2.4.x.** The Master / Slave / Farm stack was validated end-to-end (two physical machines, hire-to-reply round-trip) but is still iterating. Expect breaking changes through the v2.x cycle: envelope fields may gain required params, command types may rename, telemetry shape may widen. Pin both master and slave to the same minor version. Production rollouts should pilot with a small slave cohort before going fleet-wide.
+
+TitanX v2.4 ships **Fleet Mode** — a control-plane extension that lets one install coordinate many. A device boots in one of four flavors, switchable from the titlebar without editing config files:
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Regular-single%20machine-6C757D?style=for-the-badge" alt="Regular">
+  &nbsp;
+  <img src="https://img.shields.io/badge/Master-fleet%20admin-3370FF?style=for-the-badge&logo=dependabot&logoColor=white" alt="Master">
+  &nbsp;
+  <img src="https://img.shields.io/badge/Slave%20%E2%80%A2%20Workforce-managed%20endpoint-00B42A?style=for-the-badge" alt="Slave Workforce">
+  &nbsp;
+  <img src="https://img.shields.io/badge/Slave%20%E2%80%A2%20Farm-remote%20compute-FF7D00?style=for-the-badge&logo=docker&logoColor=white" alt="Slave Farm">
+</p>
+
+### Mode matrix
+
+| Capability | Regular | Master | Slave / Workforce | Slave / Farm |
+|---|:---:|:---:|:---:|:---:|
+| Local teams + ACP agents | ✅ | ✅ | ✅ | ✅ |
+| Fleet webserver (enrollments, config bundles, signed commands) | — | ✅ | — | — |
+| Push telemetry → master (60s cadence, runtime summary) | — | — | ✅ | ✅ |
+| Pull IAM / security-toggle / agent-template bundles | — | — | ✅ | ✅ |
+| Accept destructive commands (`cache.clear`, `credential.rotate`, `agent.restart`, `force.upgrade`) | — | — | ✅ | ✅ |
+| Accept farm commands (`team.farm_provision`, `agent.execute`) | — | — | — | ✅ |
+| Host Lead ACP session for a master-mirrored team | — | — | — | ✅ |
+
+### 🏛 Master Mode <img src="https://img.shields.io/badge/NEW-v2.4-FF6B6B?style=flat-square" alt="NEW"> <img src="https://img.shields.io/badge/status-Alpha-FFB020?style=flat-square&logo=semver&logoColor=white" alt="Alpha">
+
+- **Fleet Dashboard** — device roster, heartbeat freshness, enrollment tokens, revocation forensics
+- **Signed command envelopes** — Ed25519 signing with replay nonces + admin re-auth for destructive tiers
+- **Config bundle publishing** — IAM policies, security-feature toggles, and agent templates roll out to every slave on the next 30s poll
+- **Device telemetry** — per-slave cost, activity, tool calls, policy violations, and **detected ACP runtimes** (Claude Code CLI, OpenCode, Codex, Gemini, Qwen, Goose, and 13 more — auto-refreshed when slaves push)
+- **Command Center** — target-confirmation modal + admin-password gate + multi-device broadcasts
+- **Farm hire modal** — editable runtime picker with green "on device" tags, runtime fallback list even before telemetry lands
+- **Dream Mode** (Phase C) — nightly cross-slave learning consolidation with redaction + per-device opt-in
+
+### 👷 Slave / Workforce <img src="https://img.shields.io/badge/NEW-v2.4-FF6B6B?style=flat-square" alt="NEW"> <img src="https://img.shields.io/badge/status-Alpha-FFB020?style=flat-square&logo=semver&logoColor=white" alt="Alpha">
+
+- **Managed endpoint** — slave operator sees a slim UI; IT-controlled policies lock sensitive settings with a padlock icon
+- **Auto-enrollment via JWT** — device fingerprint + Ed25519 key pair bound at first enrollment, persisted encrypted
+- **Heartbeat + config-sync loops** — idempotent, 5s heartbeat, 30s config poll, exponential backoff on master unreachable
+- **Telemetry push** — every 60s: cost, activity, agent counts, detected ACP runtimes (no API keys, shape only)
+- **Destructive command receiver** — verifies signed envelope (signature + replay nonce), executes with audit trail, acks with granular reason codes
+
+### 🚜 Slave / Farm <img src="https://img.shields.io/badge/NEW-v2.4-FF6B6B?style=flat-square" alt="NEW"> <img src="https://img.shields.io/badge/status-Alpha-FFB020?style=flat-square&logo=semver&logoColor=white" alt="Alpha"> <img src="https://img.shields.io/badge/remote%20compute-node-FF7D00?style=flat-square" alt="Remote Compute">
+
+*Farm mode is everything Workforce does, plus the slave acts as a remote-compute node for master's teams.*
+
+- **Hire-time mirror provisioning** — `team.farm_provision` fires the moment master clicks Hire; slave creates a mirror team with a local **Lead ACP session** (using the operator's chosen runtime) + the farm teammate, and the team shows up immediately in the slave's Teams UI
+- **Persistent Lead CLI session** — 30min idle-cached ACP agent per team; multi-turn conversations preserve context without respawning the CLI every message (2–5s saved per turn)
+- **17 supported ACP runtimes** — Claude Code CLI, OpenCode, Codex, Gemini, Qwen, Goose, Auggie, Kimi, OpenCode, GitHub Copilot, CodeBuddy, Factory Droid, Cursor, Kiro, iFlow, Mistral Vibe, Qoder, nanobot, Aion, DeepAgents
+- **Signed `agent.execute` envelopes** — master dispatches per-turn via the same Ed25519 channel; slave routes through the cached Lead session; response flows back through the master team's mailbox exactly like a local teammate's reply
+- **Slave-side Teams UI** — the mirrored team renders **read-only** on the slave (blue "Mirror of master's farm slot" badge) with live message history; slave operator can see what master's orchestration is doing without interfering
+- **Mailbox round-trip** — farm teammate's reply is routed back through the team mailbox + wakes the master Lead, same loop as a local teammate using the MCP `send_message` tool
+- **Defense-in-depth enrollment gate** — workforce slaves that accidentally receive a farm command fast-skip with `reason: 'not_farm_role'`
+
+### Visual mode switcher
+
+Switch modes without a restart: click the fleet icon in the titlebar, pick Regular / Master / Slave, paste the master URL + enrollment token if joining a fleet. Slaves can additionally flip between Workforce ↔ Farm via a second titlebar button — the role change re-enrolls automatically.
+
+<p align="center">
+  <em>See <a href="./docs/feature/fleet/README.md">docs/feature/fleet/</a> for the full operator guide: enrollment flow, command types, telemetry shape, Lead-session lifecycle, and troubleshooting by ack reason code.</em>
+</p>
+
+---
+
 ## 🔒 Security & Governance
 
 ### Runtime IAM Policy Enforcement
@@ -327,7 +396,8 @@ https://github.com/CES-Ltd/TitanX/raw/main/docs/screenshots/demo-security.mp4
 | ---------------------- | ---------------------------------------------------------------------------------------------------- |
 | **Desktop**            | Electron 37                                                                                          |
 | **Frontend**           | React 19, TypeScript (strict), Arco Design, UnoCSS                                                   |
-| **Database**           | SQLite (better-sqlite3) with WAL mode, **58 migrations**, auto-pruning                               |
+| **Database**           | SQLite (better-sqlite3) with WAL mode, **71 migrations**, auto-pruning                               |
+| **Fleet Mode**         | Master / Slave / Farm modes; Ed25519-signed commands; 60s telemetry push; runtime-aware hire modal   |
 | **IPC**                | Custom bridge pattern (`@office-ai/platform`) — 66 IPC channels + whitelist                          |
 | **Security**           | AES-256-GCM, SHA-256 tokens, HMAC-SHA256 + Ed25519 device signatures, workspace isolation, CSRF gate |
 | **Observability**      | OpenTelemetry (OTLP/Console), LangSmith-compatible traces                                            |
@@ -409,7 +479,7 @@ TitanX/
 
 ## Database Schema
 
-TitanX adds **35+ tables** via **58 migrations** on top of AionUI's base schema:
+TitanX adds **40+ tables** via **71 migrations** on top of AionUI's base schema:
 
 | Category         | Tables                                                                                                                                                                  |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -420,12 +490,13 @@ TitanX adds **35+ tables** via **58 migrations** on top of AionUI's base schema:
 | **Traces**       | trace_runs, trace_feedback                                                                                                                                              |
 | **Operations**   | activity_log (HMAC + device signed), secrets, secret_versions, cost_events, budget_policies, budget_incidents, agent_runs, approvals, workflow_rules                    |
 | **Teams**        | teams, team_tasks (with progress_notes + lifecycle_state), sprint_tasks, sprint_counters, agent_gallery, agent_snapshots, inference_routing_rules, project_plans        |
+| **Fleet** <img src="https://img.shields.io/badge/NEW-v2.4-FF6B6B?style=flat-square" alt="NEW"> <img src="https://img.shields.io/badge/status-Alpha-FFB020?style=flat-square&logo=semver&logoColor=white" alt="Alpha"> | fleet_enrollments, fleet_config_version, fleet_telemetry_reports, fleet_telemetry_state, fleet_commands, fleet_command_acks, fleet_farm_devices, fleet_agent_jobs, fleet_learnings, consolidated_learnings, learning_exports |
 
 ---
 
 ## 🔑 Keywords
 
-`ai-agents` `multi-agent-orchestration` `enterprise-security` `agent-os` `iam` `rbac` `audit-logging` `device-identity` `workspace-isolation` `opentelemetry` `langchain` `langsmith` `n8n-workflows` `nemoclaw` `electron-app` `react` `typescript` `sqlite` `desktop-app` `ai-governance` `llm-orchestration` `agent-memory` `agent-planning` `reasoning-bank` `caveman-mode` `network-policies` `ssrf-protection` `workflow-automation` `sprint-board` `cost-tracking` `mission-control` `auto-pruning`
+`ai-agents` `multi-agent-orchestration` `enterprise-security` `agent-os` `iam` `rbac` `audit-logging` `device-identity` `workspace-isolation` `opentelemetry` `langchain` `langsmith` `n8n-workflows` `nemoclaw` `electron-app` `react` `typescript` `sqlite` `desktop-app` `ai-governance` `llm-orchestration` `agent-memory` `agent-planning` `reasoning-bank` `caveman-mode` `network-policies` `ssrf-protection` `workflow-automation` `sprint-board` `cost-tracking` `mission-control` `auto-pruning` `fleet-mode` `master-slave` `agent-farm` `acp-runtime` `distributed-agents` `signed-commands`
 
 ---
 

@@ -221,7 +221,14 @@ const HireFarmAgentModal: React.FC<Props> = ({ open, onClose, defaultTeamId }) =
     <Modal
       visible={open}
       onCancel={onClose}
-      title={t('fleet.farm.hire.title', { defaultValue: 'Hire farm agent' })}
+      title={
+        <span className='flex items-center gap-2'>
+          {t('fleet.farm.hire.title', { defaultValue: 'Hire farm agent' })}
+          <Tag size='small' color='orange' bordered>
+            {t('fleet.farm.hire.alphaTag', { defaultValue: 'Alpha' })}
+          </Tag>
+        </span>
+      }
       footer={
         <div className='flex justify-end gap-2'>
           <Button onClick={onClose} disabled={submitting}>

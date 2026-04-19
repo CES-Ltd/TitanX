@@ -146,6 +146,10 @@ const FleetRoleButton: React.FC<Props> = ({ iconSize, isMobile }) => {
         <Tag size='small' color={currentRole === 'farm' ? 'purple' : 'blue'}>
           {t(`fleet.role.${currentRole}.name`, { defaultValue: currentRole })}
         </Tag>
+        {/* v2.4.x — both slave roles are alpha. */}
+        <Tag size='small' color='orange' bordered>
+          {t('fleet.role.alphaTag', { defaultValue: 'Alpha' })}
+        </Tag>
       </div>
       <div className='text-11px text-t-tertiary mb-3'>
         {t('fleet.role.subtitle', {

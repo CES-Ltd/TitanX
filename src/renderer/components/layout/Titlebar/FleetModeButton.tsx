@@ -114,12 +114,33 @@ const FleetModeButton: React.FC<Props> = ({ iconSize, isMobile }) => {
             {t(`fleet.mode.${currentMode}.name`, { defaultValue: currentMode })}
           </Tag>
         )}
+        {/* v2.4.x — Master + Slave modes are alpha. Regular stays untagged. */}
+        {currentMode !== 'regular' && (
+          <Tag size='small' color='orange' bordered>
+            {t('fleet.topbar.alphaTag', { defaultValue: 'Alpha' })}
+          </Tag>
+        )}
       </div>
       <div className='text-11px text-t-tertiary mb-3'>
         {t('fleet.topbar.subtitle', {
           defaultValue: 'Switch between single-machine, organization master, and managed slave modes.',
         })}
       </div>
+      {currentMode !== 'regular' && (
+        <div
+          className='text-11px mb-3 p-2 rd-6px'
+          style={{
+            background: 'color-mix(in srgb, var(--color-warning-6) 10%, transparent)',
+            color: 'var(--color-text-2)',
+            border: '1px solid var(--color-warning-4)',
+          }}
+        >
+          {t('fleet.topbar.alphaHint', {
+            defaultValue:
+              'Fleet Mode is in Alpha. Pin master + slave to the same version; expect breaking protocol changes across v2.x. See docs/feature/fleet for the operator guide.',
+          })}
+        </div>
+      )}
 
       <Radio.Group
         value={selectedMode}
