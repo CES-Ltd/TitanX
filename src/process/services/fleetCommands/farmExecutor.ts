@@ -449,12 +449,12 @@ function buildAcpPrompt(messages: ExecuteParams['messages']): string {
  */
 async function resolveCliPathForBackend(
   backend: AcpBackend
-): Promise<{ cliPath?: string; detectedName?: string } | null> {
+): Promise<{ cliPath?: string; detectedName?: string; acpArgs?: string[] } | null> {
   const mod = await import('@process/agent/acp/AcpDetector');
   const detected = mod.acpDetector.getDetectedAgents();
   const match = detected.find((a) => a.backend === backend);
   if (!match) return null;
-  return { cliPath: match.cliPath, detectedName: match.name };
+  return { cliPath: match.cliPath, detectedName: match.name, acpArgs: match.acpArgs };
 }
 
 /**
@@ -514,11 +514,18 @@ async function executeViaAcp(
     backend,
     cliPath: detection.cliPath,
     workingDir: tmpWorkspace,
+    customArgs: detection.acpArgs,
     extra: {
       workspace: tmpWorkspace,
       backend,
       cliPath: detection.cliPath,
       customWorkspace: false,
+      // v2.3.3 — thread acpArgs from the detector so opencode gets
+      // `acp`, goose gets its subcommand, etc. AcpConnection's
+      // createGenericSpawnConfig uses these exactly; `undefined`
+      // falls back to the old ['--experimental-acp'] default that
+      // only works for claude.
+      customArgs: detection.acpArgs,
       yoloMode: true, // Headless — auto-approve tool prompts.
     },
     onStreamEvent: (evt) => {
