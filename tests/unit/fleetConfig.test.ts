@@ -612,6 +612,91 @@ describeOrSkip('fleetConfig — applyConfigBundle agentTemplates', () => {
     );
     expect(keys).toEqual(['agent.template.bar']);
   });
+
+  // v2.1.1 regression: every TitanX install seeds local templates named
+  // "Senior Developer" etc. When master publishes a template with the
+  // same name, the slave's INSERT hit UNIQUE(user_id, name) and aborted
+  // the whole bundle apply — leaving the slave stuck at its old
+  // fleet_config_version forever. Rename-on-conflict keeps the bundle
+  // applying while preserving the local row.
+  it("renames master templates that collide with local source='local' names", () => {
+    // Seed a local "Senior Developer" under system_default_user, same
+    // shape as the real seed-template flow.
+    db.prepare(
+      `INSERT INTO agent_gallery
+       (id, user_id, name, agent_type, category, avatar_sprite_idx, capabilities, config, whitelisted,
+        allowed_tools, published, env_bindings, created_at, updated_at, source)
+       VALUES (?, 'system_default_user', ?, 'claude', 'technical', 0, '[]', '{}', 1, '[]', 1, '{}', ?, ?, 'local')`
+    ).run('local-senior', 'Senior Developer', Date.now(), Date.now());
+
+    const result = applyConfigBundle(db, {
+      version: 5,
+      updatedAt: Date.now(),
+      updatedBy: 'admin',
+      iamPolicies: [],
+      securityFeatures: [],
+      agentTemplates: [templateFixture('tpl-master', { name: 'Senior Developer' })],
+      upToDate: false,
+    });
+
+    // The bundle apply succeeded AND bumped the version (the core fix —
+    // previously the INSERT threw and fleet_config_version never moved).
+    expect(result.agentTemplatesReplaced).toBe(1);
+    expect(getConfigVersion(db)).toBe(5);
+
+    const rows = db
+      .prepare("SELECT id, name, source FROM agent_gallery WHERE user_id = 'system_default_user' ORDER BY source ASC")
+      .all() as Array<{ id: string; name: string; source: string }>;
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toEqual({ id: 'local-senior', name: 'Senior Developer', source: 'local' });
+    expect(rows[1]!.source).toBe('master');
+    expect(rows[1]!.name).toBe('Senior Developer (Fleet)');
+  });
+
+  it('disambiguates a second conflicting template with an incrementing suffix', () => {
+    // Two local rows already use the base name + the "(Fleet)" variant —
+    // the resolver should climb to "(Fleet 2)" rather than throwing.
+    const seed = (id: string, name: string) =>
+      db
+        .prepare(
+          `INSERT INTO agent_gallery
+           (id, user_id, name, agent_type, category, avatar_sprite_idx, capabilities, config, whitelisted,
+            allowed_tools, published, env_bindings, created_at, updated_at, source)
+           VALUES (?, 'system_default_user', ?, 'claude', 'technical', 0, '[]', '{}', 1, '[]', 1, '{}', ?, ?, 'local')`
+        )
+        .run(id, name, Date.now(), Date.now());
+    seed('local-a', 'QA Lead');
+    seed('local-b', 'QA Lead (Fleet)');
+
+    applyConfigBundle(db, {
+      version: 2,
+      updatedAt: Date.now(),
+      updatedBy: 'admin',
+      iamPolicies: [],
+      securityFeatures: [],
+      agentTemplates: [templateFixture('tpl-master', { name: 'QA Lead' })],
+      upToDate: false,
+    });
+
+    const masterRow = db
+      .prepare("SELECT name FROM agent_gallery WHERE source = 'master' AND user_id = 'system_default_user'")
+      .get() as { name: string };
+    expect(masterRow.name).toBe('QA Lead (Fleet 2)');
+  });
+
+  it('does NOT rename when no local conflict exists — unchanged names on greenfield slaves', () => {
+    applyConfigBundle(db, {
+      version: 9,
+      updatedAt: Date.now(),
+      updatedBy: 'admin',
+      iamPolicies: [],
+      securityFeatures: [],
+      agentTemplates: [templateFixture('tpl-only', { name: 'Security Reviewer' })],
+      upToDate: false,
+    });
+    const row = db.prepare("SELECT name FROM agent_gallery WHERE source = 'master'").get() as { name: string };
+    expect(row.name).toBe('Security Reviewer');
+  });
 });
 
 describeOrSkip('agentGallery — publishToFleet / unpublishFromFleet', () => {
