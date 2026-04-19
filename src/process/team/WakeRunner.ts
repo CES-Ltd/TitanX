@@ -301,7 +301,42 @@ export class WakeRunner {
       // transcript identically to a local teammate. Fire the IPC
       // stream event too so any open FarmChat MessageList picks it up
       // without waiting for the DB poll.
-      this.writeFarmAssistantMessage(agent, raw.length > 0 ? raw : preview);
+      const assistantText = raw.length > 0 ? raw : preview;
+      this.writeFarmAssistantMessage(agent, assistantText);
+
+      // v2.4.1 — farm agents are teammates that happen to live on
+      // another machine. When a local teammate responds, its ACP
+      // session uses the team MCP `send_message` tool to post back
+      // to the Lead. Farm teammates don't have access to that tool
+      // (they run headless, no team MCP stdio injected), so we do
+      // the mailbox write + recipient wake on their behalf. Senders
+      // we reply to: every distinct fromAgentId in the mailbox
+      // messages that triggered this turn, except 'user' (user sees
+      // the reply via the FarmChat responseStream subscription).
+      const senders = new Set<string>();
+      for (const msg of mailboxMessages) {
+        if (msg.fromAgentId && msg.fromAgentId !== slotId && msg.fromAgentId !== 'user') {
+          senders.add(msg.fromAgentId);
+        }
+      }
+      for (const toAgentId of senders) {
+        try {
+          await this.ctx.mailbox.write({
+            teamId: this.ctx.teamId,
+            toAgentId,
+            fromAgentId: slotId,
+            content: assistantText,
+          });
+        } catch (e) {
+          logNonCritical('fleet.agent.mailbox.write', e);
+        }
+        // Wake the recipient so the Lead / other teammate processes
+        // this new inbox entry immediately — matches how local
+        // send_message via the MCP tool wakes its recipients.
+        void this.wake(toAgentId).catch((e: unknown) => {
+          logNonCritical('fleet.agent.mailbox.wake-recipient', e);
+        });
+      }
 
       this.ctx.setStatus(slotId, 'completed', preview.slice(0, 200));
       this.auditAsync('fleet.agent.wake_completed', slotId, {
@@ -310,6 +345,7 @@ export class WakeRunner {
         templateId: agent.fleetBinding.remoteSlotId,
         inputTokens: success.usage?.inputTokens,
         outputTokens: success.usage?.outputTokens,
+        repliedTo: Array.from(senders),
       });
       return;
     }
