@@ -34,8 +34,16 @@ import { buildTelemetryReport, getTelemetryState, setTelemetryState } from './in
 import type { IngestResult, TelemetryRuntimeInfo } from './types';
 import { acpDetector } from '@process/agent/acp/AcpDetector';
 
-/** 6 hours — see module docstring for the sizing rationale. */
-const PUSH_INTERVAL_MS = 6 * 60 * 60 * 1000;
+/**
+ * v2.2.2 — tightened from 6h to 60s. The payload is small
+ * (a few hundred bytes + provider/runtime shapes) and the
+ * interactive-hire flow needs fresh runtime info within seconds of
+ * a slave upgrade or CLI install, not hours. For a 1,000-slave
+ * fleet that's ~17 POSTs/sec at master — still trivial given the
+ * POST handler does a single upsert. Revisit if the master starts
+ * throttling the ingest path.
+ */
+const PUSH_INTERVAL_MS = 60 * 1000;
 
 let _pushTimer: ReturnType<typeof setInterval> | null = null;
 let _inFlight = false;

@@ -263,6 +263,10 @@ export class WakeRunner {
         deviceId: agent.fleetBinding.deviceId,
         agentTemplateId: agent.fleetBinding.remoteSlotId,
         toolsAllowlist: agent.fleetBinding.toolsAllowlist,
+        // v2.2.2 — operator's runtime choice at hire time. Falls back
+        // to the agent's own agentType for pre-v2.2.2 slots that were
+        // hired before the field existed.
+        runtimeBackend: agent.fleetBinding.runtimeBackend ?? agent.agentType,
         // Audit actor for the signed envelope. 'system_default_user'
         // is the seeded single-user id; future multi-user support
         // would need to thread the real admin id here.

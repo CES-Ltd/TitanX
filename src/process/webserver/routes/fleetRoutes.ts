@@ -22,6 +22,8 @@ import * as fleetEnrollment from '@process/services/fleetEnrollment';
 import { buildConfigBundle } from '@process/services/fleetConfig';
 import { ingestTelemetryReport } from '@process/services/fleetTelemetry';
 import type { TelemetryReport } from '@process/services/fleetTelemetry/types';
+import { broadcastToAll } from '@/common/adapter/registry';
+import { ipcBridge } from '@/common';
 import { ackCommand, getPendingCommandsForDevice } from '@process/services/fleetCommands';
 import type { AckStatus } from '@process/services/fleetCommands/types';
 import { createAuthMiddleware } from '@process/webserver/auth/middleware/TokenMiddleware';
@@ -318,10 +320,32 @@ export function registerFleetRoutes(app: Express): void {
         policyViolationCount: r.policyViolationCount,
         agentCount: r.agentCount,
         topActions: Array.isArray(r.topActions) ? r.topActions : [],
+        // v2.2.1 — optional runtime list from slaves on v2.2.1+. The
+        // ingestor stashes it in the JSON payload column; absent on
+        // pre-v2.2.1 slaves, handled downstream as "unknown".
+        runtimes: Array.isArray((r as { runtimes?: unknown }).runtimes)
+          ? ((r as { runtimes: TelemetryReport['runtimes'] }).runtimes)
+          : undefined,
       };
 
       try {
         const result = ingestTelemetryReport(db.getDriver(), auth.deviceId, report);
+        // v2.2.2 — notify master-side consumers that a slave just
+        // pushed. Two channels:
+        //   (a) WS broadcast for any web-dashboard clients
+        //   (b) IPC emit for the Electron renderer (hire modal SWR)
+        // Payload is minimal (deviceId); the renderer re-fetches the
+        // full shape via listFarmDevices.
+        try {
+          broadcastToAll('fleet.telemetry.received', { deviceId: auth.deviceId });
+        } catch {
+          /* non-critical */
+        }
+        try {
+          ipcBridge.fleet.telemetryReceived.emit({ deviceId: auth.deviceId });
+        } catch {
+          /* non-critical — SWR 30s poll will eventually refresh */
+        }
         res.json(result);
       } catch (ingestErr) {
         // Window-validation errors from the service → 400, not 500.

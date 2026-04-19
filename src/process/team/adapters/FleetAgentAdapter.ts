@@ -49,6 +49,12 @@ export type FleetAgentAdapterConfig = {
   /** Admin user id for audit on enqueue. */
   createdBy: string;
   /**
+   * v2.2.2 — operator-chosen ACP runtime (claude, opencode, codex,
+   * gemini, \u2026). Slave routes to the corresponding ACP adapter; when
+   * omitted the slave falls back to the template's agentType.
+   */
+  runtimeBackend?: string;
+  /**
    * Injected DB driver accessor — adapter doesn't own a singleton
    * ref because it needs to work in test harnesses with a mock driver.
    */
@@ -200,6 +206,10 @@ export function createFleetAgentAdapter(
           teamName: slotInfo.teamName ?? 'Farm',
           agentSlotId: slotInfo.slotId,
           agentName: slotInfo.displayName,
+          // v2.2.2 — operator-chosen runtime (claude, opencode, codex, \u2026).
+          // Slave uses this to route to the right ACP adapter; absent
+          // values fall back to the template's agentType.
+          runtimeBackend: config.runtimeBackend,
         },
         ttlSeconds: Math.max(60, Math.ceil(timeoutMs / 1000) + 60),
         createdBy: config.createdBy,

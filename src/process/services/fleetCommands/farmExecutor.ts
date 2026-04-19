@@ -75,6 +75,14 @@ type ExecuteParams = {
   teamName?: string;
   agentSlotId?: string;
   agentName?: string;
+  /**
+   * v2.2.2 — operator-chosen ACP runtime (claude, opencode, codex,
+   * gemini, \u2026). The slave should dispatch the turn to this ACP
+   * adapter; omitted means fall back to the template's agentType.
+   * v2.2.x still goes through the LangChain provider path regardless
+   * — the field is stored for audit + v2.3.0 ACP dispatch.
+   */
+  runtimeBackend?: string;
 };
 
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -119,6 +127,7 @@ function parseParams(params: Record<string, unknown>): ExecuteParams | null {
     teamName: typeof params.teamName === 'string' ? params.teamName : undefined,
     agentSlotId: typeof params.agentSlotId === 'string' ? params.agentSlotId : undefined,
     agentName: typeof params.agentName === 'string' ? params.agentName : undefined,
+    runtimeBackend: typeof params.runtimeBackend === 'string' ? params.runtimeBackend : undefined,
   };
 }
 

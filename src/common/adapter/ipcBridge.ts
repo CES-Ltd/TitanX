@@ -881,6 +881,14 @@ export const fleet = {
     newlyManagedKeys: string[];
   }>('fleet:config-applied'),
   /**
+   * v2.2.2 — master-side notification when a slave finishes pushing
+   * a new telemetry report. The payload is minimal (just the device
+   * that pushed); the renderer's hire modal re-fetches
+   * listFarmDevices to pick up the latest runtime list without
+   * waiting for the 30s SWR poll.
+   */
+  telemetryReceived: bridge.buildEmitter<{ deviceId: string }>('fleet:telemetry-received'),
+  /**
    * v1.9.38 — slave-side notification when a destructive remote
    * command executes successfully. Renderer listens and shows an
    * Arco Notification so the user knows IT just cleared their cache

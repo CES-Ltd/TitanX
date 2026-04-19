@@ -13,6 +13,7 @@
  */
 
 import useSWR from 'swr';
+import { useEffect } from 'react';
 import { ipcBridge } from '@/common';
 
 const REFRESH_INTERVAL_MS = 30_000;
@@ -78,6 +79,24 @@ export function useFarmDevices(): {
     () => ipcBridge.fleet.listFarmDevices.invoke(),
     { refreshInterval: REFRESH_INTERVAL_MS }
   );
+  // v2.2.2 — subscribe to the master-side telemetry-received IPC
+  // event so the hire modal picks up a slave's first v2.2.1+
+  // runtime report within seconds of it landing, not on the 30s poll
+  // tick. The emitter is fired from fleetRoutes after a successful
+  // ingest.
+  useEffect(() => {
+    const off = ipcBridge.fleet.telemetryReceived.on(() => {
+      void mutate();
+    });
+    return () => {
+      // Arco/IPC emitter unsubscribe returns void; wrap defensively.
+      try {
+        off();
+      } catch {
+        /* noop */
+      }
+    };
+  }, [mutate]);
   return {
     devices: data?.devices ?? [],
     isLoading,
