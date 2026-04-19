@@ -46,5 +46,13 @@
       "workspace": "Workspace"
     },
     "error": "Failed to create team"
+  },
+  "farm": {
+    "badge": "Ferme",
+    "runningOn": "En cours sur {{device}}",
+    "noBinding": "Pas de liaison flotte",
+    "emptyHint": "Envoyez un message pour lancer un tour vers cet agent distant. Les réponses arrivent via le canal flotte dans le délai de la commande.",
+    "sendPlaceholder": "Message à l’agent ferme…",
+    "send": "Envoyer"
   }
 }

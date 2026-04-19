@@ -46,5 +46,13 @@
       "workspace": "Workspace"
     },
     "error": "팀 생성에 실패했습니다"
+  },
+  "farm": {
+    "badge": "팜",
+    "runningOn": "{{device}}에서 실행 중",
+    "noBinding": "플릿 바인딩 없음",
+    "emptyHint": "이 원격 에이전트에 턴을 디스패치하려면 메시지를 보내세요. 응답은 명령 제한 시간 내에 플릿 채널을 통해 도착합니다.",
+    "sendPlaceholder": "팜 에이전트에게 메시지…",
+    "send": "전송"
   }
 }

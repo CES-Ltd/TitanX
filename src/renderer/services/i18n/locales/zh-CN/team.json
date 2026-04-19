@@ -46,5 +46,13 @@
       "workspace": "工作空间"
     },
     "error": "创建团队失败"
+  },
+  "farm": {
+    "badge": "农场",
+    "runningOn": "运行于 {{device}}",
+    "noBinding": "无车队绑定",
+    "emptyHint": "发送消息以向此远程代理派发一个轮次。响应将在命令超时内通过车队通道到达。",
+    "sendPlaceholder": "向农场代理发送消息…",
+    "send": "发送"
   }
 }

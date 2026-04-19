@@ -28,6 +28,14 @@
   "newAgent": "New Agent",
   "noMessages": "No messages yet.",
   "agentNotConfigured": "Agent not configured yet.",
+  "farm": {
+    "badge": "Farm",
+    "runningOn": "Running on {{device}}",
+    "noBinding": "No fleet binding",
+    "emptyHint": "Send a message to dispatch a turn to this remote agent. Responses arrive over the fleet channel within the command timeout.",
+    "sendPlaceholder": "Message the farm agent...",
+    "send": "Send"
+  },
   "sendBox": {
     "placeholder": "Message dispatch agent..."
   },

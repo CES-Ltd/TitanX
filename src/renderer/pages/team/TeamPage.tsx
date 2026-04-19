@@ -20,6 +20,7 @@ import AionrsModelSelector from '@/renderer/pages/conversation/platforms/aionrs/
 import { useAionrsModelSelection } from '@/renderer/pages/conversation/platforms/aionrs/useAionrsModelSelection';
 import TeamTabs from './components/TeamTabs';
 import TeamChatView from './components/TeamChatView';
+import FarmAgentPanel from './components/FarmAgentPanel';
 import { agentFromKey, resolveConversationType, resolveTeamAgentType } from './components/agentSelectUtils';
 import { TeamTabsProvider, useTeamTabs } from './hooks/TeamTabsContext';
 import { TeamPermissionProvider } from './hooks/TeamPermissionContext';
@@ -64,8 +65,14 @@ const AgentChatSlot: React.FC<{
   onToggleFullscreen?: () => void;
   onRemove?: () => void;
 }> = ({ agent, teamId, isLead, isFullscreen = false, runtimeStatus, onToggleFullscreen, onRemove }) => {
-  const { data: conversation } = useSWR(agent.conversationId ? ['team-conversation', agent.conversationId] : null, () =>
-    ipcBridge.conversation.get.invoke({ id: agent.conversationId })
+  // v2.1.3: farm-backed agents have a synthetic farm-<uuid> conversationId
+  // that never exists in the conversations table. Skip the fetch so the
+  // FarmAgentPanel below renders immediately instead of spinning forever
+  // waiting for a conversation object the main process can't produce.
+  const isFarm = agent.backend === 'farm';
+  const { data: conversation } = useSWR(
+    !isFarm && agent.conversationId ? ['team-conversation', agent.conversationId] : null,
+    () => ipcBridge.conversation.get.invoke({ id: agent.conversationId })
   );
   const logo = getAgentLogo(agent.agentType);
 
@@ -121,7 +128,9 @@ const AgentChatSlot: React.FC<{
           )}
         </div>
         <div className='flex items-center gap-8px shrink-0'>
-          {agent.conversationId && !isAionrs && isAcpLike && (
+          {/* Model selectors drive conversation.update — pointless for
+              farm agents whose conversationId is synthetic. Skip them. */}
+          {!isFarm && agent.conversationId && !isAionrs && isAcpLike && (
             <div className='min-w-0 max-w-140px [&_button]:max-w-full [&_button_span]:truncate'>
               <AcpModelSelector
                 key={agent.conversationId}
@@ -131,12 +140,12 @@ const AgentChatSlot: React.FC<{
               />
             </div>
           )}
-          {agent.conversationId && isGemini && (
+          {!isFarm && agent.conversationId && isGemini && (
             <div className='min-w-0 max-w-140px [&_button]:max-w-full [&_button_span]:truncate'>
               <GeminiModelSelector selection={geminiModelSelection} />
             </div>
           )}
-          {isAionrs && agent.conversationId && (
+          {!isFarm && isAionrs && agent.conversationId && (
             <div className='min-w-0 max-w-140px [&_button]:max-w-full [&_button_span]:truncate'>
               <AionrsHeaderModelSelector
                 key={agent.conversationId}
@@ -154,7 +163,9 @@ const AgentChatSlot: React.FC<{
         </div>
       </div>
       <div className='relative flex flex-col flex-1 min-h-0'>
-        {conversation ? (
+        {isFarm ? (
+          <FarmAgentPanel agent={agent} teamId={teamId} runtimeStatus={runtimeStatus} />
+        ) : conversation ? (
           <TeamChatView
             conversation={conversation as TChatConversation}
             teamId={teamId}

@@ -46,5 +46,13 @@
       "workspace": "Workspace"
     },
     "error": "Takım oluşturulamadı"
+  },
+  "farm": {
+    "badge": "Çiftlik",
+    "runningOn": "{{device}} üzerinde çalışıyor",
+    "noBinding": "Filo bağı yok",
+    "emptyHint": "Bu uzak ajana bir tur göndermek için mesaj gönderin. Yanıtlar komut zaman aşımı içinde filo kanalından gelir.",
+    "sendPlaceholder": "Çiftlik ajanına mesaj…",
+    "send": "Gönder"
   }
 }
