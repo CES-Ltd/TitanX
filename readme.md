@@ -226,6 +226,11 @@ TitanX v2.4 ships **Fleet Mode** — a control-plane extension that lets one ins
 | Accept farm commands (`team.farm_provision`, `agent.execute`)                                      |    —    |   —    |         —         |      ✅      |
 | Host Lead ACP session for a master-mirrored team                                                   |    —    |   —    |         —         |      ✅      |
 
+<p align="center">
+  <img src="./docs/diagrams/fleet-master-slave.gif" alt="TitanX Master / Slave fleet mode — animated architecture" width="800">
+  <br/><em>Master publishes signed config bundles (IAM, templates, managed keys); slaves poll every 30s, apply, and stream telemetry + command acks back.</em>
+</p>
+
 ### 🏛 Master Mode <img src="https://img.shields.io/badge/NEW-v2.4-FF6B6B?style=flat-square" alt="NEW"> <img src="https://img.shields.io/badge/status-Alpha-FFB020?style=flat-square&logo=semver&logoColor=white" alt="Alpha">
 
 - **Fleet Dashboard** — device roster, heartbeat freshness, enrollment tokens, revocation forensics
@@ -243,6 +248,11 @@ TitanX v2.4 ships **Fleet Mode** — a control-plane extension that lets one ins
 - **Heartbeat + config-sync loops** — idempotent, 5s heartbeat, 30s config poll, exponential backoff on master unreachable
 - **Telemetry push** — every 60s: cost, activity, agent counts, detected ACP runtimes (no API keys, shape only)
 - **Destructive command receiver** — verifies signed envelope (signature + replay nonce), executes with audit trail, acks with granular reason codes
+
+<p align="center">
+  <img src="./docs/diagrams/fleet-farm-mode.gif" alt="TitanX Agent Farm mode — animated distributed compute" width="800">
+  <br/><em>Hybrid teams: the master's Team chat dispatches signed <code>agent.execute</code> envelopes to farm slaves; each slave runs a cached ACP session and streams the turn back through the mirrored mailbox.</em>
+</p>
 
 ### 🚜 Slave / Farm <img src="https://img.shields.io/badge/NEW-v2.4-FF6B6B?style=flat-square" alt="NEW"> <img src="https://img.shields.io/badge/status-Alpha-FFB020?style=flat-square&logo=semver&logoColor=white" alt="Alpha"> <img src="https://img.shields.io/badge/remote%20compute-node-FF7D00?style=flat-square" alt="Remote Compute">
 
@@ -263,6 +273,26 @@ Switch modes without a restart: click the fleet icon in the titlebar, pick Regul
 <p align="center">
   <em>See <a href="./docs/feature/fleet/README.md">docs/feature/fleet/</a> for the full operator guide: enrollment flow, command types, telemetry shape, Lead-session lifecycle, and troubleshooting by ack reason code.</em>
 </p>
+
+---
+
+## 🌙 Dream Mode <img src="https://img.shields.io/badge/NEW-v2.5-FF6B6B?style=flat-square" alt="NEW"> <img src="https://img.shields.io/badge/self--evolving-fleet-7C3AED?style=flat-square" alt="Self-Evolving"> <img src="https://img.shields.io/badge/status-Alpha-FFB020?style=flat-square&logo=semver&logoColor=white" alt="Alpha">
+
+> The fleet gets smarter on its own. Every slave's agent turns become training signal; a nightly LLM pass consolidates fleet-wide wisdom; every slave benefits on the next turn.
+
+<p align="center">
+  <img src="./docs/diagrams/dream-mode.gif" alt="TitanX Dream Mode — self-evolving fleet" width="820">
+  <br/><em>Capture → push → dream → broadcast → apply. Six steps, closed loop, workspace-scoped, with per-stage failure instrumentation and exponential backoff on transient failures.</em>
+</p>
+
+- **Step 1 — Capture** · `TurnFinalizer` stamps every agent turn with `workspace_id` + `failure_pattern` flag; successful and failed trajectories both land in the local `reasoning_bank`. Step[0] carries a 1KB reasoning snippet so downstream distillation has context beyond tool names.
+- **Step 2 — Push (every 2h)** · Slave builds an envelope (`trajectories`, `memorySummaries`, `consumptionFeedback`), deep-scrubs for secrets, audits for high-entropy leaks, and POSTs to master over the same JWT channel as telemetry. Exponential backoff (1×→8×) on consecutive failures.
+- **Step 3 — Dream pass** · Master's nightly scheduler (03:00 local + threshold-triggered) deduplicates clusters by `(trajectoryHash, workspaceId)`, runs an LLM distillation pass (structured JSON insight: taskShape, preferredPath, avoidancePath, triggerCondition), and ranks by `score × usage × adoption`. Per-stage failure counters expose partial degradation; retry wrapper handles transient throws.
+- **Step 4 — Version++** · Consolidated output writes to `consolidated_learnings` with a monotonically-bumped version + `contributing_devices` provenance.
+- **Step 5 — Broadcast** · The next config bundle pull carries trajectories, memory summaries, and template persona patches. Pre-v2.5 slaves safely ignore the new fields.
+- **Step 6 — Apply** · Slaves upsert consolidated trajectories into local `reasoning_bank` with `source_tag='fleet_consolidated'`; memory summaries land in `agent_memory` keyed by `agentSlotHash`; template patches merge into agent_gallery persona on the next spawn. Retrieval prefers fleet-consolidated + workspace-matching rows over locally-minted ones.
+
+**Opt-in per device.** Admin toggles `fleet.learning.enabled` on the FleetDashboard; global kill switch lives in the secrets vault. Learning envelopes are rate-limited (500 trajectories/device/24h default) and never logged verbatim to the activity log.
 
 ---
 
