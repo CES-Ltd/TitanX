@@ -167,7 +167,12 @@ export class TeamSession extends EventEmitter {
     });
 
     const agent = this.teammateManager.getAgents().find((a) => a.slotId === slotId);
-    if (agent?.conversationId) {
+    // v2.1.2 fix: farm-backed agents use a synthetic farm-<uuid> conversationId
+    // that has no row in conversations / chat.history, so addMessage +
+    // responseStream.emit would both log noise / no-op. Wake the slot
+    // directly — the mailbox carries the user's message to the farm
+    // adapter via dispatchFarmTurn.
+    if (agent?.conversationId && agent.backend !== 'farm') {
       const msgId = crypto.randomUUID();
       const userMessage: TMessage = {
         id: msgId,

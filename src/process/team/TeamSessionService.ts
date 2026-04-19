@@ -413,12 +413,16 @@ export class TeamSessionService {
     await this.sessions.get(id)?.dispose();
     this.sessions.delete(id);
 
-    // Delete conversations owned by this team's agents
+    // Delete conversations owned by this team's agents. Farm-backed
+    // agents have a synthetic farm-<uuid> conversationId that never hit
+    // the conversations table, so we skip them here to avoid a
+    // guaranteed "conversation not found" rejection on every team
+    // delete that contained a farm agent.
     const team = await this.repo.findById(id);
     if (team) {
       const results = await Promise.allSettled(
         team.agents
-          .filter((agent) => agent.conversationId)
+          .filter((agent) => agent.conversationId && agent.backend !== 'farm')
           .map((agent) => this.conversationService.deleteConversation(agent.conversationId))
       );
       results.forEach((r) => {
@@ -672,9 +676,18 @@ export class TeamSessionService {
 
     // Start MCP server and inject per-agent stdio config into all agent conversations.
     // After DB update, rebuild cached agent tasks so they pick up teamMcpStdioConfig.
+    //
+    // v2.1.2 fix: farm-backed agents carry a synthetic `farm-<uuid>` conversationId
+    // that never exists in the conversations table (their turns run remotely on
+    // a slave via agent.execute). Feeding that ID to conversationService /
+    // workerTaskManager throws "Conversation not found", which was surfacing as
+    // `[teamBridge] provider error` on every team.ensureSession and
+    // team.sendMessage*. Skipping them here is safe — farm agents don't
+    // participate in the local MCP stdio pipeline.
     await session.startMcpServer();
     await Promise.all(
       team.agents.map(async (agent) => {
+        if (agent.backend === 'farm') return;
         if (agent.conversationId) {
           const agentStdioConfig = session.getStdioConfig(agent.slotId);
           await this.conversationService.updateConversation(
