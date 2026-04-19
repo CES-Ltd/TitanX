@@ -431,6 +431,31 @@ function buildAcpPrompt(messages: ExecuteParams['messages']): string {
 }
 
 /**
+ * v2.3.1 — resolve the CLI path for the chosen backend from the
+ * slave's own ACP detector. AcpConnection requires `cliPath` for
+ * most backends (opencode, codex, goose, \u2026); only a handful
+ * (gemini's built-in) can connect without one. The slave's
+ * acpDetector already probes `which <cli>` at boot and stashes the
+ * result on each DetectedAgent, so we just look it up.
+ *
+ * Returns undefined if the backend isn't detected. The caller
+ * surfaces that as `runtime_not_detected` so the operator knows
+ * to install or re-login the CLI on the slave.
+ */
+function resolveCliPathForBackend(backend: AcpBackend):
+  | { cliPath?: string; detectedName?: string }
+  | null {
+  // Lazy import to keep the farmExecutor hot path light — the
+  // detector owns a cached list after boot.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { acpDetector } = require('@process/agent/acp/AcpDetector') as typeof import('@process/agent/acp/AcpDetector');
+  const detected = acpDetector.getDetectedAgents();
+  const match = detected.find((a) => a.backend === backend);
+  if (!match) return null;
+  return { cliPath: match.cliPath, detectedName: match.name };
+}
+
+/**
  * v2.3.0 — run a single turn through the chosen ACP runtime. Spawns
  * the CLI into a per-job temp workspace, fires one prompt, collects
  * the assistant response chunks, kills the subprocess, and cleans up.
@@ -446,6 +471,18 @@ async function executeViaAcp(
   | { ok: true; assistantText: string; usage?: Record<string, unknown> }
   | { ok: false; reason: string; error: string }
 > {
+  // v2.3.1 — look up the CLI path the slave's own detector found
+  // at boot. Without this, AcpConnection.connect() throws
+  // "CLI path is required for <backend>" for most backends.
+  const detection = resolveCliPathForBackend(backend);
+  if (!detection) {
+    return {
+      ok: false,
+      reason: 'runtime_not_detected',
+      error: `Backend '${backend}' not detected on this device. Install the CLI and restart TitanX on the slave.`,
+    };
+  }
+
   const tmpWorkspace = path.join(os.tmpdir(), `titanx-farm-${parsed.jobId}`);
   try {
     await fs.mkdir(tmpWorkspace, { recursive: true });
@@ -473,10 +510,12 @@ async function executeViaAcp(
   const agent = new AcpAgent({
     id: parsed.jobId,
     backend,
+    cliPath: detection.cliPath,
     workingDir: tmpWorkspace,
     extra: {
       workspace: tmpWorkspace,
       backend,
+      cliPath: detection.cliPath,
       customWorkspace: false,
       yoloMode: true, // Headless — auto-approve tool prompts.
     },
