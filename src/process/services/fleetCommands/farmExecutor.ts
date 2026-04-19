@@ -931,6 +931,20 @@ export async function handleAgentExecute(rawParams: Record<string, unknown>): Pr
     return { status: 'skipped', result: { reason: 'invalid_params' } };
   }
 
+  // v2.4.2 — enrollmentRole gate. Only farm-role slaves dispatch
+  // farm turns. A workforce slave that somehow receives a stray
+  // agent.execute returns a clean skip ack so master audit sees the
+  // rejection reason instead of silently running the turn.
+  try {
+    const role = (await ProcessConfig.get('fleet.enrollmentRole')) as string | undefined;
+    if (role !== 'farm') {
+      return { status: 'skipped', result: { reason: 'not_farm_role' } };
+    }
+  } catch (e) {
+    logNonCritical('fleet.agent-execute.role-check', e);
+    return { status: 'skipped', result: { reason: 'role_check_failed' } };
+  }
+
   const db = await getDatabase();
   const driver = db.getDriver();
   // Placeholder team_id for slave-local job tracking. On the slave

@@ -28,8 +28,28 @@ import { uuid } from '@/common/utils';
 import { getDatabase } from '@process/services/database';
 import { logActivity } from '@process/services/activityLog';
 import { logNonCritical } from '@process/utils/logNonCritical';
+import { ProcessConfig } from '@process/utils/initStorage';
 import type { ISqliteDriver } from '@process/services/database/drivers/ISqliteDriver';
 import type { AckStatus } from './types';
+
+/**
+ * v2.4.2 — only farm-role slaves accept farm provisioning / execution
+ * commands. A workforce slave (or an un-enrolled machine in some
+ * misconfigured split-brain) receiving `team.farm_provision` or
+ * `agent.execute` silently building up mirror teams it can't actually
+ * serve would be a boundary violation, even if not a security one
+ * (signed envelope already verified). Fast rejection keeps the slave's
+ * state clean and surfaces a clear ack reason to master audit.
+ */
+async function isFarmRoleEnrolled(): Promise<boolean> {
+  try {
+    const raw = (await ProcessConfig.get('fleet.enrollmentRole')) as string | undefined;
+    return raw === 'farm';
+  } catch (e) {
+    logNonCritical('fleet.farm-provision.role-check', e);
+    return false;
+  }
+}
 
 export type HandlerOutcome = {
   status: AckStatus;
@@ -187,6 +207,12 @@ export async function handleTeamFarmProvision(rawParams: Record<string, unknown>
   const parsed = parseParams(rawParams);
   if (!parsed) {
     return { status: 'skipped', result: { reason: 'invalid_params' } };
+  }
+
+  // v2.4.2 — enrollmentRole gate. A workforce slave shouldn't be
+  // materializing farm mirror teams.
+  if (!(await isFarmRoleEnrolled())) {
+    return { status: 'skipped', result: { reason: 'not_farm_role' } };
   }
 
   const db = await getDatabase();

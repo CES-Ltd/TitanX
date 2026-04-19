@@ -135,6 +135,16 @@ const setDraft = <K extends TChatConversation['type']>(
         store.aionrs.delete(conversation_id);
       }
       break;
+    case 'farm':
+      // v2.4.2 — FarmSendBox doesn't use this hook today (it keeps
+      // local useState for the input), but the bucket exists so
+      // future code that does use it gets proper persistence.
+      if (draft) {
+        store.farm.set(conversation_id, draft as Extract<Draft, { _type: 'farm' }>);
+      } else {
+        store.farm.delete(conversation_id);
+      }
+      break;
     default:
       break;
   }
@@ -160,6 +170,8 @@ const getDraft = <K extends TChatConversation['type']>(
       return store.remote.get(conversation_id) as Extract<Draft, { _type: K }>;
     case 'aionrs':
       return store.aionrs.get(conversation_id) as Extract<Draft, { _type: K }>;
+    case 'farm':
+      return store.farm.get(conversation_id) as Extract<Draft, { _type: K }>;
     default:
       return undefined;
   }
