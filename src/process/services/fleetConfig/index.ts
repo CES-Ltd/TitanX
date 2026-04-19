@@ -171,18 +171,33 @@ export function buildConfigBundle(db: ISqliteDriver, sinceVersion: number): Flee
       .prepare(`SELECT version, published_at, payload FROM consolidated_learnings ORDER BY version DESC LIMIT 1`)
       .get() as { version: number; published_at: number; payload: string } | undefined;
     if (row) {
-      const entries = JSON.parse(row.payload) as Array<{
-        trajectoryHash: string;
-        taskDescription: string;
-        trajectoryJson: string;
-        successScore: number;
-        usageCountFleetwide: number;
-        contributingDevices: number;
-      }>;
+      // v2.5.0 Phase C2 — payload shape widened from a plain array
+      // (pre-v2.5: just trajectories[]) to an object
+      // { trajectories, memorySummaries }. Both shapes are supported
+      // for config-bundle back-compat: if a slave is on v2.5 and the
+      // master is pre-v2.5, the slave reads the array shape; if
+      // master is v2.5 and slave is pre-v2.5, the slave's v2.4.x
+      // applier only reads .entries (the trajectories alias kept
+      // below), so summaries just don't land on the older slave.
+      const parsed = JSON.parse(row.payload) as unknown;
+      let entries: Array<Record<string, unknown>> = [];
+      let memorySummaries: Array<Record<string, unknown>> = [];
+      if (Array.isArray(parsed)) {
+        entries = parsed as Array<Record<string, unknown>>;
+      } else if (parsed !== null && typeof parsed === 'object') {
+        const rec = parsed as { trajectories?: unknown; memorySummaries?: unknown };
+        if (Array.isArray(rec.trajectories)) entries = rec.trajectories as Array<Record<string, unknown>>;
+        if (Array.isArray(rec.memorySummaries))
+          memorySummaries = rec.memorySummaries as Array<Record<string, unknown>>;
+      }
       consolidatedLearnings = {
         version: row.version,
         publishedAt: row.published_at,
-        entries: Array.isArray(entries) ? entries : [],
+        entries: entries as NonNullable<FleetConfigBundle['consolidatedLearnings']>['entries'],
+        memorySummaries:
+          memorySummaries.length > 0
+            ? (memorySummaries as NonNullable<FleetConfigBundle['consolidatedLearnings']>['memorySummaries'])
+            : undefined,
       };
     }
   } catch {
@@ -377,6 +392,24 @@ export function applyConfigBundle(db: ISqliteDriver, bundle: FleetConfigBundle):
   // already applied, skip — prevents accidental downgrade on split
   // brain.
   let consolidatedLearningsApplied = 0;
+  // v2.5.0 Phase C3 — apply fleet instructions patches to agent_gallery
+  // if the bundle carries any. Template patches are short persona
+  // addendums ("based on fleet-wide learnings, prefer X over Y")
+  // produced by the dream pass and appended to a template's
+  // instructionsMd at agent-spawn time (not persisted into
+  // instructionsMd itself — kept separate for provenance / easy
+  // rollback).
+  if (bundle.consolidatedLearnings?.templatePatches && bundle.consolidatedLearnings.templatePatches.length > 0) {
+    try {
+      const updateStmt = db.prepare('UPDATE agent_gallery SET fleet_instructions_md = ? WHERE id = ?');
+      for (const patch of bundle.consolidatedLearnings.templatePatches) {
+        updateStmt.run(patch.fleetInstructionsMd, patch.agentGalleryId);
+      }
+    } catch (e) {
+      logNonCritical('fleet.config.apply-template-patches', e);
+    }
+  }
+
   if (bundle.consolidatedLearnings && bundle.consolidatedLearnings.entries.length > 0) {
     try {
       consolidatedLearningsApplied = applyConsolidatedLearnings(db, bundle.consolidatedLearnings);

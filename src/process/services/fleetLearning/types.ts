@@ -102,6 +102,18 @@ export type LearningIngestResult = {
   rejectedReason?: 'learning_globally_disabled' | 'device_opted_out' | 'rate_limited';
 };
 
+/**
+ * v2.5.0 Phase C1 — structured insight extracted by the distillation
+ * LLM. Pre-v2.5 entries don't have this field and keep falling back
+ * to `taskDescription` for retrieval hints.
+ */
+export type DistilledInsightPayload = {
+  taskShape: string;
+  preferredPath?: string;
+  avoidancePath?: string;
+  triggerCondition?: string;
+};
+
 /** A single consolidated learning — produced by the dream scheduler. */
 export type ConsolidatedLearning = {
   /** Preserved from the source trajectory. Slave-side idempotent
@@ -120,6 +132,57 @@ export type ConsolidatedLearning = {
   /** How many distinct devices contributed to this cluster. Stored as
    *  provenance so the dashboard can render "3 devices learned this". */
   contributingDevices: number;
+  /**
+   * v2.5.0 Phase B2 — set when this cluster was majority-failures.
+   * Slave applies `avoidancePath` as a warn-against hint rather than
+   * a preferred path when injecting into the prompt.
+   */
+  failurePattern?: boolean;
+  /**
+   * v2.5.0 Phase C1 — structured distillation output. Optional; pre-
+   * v2.5 consolidated rows lack this and still work via
+   * `taskDescription` alone.
+   */
+  insight?: DistilledInsightPayload;
+};
+
+/**
+ * v2.5.0 Phase C2 — consolidated memory summary, broadcast to slaves.
+ *
+ * Each entry represents what the fleet knows about an agent slot
+ * (identified by agentSlotHash = SHA256(slotId)[:16]). Entries are
+ * the N most-recent slave-side summaries for that slot, across all
+ * devices. Slaves upsert these into their own agent_memory with a
+ * source_tag so local agents consult fleet-wide domain knowledge
+ * alongside their own history.
+ */
+export type ConsolidatedMemorySummary = {
+  agentSlotHash: string;
+  entries: Array<{
+    contentJson: string;
+    deviceId: string;
+    receivedAt: number;
+  }>;
+  contributingDevices: number;
+};
+
+/**
+ * v2.5.0 Phase C3 — template persona patch. The dream pass produces
+ * these for agent templates that have high-signal fleet-wide clusters
+ * tied to them. Slaves append the patch to the template's
+ * `instructionsMd` at agent-spawn time. Kept separate from the
+ * original instructions so an admin can inspect / roll back patches
+ * without touching the base template.
+ */
+export type FleetTemplatePatch = {
+  /** `agent_gallery.id` this patch applies to. Must match a synced template. */
+  agentGalleryId: string;
+  /** Short markdown addendum (≤1KB) describing the fleet-learned rules. */
+  fleetInstructionsMd: string;
+  /** Count of clusters that contributed to this patch — for audit. */
+  clusterCount: number;
+  /** Highest rank score among contributing clusters. */
+  maxRankScore: number;
 };
 
 /** Published consolidated-learnings payload — travels in the config bundle. */
@@ -127,6 +190,18 @@ export type ConsolidatedLearningsPayload = {
   version: number;
   publishedAt: number;
   entries: ConsolidatedLearning[];
+  /**
+   * v2.5.0 Phase C2 — optional, consolidated memory summaries from
+   * the dream pass. Pre-v2.5 master omits it; pre-v2.5 slave ignores
+   * it. Both continue to work with just `entries` for trajectories.
+   */
+  memorySummaries?: ConsolidatedMemorySummary[];
+  /**
+   * v2.5.0 Phase C3 — optional template persona patches. Absent
+   * when no template reached the patch-worthy threshold in the
+   * last pass. Pre-v2.5 slaves ignore this field.
+   */
+  templatePatches?: FleetTemplatePatch[];
 };
 
 /** Caps enforced by the slave push worker. */

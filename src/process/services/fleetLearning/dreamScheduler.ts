@@ -287,11 +287,22 @@ export async function runDreamPass(db: ISqliteDriver, options?: { keepTopN?: num
       totalUsage: number;
       deviceSet: Set<string>;
       sourceIds: string[];
+      /** v2.5.0 Phase B2 — true if >=50% of contributing rows were failures. */
+      failurePattern?: boolean;
+      /** v2.5.0 Phase C1 — populated by tryDistillBatch when the LLM responds. */
+      insight?: DistilledInsight | null;
+      /** Raw counts for the failure/success majority decision. */
+      _failureCount?: number;
     };
     const byHash = new Map<string, Cluster>();
 
     for (const row of trajectoryRows) {
-      let payload: { trajectoryHash?: string; taskDescription?: string; trajectoryJson?: string };
+      let payload: {
+        trajectoryHash?: string;
+        taskDescription?: string;
+        trajectoryJson?: string;
+        failurePattern?: boolean;
+      };
       try {
         payload = JSON.parse(row.payload) as typeof payload;
       } catch {
@@ -301,6 +312,7 @@ export async function runDreamPass(db: ISqliteDriver, options?: { keepTopN?: num
       const hash = payload.trajectoryHash;
       const score = row.success_score ?? 0;
       const usage = row.usage_count_local ?? 0;
+      const isFailure = payload.failurePattern === true;
 
       const existing = byHash.get(hash);
       if (!existing) {
@@ -312,12 +324,14 @@ export async function runDreamPass(db: ISqliteDriver, options?: { keepTopN?: num
           totalUsage: usage,
           deviceSet: new Set([row.device_id]),
           sourceIds: [row.id],
+          _failureCount: isFailure ? 1 : 0,
         });
         continue;
       }
       existing.totalUsage += usage;
       existing.deviceSet.add(row.device_id);
       existing.sourceIds.push(row.id);
+      if (isFailure) existing._failureCount = (existing._failureCount ?? 0) + 1;
       // Winning trajectory replaces on strictly greater score;
       // ties keep the existing winner (stable).
       if (score > existing.maxScore) {
@@ -327,10 +341,23 @@ export async function runDreamPass(db: ISqliteDriver, options?: { keepTopN?: num
       }
     }
 
+    // v2.5.0 Phase B2 — tag clusters as failure patterns if the
+    // majority of contributing rows were failures. Distillation uses
+    // this to pick the avoidance-rule prompt variant.
+    for (const cluster of byHash.values()) {
+      const failures = cluster._failureCount ?? 0;
+      cluster.failurePattern = failures > cluster.sourceIds.length / 2;
+    }
+
     // Pass 2: GENERALIZE (best-effort LLM distillation).
     // For each "high frequency" cluster, try to distill a concise
     // one-line description. On any LLM error we fall through to the
     // original description — never block the pass on model failures.
+    //
+    // v2.5.0 Phase C1 — distillation now produces a structured
+    // DistilledInsight (taskShape + preferredPath / avoidancePath +
+    // triggerCondition). Failure clusters use the avoidance-rule
+    // prompt; success clusters use the preferred-path prompt.
     const highFreqClusters = Array.from(byHash.values()).filter(
       (c) => c.deviceSet.size >= HIGH_FREQUENCY_MIN_DEVICES && c.totalUsage >= HIGH_FREQUENCY_MIN_USAGE
     );
@@ -368,16 +395,83 @@ export async function runDreamPass(db: ISqliteDriver, options?: { keepTopN?: num
       })
       .toSorted((a, b) => b.rankScore - a.rankScore)
       .slice(0, keepTopN)
-      .map((c) => ({
-        // Strip the internal-only ranking fields from the persisted
-        // payload — ranking was already applied.
-        trajectoryHash: c.trajectoryHash,
-        taskDescription: c.taskDescription,
-        trajectoryJson: c.trajectoryJson,
-        successScore: c.successScore,
-        usageCountFleetwide: c.usageCountFleetwide,
-        contributingDevices: c.contributingDevices,
-      }));
+      .map((c) => {
+        // Look up the full cluster to recover insight / failurePattern
+        // (the slim ranking object above dropped them for sort speed).
+        const fullCluster = byHash.get(c.trajectoryHash);
+        return {
+          trajectoryHash: c.trajectoryHash,
+          taskDescription: c.taskDescription,
+          trajectoryJson: c.trajectoryJson,
+          successScore: c.successScore,
+          usageCountFleetwide: c.usageCountFleetwide,
+          contributingDevices: c.contributingDevices,
+          // v2.5.0 Phase B2/C1 — carry structured insight + failure
+          // flag into the broadcast payload.
+          failurePattern: fullCluster?.failurePattern === true ? true : undefined,
+          insight: fullCluster?.insight ?? undefined,
+        };
+      });
+
+    // v2.5.0 Phase C2 — consolidate memory_summary rows alongside
+    // trajectories. Pre-v2.5 these piled up in fleet_learnings
+    // forever with consolidated_version IS NULL — half the input
+    // signal was inert. Simpler model than trajectories: group by
+    // agentSlotHash (same "domain owner") and keep the top N by
+    // token_count as representatives of that domain. No LLM call —
+    // summaries are already distilled by the slave's memory system.
+    const summaryRows = db
+      .prepare(
+        `SELECT id, device_id, payload, received_at
+         FROM fleet_learnings
+         WHERE learning_type = 'memory_summary' AND consolidated_version IS NULL`
+      )
+      .all() as Array<{ id: string; device_id: string; payload: string; received_at: number }>;
+    type SummaryBucket = {
+      agentSlotHash: string;
+      entries: Array<{ contentJson: string; deviceId: string; receivedAt: number }>;
+      deviceSet: Set<string>;
+      sourceIds: string[];
+    };
+    const bySlot = new Map<string, SummaryBucket>();
+    for (const row of summaryRows) {
+      try {
+        const p = JSON.parse(row.payload) as { agentSlotHash?: string; contentJson?: string };
+        if (!p.agentSlotHash || typeof p.agentSlotHash !== 'string') continue;
+        const bucket = bySlot.get(p.agentSlotHash) ?? {
+          agentSlotHash: p.agentSlotHash,
+          entries: [],
+          deviceSet: new Set<string>(),
+          sourceIds: [],
+        };
+        bucket.entries.push({
+          contentJson: p.contentJson ?? '',
+          deviceId: row.device_id,
+          receivedAt: row.received_at,
+        });
+        bucket.deviceSet.add(row.device_id);
+        bucket.sourceIds.push(row.id);
+        bySlot.set(p.agentSlotHash, bucket);
+      } catch {
+        /* skip malformed */
+      }
+    }
+    // Keep 5 most-recent summaries per slot → those are the signal
+    // for "what this agent recently learned about its domain."
+    const summaryPerSlotCap = 5;
+    const consolidatedSummaries: Array<{
+      agentSlotHash: string;
+      entries: Array<{ contentJson: string; deviceId: string; receivedAt: number }>;
+      contributingDevices: number;
+    }> = [];
+    for (const bucket of bySlot.values()) {
+      const top = bucket.entries.toSorted((a, b) => b.receivedAt - a.receivedAt).slice(0, summaryPerSlotCap);
+      consolidatedSummaries.push({
+        agentSlotHash: bucket.agentSlotHash,
+        entries: top,
+        contributingDevices: bucket.deviceSet.size,
+      });
+    }
 
     const nextVersionRow = db.prepare('SELECT COALESCE(MAX(version), 0) AS v FROM consolidated_learnings').get() as {
       v: number;
@@ -386,14 +480,44 @@ export async function runDreamPass(db: ISqliteDriver, options?: { keepTopN?: num
     const publishedAt = Date.now();
     const contributingDeviceCount = new Set(Array.from(byHash.values()).flatMap((c) => Array.from(c.deviceSet))).size;
 
+    // v2.5.0 Phase C3 — template persona patches. For each agent
+    // template that has N+ high-signal clusters (trajectories
+    // referencing it), build a short markdown addendum that slaves
+    // append to the template's instructionsMd at spawn time. We
+    // don't know which template a trajectory belongs to from the
+    // cluster alone (pre-v2.5 trajectory records didn't carry a
+    // template id), so we key by agentSlotHash across summaries
+    // which IS tied to template identity (agent_slot_id →
+    // conversation → agent_gallery.id). For v2.5.0 we seed the
+    // patch from the memory-summary consolidation above — templates
+    // with active domain knowledge on the fleet get a patch; others
+    // stay un-patched. Future passes will tighten the correlation.
+    const templatePatches = buildTemplatePatches(db, consolidatedSummaries);
+
     db.prepare(
       `INSERT INTO consolidated_learnings (version, published_at, payload, trajectory_count, contributing_devices)
        VALUES (?, ?, ?, ?, ?)`
-    ).run(version, publishedAt, JSON.stringify(ranked), ranked.length, contributingDeviceCount);
+    ).run(
+      version,
+      publishedAt,
+      JSON.stringify({
+        trajectories: ranked,
+        memorySummaries: consolidatedSummaries,
+        templatePatches,
+      }),
+      ranked.length,
+      contributingDeviceCount
+    );
 
     // Mark source rows as consumed so the next run only sees new data.
     // v2.5.0 Phase B1 — also consume consumption_feedback rows.
-    const allSourceIds = [...Array.from(byHash.values()).flatMap((c) => c.sourceIds), ...feedbackSourceIds];
+    // v2.5.0 Phase C2 — also consume memory_summary rows.
+    const memorySourceIds = Array.from(bySlot.values()).flatMap((b) => b.sourceIds);
+    const allSourceIds = [
+      ...Array.from(byHash.values()).flatMap((c) => c.sourceIds),
+      ...feedbackSourceIds,
+      ...memorySourceIds,
+    ];
     if (allSourceIds.length > 0) {
       const chunkSize = 500;
       for (let i = 0; i < allSourceIds.length; i += chunkSize) {
@@ -443,13 +567,40 @@ export async function runDreamPass(db: ISqliteDriver, options?: { keepTopN?: num
 }
 
 /**
- * Best-effort LLM distillation of task descriptions. Mutates cluster
- * objects in-place so Pass 3 reads the distilled values. Any error
- * short-circuits to "keep the original description" for every cluster
- * in the batch — not per-cluster — because a failing model config
- * will fail every call identically and retrying each one wastes time.
+ * v2.5.0 Phase C1 — structured distillation.
+ *
+ * Pre-v2.5 this function asked the LLM to compress the task
+ * description into ≤15 words. That produced a renamed task, not a
+ * generalizable rule — agents got the same guidance they'd get from
+ * the raw description with extra LLM cost and latency.
+ *
+ * v2.5.0 upgrades the prompt to extract structured knowledge:
+ *   - `taskShape` — normalized intent (the old 15-word compression)
+ *   - `preferredPath` — winning tool sequence for success clusters
+ *   - `avoidancePath` — known-bad tool sequence for failure clusters
+ *   - `triggerCondition` — "when user says X, expect Y to fail if Z"
+ *
+ * Output is JSON parsed into DistilledInsight. Cluster mutation writes
+ * both `taskDescription` (for back-compat with pre-v2.5 retrieval)
+ * AND a new `insight` field (for Phase C3 template evolution + slave
+ * retrieval hints). Best-effort: on any parse failure or LLM error,
+ * the cluster keeps its original description and a null insight.
  */
-async function tryDistillBatch(clusters: { taskDescription: string }[]): Promise<void> {
+type DistilledInsight = {
+  taskShape: string;
+  preferredPath?: string;
+  avoidancePath?: string;
+  triggerCondition?: string;
+};
+
+type DistillableCluster = {
+  taskDescription: string;
+  trajectoryJson: string;
+  failurePattern?: boolean;
+  insight?: DistilledInsight | null;
+};
+
+async function tryDistillBatch(clusters: DistillableCluster[]): Promise<void> {
   try {
     const { ProcessConfig } = await import('@process/utils/initStorage');
     const providers = (await ProcessConfig.get('model.config')) as
@@ -470,13 +621,33 @@ async function tryDistillBatch(clusters: { taskDescription: string }[]): Promise
     // cadence by three orders of magnitude — no need for concurrency.
     for (const cluster of clusters) {
       try {
+        const systemPrompt = cluster.failurePattern
+          ? `You are analyzing a cluster of failed agent turns across a fleet. Extract generalizable AVOIDANCE knowledge.
+
+Return strict JSON with these fields (no prose, no markdown fences):
+{
+  "taskShape": "<1 sentence, max 15 words, normalized intent>",
+  "avoidancePath": "<the tool sequence that tends to fail, 1 short sentence>",
+  "triggerCondition": "<when to watch for this failure, 1 short sentence; optional>"
+}
+
+No other fields. If unsure, omit the optional field entirely rather than guessing.`
+          : `You are analyzing a cluster of successful agent turns across a fleet. Extract generalizable REUSABLE knowledge.
+
+Return strict JSON with these fields (no prose, no markdown fences):
+{
+  "taskShape": "<1 sentence, max 15 words, normalized intent>",
+  "preferredPath": "<the tool sequence that works, 1 short sentence>",
+  "triggerCondition": "<when to apply this pattern, 1 short sentence; optional>"
+}
+
+No other fields. If unsure, omit the optional field entirely rather than guessing.`;
+
+        const userContent = `Task description: ${cluster.taskDescription}\nTool steps (JSON): ${cluster.trajectoryJson.slice(0, 2000)}`;
+
         const response = await llm.invoke([
-          {
-            role: 'system',
-            content:
-              'Distill the following task description into a single concise sentence (max 15 words) capturing the core intent. Output only the distilled sentence — no preamble, no quotes, no markdown.',
-          },
-          { role: 'user', content: cluster.taskDescription },
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userContent },
         ]);
         const text =
           typeof response.content === 'string'
@@ -490,9 +661,12 @@ async function tryDistillBatch(clusters: { taskDescription: string }[]): Promise
                   )
                   .join(' ')
               : '';
-        const trimmed = text.trim();
-        if (trimmed.length > 0 && trimmed.length <= 300) {
-          cluster.taskDescription = trimmed;
+        const parsed = parseDistilledInsight(text);
+        if (parsed) {
+          cluster.insight = parsed;
+          if (parsed.taskShape.length > 0 && parsed.taskShape.length <= 300) {
+            cluster.taskDescription = parsed.taskShape;
+          }
         }
       } catch (e) {
         // Swallow per-cluster; keep original description.
@@ -503,6 +677,102 @@ async function tryDistillBatch(clusters: { taskDescription: string }[]): Promise
     // Whole-batch failure (bad provider config, network) — leave all
     // descriptions untouched.
     logNonCritical('fleet.learning.distill-batch', e);
+  }
+}
+
+/**
+ * v2.5.0 Phase C3 — synthesize template patches from the
+ * consolidated memory summaries. For each agentSlotHash bucket with
+ * >=2 contributing devices, build a short markdown patch that slaves
+ * will append to the corresponding template's `instructionsMd` at
+ * spawn time. agentSlotHash ↔ template id mapping is done slave-side
+ * (each slave knows which template its agent_slot_id came from via
+ * agent_gallery.id = agentSlotHash lookup).
+ *
+ * Intentionally conservative — we don't call the LLM here, just
+ * produce a deterministic patch from the summary content. A later
+ * iteration can add an LLM refinement step if the quality bar
+ * warrants it.
+ */
+function buildTemplatePatches(
+  _db: ISqliteDriver,
+  summaries: Array<{
+    agentSlotHash: string;
+    entries: Array<{ contentJson: string; deviceId: string; receivedAt: number }>;
+    contributingDevices: number;
+  }>
+): Array<{ agentGalleryId: string; fleetInstructionsMd: string; clusterCount: number; maxRankScore: number }> {
+  const MIN_DEVICES_FOR_PATCH = 2;
+  const MAX_PATCH_BYTES = 1024;
+  return summaries
+    .filter((s) => s.contributingDevices >= MIN_DEVICES_FOR_PATCH)
+    .map((s) => {
+      // The agentGalleryId IS the agent_gallery.id on the slave; the
+      // slave's agent_memory.agent_slot_id is the synthetic teammate
+      // slot id on master, whose fleetBinding.remoteSlotId equals
+      // the slave's agent_gallery.id. Close enough for v2.5.0 — the
+      // slave validates existence before writing anyway.
+      const agentGalleryId = s.agentSlotHash;
+      const bulletPoints = s.entries.slice(0, 3).map((e) => {
+        const excerpt = (e.contentJson || '').slice(0, 180).replace(/\s+/g, ' ');
+        return `- ${excerpt}`;
+      });
+      const md = [
+        `## Fleet-Learned Notes (${String(s.contributingDevices)} device${s.contributingDevices === 1 ? '' : 's'})`,
+        '',
+        'Recent recurring observations across the fleet for this agent persona:',
+        '',
+        ...bulletPoints,
+        '',
+        '_Apply these as weak hints — defer to the base instructions on conflict._',
+      ].join('\n');
+      const fleetInstructionsMd = md.length > MAX_PATCH_BYTES ? md.slice(0, MAX_PATCH_BYTES - 3) + '...' : md;
+      return {
+        agentGalleryId,
+        fleetInstructionsMd,
+        clusterCount: s.entries.length,
+        maxRankScore: 0, // reserved for v2.6.0 — tie into ranked trajectory scores
+      };
+    });
+}
+
+/**
+ * v2.5.0 Phase C1 — parse the structured-JSON response from the
+ * distillation LLM. Handles models that wrap JSON in ```json fences
+ * (common with Claude Sonnet / GPT-4) by stripping them before
+ * JSON.parse. Returns null on any validation failure — caller treats
+ * that as "keep the original description, no insight extracted."
+ */
+function parseDistilledInsight(raw: string): DistilledInsight | null {
+  if (!raw) return null;
+  let body = raw.trim();
+  // Strip ```json ... ``` or ``` ... ``` fences if the model wrapped
+  // its response.
+  const fenceMatch = body.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
+  if (fenceMatch && fenceMatch[1]) body = fenceMatch[1].trim();
+  // Find the first { and last } — more forgiving than a strict
+  // whole-string parse when the model adds a trailing explanation.
+  const start = body.indexOf('{');
+  const end = body.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  try {
+    const obj = JSON.parse(body.slice(start, end + 1)) as unknown;
+    if (obj === null || typeof obj !== 'object') return null;
+    const rec = obj as Record<string, unknown>;
+    if (typeof rec.taskShape !== 'string' || rec.taskShape.length === 0) return null;
+    const insight: DistilledInsight = { taskShape: rec.taskShape };
+    if (typeof rec.preferredPath === 'string' && rec.preferredPath.length > 0) {
+      insight.preferredPath = rec.preferredPath;
+    }
+    if (typeof rec.avoidancePath === 'string' && rec.avoidancePath.length > 0) {
+      insight.avoidancePath = rec.avoidancePath;
+    }
+    if (typeof rec.triggerCondition === 'string' && rec.triggerCondition.length > 0) {
+      insight.triggerCondition = rec.triggerCondition;
+    }
+    return insight;
+  } catch {
+    return null;
   }
 }
 

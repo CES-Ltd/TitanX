@@ -31,6 +31,16 @@ export type GalleryAgent = {
   maxBudgetCents?: number;
   allowedTools: string[];
   instructionsMd?: string;
+  /**
+   * v2.5.0 Phase C3 — fleet-learned persona patch. Populated by the
+   * master's dream pass via the config bundle; slaves write it on
+   * applyConfigBundle; agent spawn appends it to `instructionsMd`
+   * so an agent gets both the template's base instructions AND the
+   * fleet's aggregated wisdom at once. NULL / undefined = no patch.
+   * Kept separate from instructionsMd so an admin can inspect /
+   * roll back patches without touching the base template text.
+   */
+  fleetInstructionsMd?: string;
   skillsMd?: string;
   heartbeatMd?: string;
   heartbeatIntervalSec: number;
@@ -321,6 +331,8 @@ function rowToAgent(row: Record<string, unknown>): GalleryAgent {
     maxBudgetCents: (row.max_budget_cents as number) ?? undefined,
     allowedTools: JSON.parse((row.allowed_tools as string) || '[]'),
     instructionsMd: (row.instructions_md as string) ?? undefined,
+    // v2.5.0 Phase C3 — fleet-learned persona patch (migration v72).
+    fleetInstructionsMd: (row.fleet_instructions_md as string) ?? undefined,
     skillsMd: (row.skills_md as string) ?? undefined,
     heartbeatMd: (row.heartbeat_md as string) ?? undefined,
     heartbeatIntervalSec: (row.heartbeat_interval_sec as number) ?? 0,
