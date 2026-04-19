@@ -31,7 +31,8 @@ import { decrypt, loadOrCreateMasterKey } from '@process/services/secrets/encryp
 import { logNonCritical } from '@process/utils/logNonCritical';
 import { getDatabase } from '@process/services/database';
 import { buildTelemetryReport, getTelemetryState, setTelemetryState } from './index';
-import type { IngestResult } from './types';
+import type { IngestResult, TelemetryProviderInfo } from './types';
+import type { IProvider } from '@/common/config/storage';
 
 /** 6 hours — see module docstring for the sizing rationale. */
 const PUSH_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -133,7 +134,11 @@ export async function pushOnce(masterUrl: string): Promise<void> {
       return;
     }
 
-    const report = buildTelemetryReport(db.getDriver(), windowStart, windowEnd);
+    // v2.2.0 — summarize local LLM providers so the master's hire-farm-agent
+    // modal can warn before a turn gets dispatched that would just ack with
+    // `no_provider_configured`. Summary is shape-only (no API keys).
+    const providers = await summarizeLocalProviders();
+    const report = buildTelemetryReport(db.getDriver(), windowStart, windowEnd, providers);
 
     const response = await fetch(`${stripTrailingSlash(masterUrl)}/api/fleet/telemetry`, {
       method: 'POST',
@@ -190,4 +195,44 @@ async function getCachedDeviceJwt(): Promise<string | null> {
 
 function stripTrailingSlash(url: string): string {
   return url.endsWith('/') ? url.slice(0, -1) : url;
+}
+
+/**
+ * v2.2.0 — summarize this slave's LLM providers from
+ * `ProcessConfig('model.config')` into the shape the telemetry report
+ * carries to master. NO secrets (`apiKey`, `bedrockConfig`, `baseUrl`,
+ * `modelHealth` diagnostics) leave the slave — only identity, platform,
+ * and enablement counts.
+ *
+ * Returns `undefined` on a read failure so the master distinguishes
+ * "no providers" (zero-length array) from "couldn't determine"
+ * (undefined → gating is disabled in the UI).
+ */
+async function summarizeLocalProviders(): Promise<TelemetryProviderInfo[] | undefined> {
+  try {
+    const raw = await ProcessConfig.get('model.config');
+    if (!Array.isArray(raw)) return [];
+    const providers = raw as IProvider[];
+    return providers.map((p) => {
+      const models = Array.isArray(p.model) ? p.model : [];
+      const modelEnabled = p.modelEnabled ?? {};
+      const enabledModelCount = models.reduce((acc, m) => {
+        const on = modelEnabled[m];
+        // Default is "enabled" when the map doesn't mention the model,
+        // mirroring the convention in IProvider's JSDoc.
+        return acc + (on === false ? 0 : 1);
+      }, 0);
+      return {
+        id: p.id,
+        platform: p.platform,
+        name: p.name,
+        enabled: p.enabled !== false,
+        modelCount: models.length,
+        enabledModelCount,
+      };
+    });
+  } catch (e) {
+    logNonCritical('fleet.telemetry.summarize-providers', e);
+    return undefined;
+  }
 }

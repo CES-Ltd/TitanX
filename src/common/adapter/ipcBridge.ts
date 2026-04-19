@@ -1059,6 +1059,21 @@ export const fleet = {
         enrolledAt: number;
         lastHeartbeatAt?: number;
         capabilities: Record<string, unknown>;
+        /**
+         * v2.2.0 — summary of LLM providers configured on the slave, taken
+         * from its most recent telemetry report. Absent (undefined) when
+         * the slave hasn't pushed telemetry yet or is on a pre-v2.2.0 build
+         * that doesn't emit this field; the hire modal then falls back to a
+         * neutral "Provider status unknown" note instead of blocking.
+         */
+        providers?: Array<{
+          id: string;
+          platform: string;
+          name: string;
+          enabled: boolean;
+          modelCount: number;
+          enabledModelCount: number;
+        }>;
       }>;
     },
     void

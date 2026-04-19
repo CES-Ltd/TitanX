@@ -7,6 +7,29 @@
  * tractable payloads on every push.
  */
 
+/**
+ * Summary of a single LLM provider configured on the slave. Shape-only
+ * — NO API keys, base URLs, or per-model health data. The purpose is
+ * to tell the master admin "Machine B has Anthropic + OpenAI enabled
+ * with 3 models each" so the hire-farm-agent modal can warn before a
+ * farm turn gets dispatched that would just return
+ * `no_provider_configured`.
+ */
+export type TelemetryProviderInfo = {
+  /** Provider row id on the slave — stable across pushes. */
+  id: string;
+  /** Platform identifier (e.g. 'anthropic', 'openai', 'new-api'). */
+  platform: string;
+  /** Human-readable label the slave admin set. */
+  name: string;
+  /** Provider enable flag (false = disabled in the slave's UI). */
+  enabled: boolean;
+  /** Total models configured for this provider. */
+  modelCount: number;
+  /** Models that are individually enabled (i.e. would be picked for inference). */
+  enabledModelCount: number;
+};
+
 /** Report pushed by a slave to master for a single time window. */
 export type TelemetryReport = {
   /** Inclusive epoch-ms start of the aggregation window. */
@@ -25,6 +48,13 @@ export type TelemetryReport = {
   agentCount: number;
   /** Top-5 action values by frequency in the window — helps identify hotspots. */
   topActions: Array<{ action: string; count: number }>;
+  /**
+   * v2.2.0 — LLM providers configured on the slave. Optional for backward
+   * compatibility with pre-v2.2.0 slaves that don't emit this field; the
+   * master treats an absent array as "unknown" (not "empty") and skips
+   * provider-based gating in the UI.
+   */
+  providers?: TelemetryProviderInfo[];
 };
 
 /**

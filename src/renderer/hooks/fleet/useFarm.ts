@@ -17,6 +17,15 @@ import { ipcBridge } from '@/common';
 
 const REFRESH_INTERVAL_MS = 30_000;
 
+export type FarmDeviceProvider = {
+  id: string;
+  platform: string;
+  name: string;
+  enabled: boolean;
+  modelCount: number;
+  enabledModelCount: number;
+};
+
 export type FarmDevice = {
   deviceId: string;
   hostname: string;
@@ -25,6 +34,13 @@ export type FarmDevice = {
   enrolledAt: number;
   lastHeartbeatAt?: number;
   capabilities: Record<string, unknown>;
+  /**
+   * v2.2.0 — LLM provider summary from the device's most recent
+   * telemetry push. Undefined means "no telemetry yet OR slave is
+   * pre-v2.2.0"; empty array means "slave pushed, has zero providers".
+   * HireFarmAgentModal distinguishes the two.
+   */
+  providers?: FarmDeviceProvider[];
 };
 
 export type FarmJobSummary = {

@@ -42,7 +42,20 @@ const DEFAULT_TOP_DEVICES_LIMIT = 10;
  * fresh install before some seed data lands) the missing field defaults
  * to 0 instead of crashing the push.
  */
-export function buildTelemetryReport(db: ISqliteDriver, since: number, until: number = Date.now()): TelemetryReport {
+export function buildTelemetryReport(
+  db: ISqliteDriver,
+  since: number,
+  until: number = Date.now(),
+  /**
+   * v2.2.0 — optional LLM provider summary fetched by the caller from
+   * `ProcessConfig('model.config')`. Kept out of this fn's body because
+   * ProcessConfig is async and buildTelemetryReport's callers (slavePush,
+   * unit tests) prefer a pure sync signature. Pass `undefined` (or omit)
+   * on pre-v2.2.0 paths — the report's `providers` field just stays
+   * absent, which the master treats as "unknown" rather than "empty".
+   */
+  providers?: import('./types').TelemetryProviderInfo[]
+): TelemetryReport {
   const windowStart = Math.max(0, since);
   const windowEnd = Math.max(windowStart, until);
 
@@ -96,6 +109,7 @@ export function buildTelemetryReport(db: ISqliteDriver, since: number, until: nu
     policyViolationCount,
     agentCount,
     topActions,
+    providers,
   };
 }
 
@@ -215,6 +229,9 @@ export function ingestTelemetryReport(db: ISqliteDriver, deviceId: string, repor
 
   const payload = JSON.stringify({
     topActions: report.topActions,
+    // v2.2.0 — provider summary lives inside the JSON blob so no schema
+    // migration is required. Omitted when the slave is pre-v2.2.0.
+    providers: report.providers,
   });
 
   db.prepare(
@@ -323,9 +340,14 @@ export function getDeviceTelemetry(db: ISqliteDriver, deviceId: string, limit: n
 
   return rows.map((r) => {
     let topActions: Array<{ action: string; count: number }> = [];
+    let providers: import('./types').TelemetryProviderInfo[] | undefined;
     try {
-      const parsed = JSON.parse(r.report_payload) as { topActions?: Array<{ action: string; count: number }> };
+      const parsed = JSON.parse(r.report_payload) as {
+        topActions?: Array<{ action: string; count: number }>;
+        providers?: import('./types').TelemetryProviderInfo[];
+      };
       topActions = parsed.topActions ?? [];
+      providers = parsed.providers;
     } catch {
       // Corrupt payload — surface the numeric aggregates anyway.
     }
@@ -339,9 +361,53 @@ export function getDeviceTelemetry(db: ISqliteDriver, deviceId: string, limit: n
       policyViolationCount: r.policy_violation_count,
       agentCount: r.agent_count,
       topActions,
+      providers,
       receivedAt: r.received_at,
     };
   });
+}
+
+/**
+ * v2.2.0 — return the most recent provider summary per device, keyed by
+ * deviceId. Powers the master-side HireFarmAgentModal's provider badges
+ * + no-providers warning without requiring a per-device drill-down.
+ *
+ * Returns an empty map on any query failure (best-effort — the UI still
+ * renders devices, it just can't gate on providers).
+ */
+export function getLatestProvidersByDevice(db: ISqliteDriver): Map<string, import('./types').TelemetryProviderInfo[]> {
+  const map = new Map<string, import('./types').TelemetryProviderInfo[]>();
+  try {
+    // Single query: latest report per device via GROUP BY + MAX(window_end).
+    // A correlated subquery would be clearer but slower at scale.
+    const rows = db
+      .prepare(
+        `SELECT t.device_id, t.report_payload
+         FROM fleet_telemetry_reports t
+         INNER JOIN (
+           SELECT device_id, MAX(window_end) as max_we
+           FROM fleet_telemetry_reports
+           GROUP BY device_id
+         ) latest ON latest.device_id = t.device_id AND latest.max_we = t.window_end`
+      )
+      .all() as Array<{ device_id: string; report_payload: string }>;
+
+    for (const row of rows) {
+      try {
+        const parsed = JSON.parse(row.report_payload) as {
+          providers?: import('./types').TelemetryProviderInfo[];
+        };
+        if (Array.isArray(parsed.providers)) {
+          map.set(row.device_id, parsed.providers);
+        }
+      } catch {
+        // Corrupt payload — skip this device.
+      }
+    }
+  } catch (e) {
+    logNonCritical('fleet.telemetry.latest-providers-query', e);
+  }
+  return map;
 }
 
 // ── Master: agent-template adoption (Phase E Week 3) ────────────────────

@@ -35,6 +35,7 @@ import * as activityLogService from '@process/services/activityLog';
 import { TEAM_CONFIG } from './config';
 import { logNonCritical } from '@process/utils/logNonCritical';
 import { sendShapeFor } from './conversationTypes';
+import { ipcBridge } from '@/common';
 import type { AgentMessage } from './ports/IAgent';
 
 /** Available agent backend types surfaced to the leader for spawn_agent. */
@@ -284,6 +285,14 @@ export class WakeRunner {
       };
       const raw = success.assistantText?.trim() ?? '';
       const preview = raw.length > 0 ? raw : '(farm agent returned empty response)';
+
+      // v2.2.0 — persist the assistant reply into the farm agent's
+      // conversation so the Lead-chat MessageList renders the
+      // transcript identically to a local teammate. Fire the IPC
+      // stream event too so any open FarmChat MessageList picks it up
+      // without waiting for the DB poll.
+      this.writeFarmAssistantMessage(agent, raw.length > 0 ? raw : preview);
+
       this.ctx.setStatus(slotId, 'completed', preview.slice(0, 200));
       this.auditAsync('fleet.agent.wake_completed', slotId, {
         teamId: this.ctx.teamId,
@@ -296,6 +305,10 @@ export class WakeRunner {
     }
 
     const failure = result as { ok: false; failure: { message: string; kind: string; retryable: boolean } };
+    // v2.2.0 — surface the farm failure reason in the transcript too
+    // so the user sees (e.g.) "no_provider_configured" instead of
+    // silently-empty UI.
+    this.writeFarmAssistantMessage(agent, `Farm dispatch failed: ${failure.failure.message}`);
     this.ctx.setStatus(slotId, 'failed', failure.failure.message.slice(0, 200));
     this.auditAsync('fleet.agent.wake_failed', slotId, {
       teamId: this.ctx.teamId,
@@ -304,6 +317,35 @@ export class WakeRunner {
       failureKind: failure.failure.kind,
       retryable: failure.failure.retryable,
     });
+  }
+
+  /**
+   * v2.2.0 — persist an assistant bubble into the farm agent's
+   * conversation and emit the stream event any open renderer is
+   * listening to. Keeps farm transcripts on parity with local agents'.
+   */
+  private writeFarmAssistantMessage(agent: TeamAgent, content: string): void {
+    if (!agent.conversationId) return;
+    const msgId = crypto.randomUUID();
+    try {
+      addMessage(agent.conversationId, {
+        id: msgId,
+        msg_id: msgId,
+        type: 'text',
+        position: 'left',
+        conversation_id: agent.conversationId,
+        content: { content },
+        createdAt: Date.now(),
+      });
+      ipcBridge.conversation.responseStream.emit({
+        type: 'content',
+        conversation_id: agent.conversationId,
+        msg_id: msgId,
+        data: content,
+      } as unknown as Parameters<typeof ipcBridge.conversation.responseStream.emit>[0]);
+    } catch (e) {
+      logNonCritical('fleet.agent.write-assistant-message', e);
+    }
   }
 
   /**

@@ -20,7 +20,6 @@ import AionrsModelSelector from '@/renderer/pages/conversation/platforms/aionrs/
 import { useAionrsModelSelection } from '@/renderer/pages/conversation/platforms/aionrs/useAionrsModelSelection';
 import TeamTabs from './components/TeamTabs';
 import TeamChatView from './components/TeamChatView';
-import FarmAgentPanel from './components/FarmAgentPanel';
 import { agentFromKey, resolveConversationType, resolveTeamAgentType } from './components/agentSelectUtils';
 import { TeamTabsProvider, useTeamTabs } from './hooks/TeamTabsContext';
 import { TeamPermissionProvider } from './hooks/TeamPermissionContext';
@@ -65,14 +64,15 @@ const AgentChatSlot: React.FC<{
   onToggleFullscreen?: () => void;
   onRemove?: () => void;
 }> = ({ agent, teamId, isLead, isFullscreen = false, runtimeStatus, onToggleFullscreen, onRemove }) => {
-  // v2.1.3: farm-backed agents have a synthetic farm-<uuid> conversationId
-  // that never exists in the conversations table. Skip the fetch so the
-  // FarmAgentPanel below renders immediately instead of spinning forever
-  // waiting for a conversation object the main process can't produce.
+  // v2.2.0: farm-backed agents now own a real `type: 'farm'`
+  // conversation row, so the normal fetch + TeamChatView pipeline
+  // handles them (TeamChatView's 'farm' case renders FarmChat, which
+  // wraps MessageList + FarmSendBox identically to the Lead view).
+  // Only the model-selector chrome + workerTaskManager bootstrap are
+  // still farm-specific and skipped below.
   const isFarm = agent.backend === 'farm';
-  const { data: conversation } = useSWR(
-    !isFarm && agent.conversationId ? ['team-conversation', agent.conversationId] : null,
-    () => ipcBridge.conversation.get.invoke({ id: agent.conversationId })
+  const { data: conversation } = useSWR(agent.conversationId ? ['team-conversation', agent.conversationId] : null, () =>
+    ipcBridge.conversation.get.invoke({ id: agent.conversationId })
   );
   const logo = getAgentLogo(agent.agentType);
 
@@ -163,9 +163,7 @@ const AgentChatSlot: React.FC<{
         </div>
       </div>
       <div className='relative flex flex-col flex-1 min-h-0'>
-        {isFarm ? (
-          <FarmAgentPanel agent={agent} teamId={teamId} runtimeStatus={runtimeStatus} />
-        ) : conversation ? (
+        {conversation ? (
           <TeamChatView
             conversation={conversation as TChatConversation}
             teamId={teamId}

@@ -22,7 +22,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Form, Input, Message, Modal, Select } from '@arco-design/web-react';
+import { Alert, Button, Form, Input, Message, Modal, Select, Tag } from '@arco-design/web-react';
 import { ipcBridge } from '@/common';
 import type { IGalleryAgent } from '@/common/adapter/ipcBridge';
 import { useFarmDevices } from '@renderer/hooks/fleet/useFarm';
@@ -81,6 +81,22 @@ const HireFarmAgentModal: React.FC<Props> = ({ open, onClose, defaultTeamId }) =
       })),
     [devices]
   );
+
+  // v2.2.0 — watch the selected device in the form so we can render a
+  // provider-badge strip + a red callout when the slave has no enabled
+  // providers. The Hire button disables when the slave clearly has
+  // nothing to run inference against (explicit empty array); undefined
+  // means the slave is pre-v2.2.0 or hasn't pushed telemetry yet, so we
+  // don't block the operator.
+  const selectedDeviceId = Form.useWatch('deviceId', form) as string | undefined;
+  const selectedDevice = useMemo(
+    () => devices.find((d) => d.deviceId === selectedDeviceId),
+    [devices, selectedDeviceId]
+  );
+  const selectedProviders = selectedDevice?.providers;
+  const providersUnknown = selectedProviders === undefined;
+  const hasUsableProvider =
+    providersUnknown || (selectedProviders?.some((p) => p.enabled && p.enabledModelCount > 0) ?? false);
 
   const handleSubmit = useCallback(async () => {
     try {
@@ -147,7 +163,7 @@ const HireFarmAgentModal: React.FC<Props> = ({ open, onClose, defaultTeamId }) =
           <Button
             type='primary'
             loading={submitting}
-            disabled={devices.length === 0 || templates.length === 0}
+            disabled={devices.length === 0 || templates.length === 0 || !hasUsableProvider}
             onClick={() => void handleSubmit()}
           >
             {t('fleet.farm.hire.confirm', { defaultValue: 'Hire' })}
@@ -191,6 +207,63 @@ const HireFarmAgentModal: React.FC<Props> = ({ open, onClose, defaultTeamId }) =
               options={deviceOptions}
             />
           </Form.Item>
+
+          {/* v2.2.0 — provider visibility for the selected device. Three
+              states: (a) not selected yet → nothing, (b) selected +
+              providers reported → badge strip, (c) selected + empty
+              providers → red callout + Hire disabled upstream. */}
+          {selectedDevice && (
+            <div className='mb-3'>
+              {providersUnknown ? (
+                <div className='text-11px text-t-tertiary'>
+                  {t('fleet.farm.hire.providersUnknown', {
+                    defaultValue:
+                      'Provider status unknown (this device hasn\u2019t pushed telemetry yet). Hire at your own risk.',
+                  })}
+                </div>
+              ) : selectedProviders && selectedProviders.length > 0 ? (
+                <div>
+                  <div className='text-11px font-medium text-t-secondary mb-1'>
+                    {t('fleet.farm.hire.providersLabel', { defaultValue: 'Providers on this device' })}
+                  </div>
+                  <div className='flex flex-wrap gap-1'>
+                    {selectedProviders.map((p) => {
+                      const usable = p.enabled && p.enabledModelCount > 0;
+                      return (
+                        <Tag
+                          key={p.id}
+                          size='small'
+                          color={usable ? 'green' : undefined}
+                          bordered={!usable}
+                        >
+                          {p.name} · {String(p.enabledModelCount)}/{String(p.modelCount)}
+                          {!p.enabled ? ` (${t('fleet.farm.hire.providerDisabled', { defaultValue: 'disabled' })})` : ''}
+                        </Tag>
+                      );
+                    })}
+                  </div>
+                  {!hasUsableProvider && (
+                    <Alert
+                      className='mt-2'
+                      type='warning'
+                      content={t('fleet.farm.hire.providersNoneUsable', {
+                        defaultValue:
+                          'All providers on this device are disabled or have no enabled models. Farm turns would ack with no_provider_configured.',
+                      })}
+                    />
+                  )}
+                </div>
+              ) : (
+                <Alert
+                  type='error'
+                  content={t('fleet.farm.hire.providersEmpty', {
+                    defaultValue:
+                      'This device has no LLM providers configured. On that machine, open Settings \u2192 Model providers and add one before hiring.',
+                  })}
+                />
+              )}
+            </div>
+          )}
           <Form.Item
             field='templateId'
             label={t('fleet.farm.hire.templateLabel', { defaultValue: 'Agent template' })}

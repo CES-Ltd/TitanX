@@ -167,12 +167,11 @@ export class TeamSession extends EventEmitter {
     });
 
     const agent = this.teammateManager.getAgents().find((a) => a.slotId === slotId);
-    // v2.1.2 fix: farm-backed agents use a synthetic farm-<uuid> conversationId
-    // that has no row in conversations / chat.history, so addMessage +
-    // responseStream.emit would both log noise / no-op. Wake the slot
-    // directly — the mailbox carries the user's message to the farm
-    // adapter via dispatchFarmTurn.
-    if (agent?.conversationId && agent.backend !== 'farm') {
+    // v2.2.0: farm-backed agents now own a real `type: 'farm'`
+    // conversation row, so addMessage writes a persisted user bubble
+    // just like for local teammates. The v2.1.2 farm-guard here is
+    // removed — it was a workaround for the missing conversation.
+    if (agent?.conversationId) {
       const msgId = crypto.randomUUID();
       const userMessage: TMessage = {
         id: msgId,

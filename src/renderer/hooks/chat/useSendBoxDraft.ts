@@ -50,6 +50,12 @@ type Draft =
       content: string;
       atPath: Array<string | FileOrFolderItem>;
       uploadFile: string[];
+    }
+  | {
+      _type: 'farm';
+      content: string;
+      atPath: Array<string | FileOrFolderItem>;
+      uploadFile: string[];
     };
 
 /**
@@ -67,6 +73,10 @@ const store: SendBoxDraftStore = {
   nanobot: new Map(),
   remote: new Map(),
   aionrs: new Map(),
+  // v2.2.0 — farm-backed team members. FarmSendBox uses its own local
+  // state (no persistent draft across conversations), but the store
+  // still needs a bucket to satisfy the exhaustive type check.
+  farm: new Map(),
 };
 
 const setDraft = <K extends TChatConversation['type']>(

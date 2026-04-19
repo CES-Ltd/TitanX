@@ -448,6 +448,44 @@ export type TChatConversation =
       >,
       'model'
     >
+  | Omit<
+      IChatConversation<
+        'farm',
+        {
+          /**
+           * v2.2.0 — Farm-backed team member. Turns run remotely on a
+           * fleet slave via the signed `agent.execute` command. No local
+           * worker task; messages flow through the team mailbox →
+           * WakeRunner.dispatchFarmTurn pipeline.
+           */
+          workspace?: string;
+          customWorkspace?: boolean;
+          /** Device id of the slave hosting this agent. */
+          deviceId: string;
+          /** Slave-side gallery id the master asked the slave to load. */
+          remoteSlotId: string;
+          /** Team this farm agent belongs to (for UI disambiguation). */
+          teamId?: string;
+          /** Agent slot id inside the team (required when routing messages). */
+          agentSlotId?: string;
+          /** Reserved for v2.3.0 tool allowlist enforcement. */
+          toolsAllowlist?: string[];
+          /** Enabled skills list (honored by hub components that scan conversations). */
+          enabledSkills?: string[];
+          /** Preset assistant id — carries through hub UI helpers. */
+          presetAssistantId?: string;
+          /** Whether this conversation is pinned */
+          pinned?: boolean;
+          /** Pin timestamp in milliseconds */
+          pinnedAt?: number;
+          /** Health-check marker — farm agents don't use this but the shared type guards it. */
+          isHealthCheck?: boolean;
+          /** Cron job ID that spawned this conversation — farm conversations don't use this. */
+          cronJobId?: string;
+        }
+      >,
+      'model'
+    >
   | IChatConversation<
       'aionrs',
       {
