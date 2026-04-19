@@ -216,16 +216,24 @@ async function isLearningEnabledForDevice(): Promise<boolean> {
   }
   try {
     const db = await getDatabase();
-    // fleet.learning.enabled travels through the managed_config_keys
-    // table (Phase C config-bundle extension). We read it via the
-    // security_features pathway since that's where managed feature
-    // toggles land from bundle apply.
+    // v2.5.0 Phase A1 — default-on for fleet-enrolled slaves. The
+    // learning push loop only starts AFTER successful enrollment
+    // (fleetSlave/index.ts:118), so if we're running this gate we're
+    // already a slave with a device JWT. Absent row = not explicitly
+    // disabled by master = opt-in by default. An explicit row with
+    // enabled=0 still wins (master can kill-switch per device via
+    // the config bundle). The pre-v2.5 behavior (absent row = off)
+    // meant the fleet never self-evolved out of the box — documented
+    // gap in the dream-mode architecture review.
     const row = db
       .getDriver()
       .prepare(`SELECT enabled FROM security_features WHERE feature = 'fleet.learning.enabled' LIMIT 1`)
       .get() as { enabled: number } | undefined;
-    return row?.enabled === 1;
+    if (!row) return true;
+    return row.enabled === 1;
   } catch {
+    // On any read failure, stay conservative and skip — next cycle
+    // will retry the check.
     return false;
   }
 }

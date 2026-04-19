@@ -92,11 +92,20 @@ export function findSimilarTrajectories(db: ISqliteDriver, taskDescription: stri
   const conditions = keywords.map(() => 'task_description LIKE ?').join(' OR ');
   const params = keywords.map((k) => `%${k}%`);
 
+  // v2.5.0 Phase A3 — explicit fleet-consolidated preference. Fleet-
+  // wisdom (source_tag='fleet_consolidated', aggregated across many
+  // devices) should beat a locally-repeated pattern of similar match
+  // quality. The pre-v2.5 ordering was `usage_count DESC, success_score
+  // DESC` and relied on the consolidated row's usage_count being a
+  // sum-of-all-devices (and therefore usually larger than local). But
+  // a slave that repeats one local pattern 50 times could outrank a
+  // fleet pattern seen 10 times on 5 devices — exactly the opposite of
+  // what we want. Sort by source_tag first, then the existing keys.
   const rows = db
     .prepare(
       `SELECT * FROM reasoning_bank
        WHERE (${conditions}) AND success_score >= 0.7
-       ORDER BY usage_count DESC, success_score DESC
+       ORDER BY (source_tag = 'fleet_consolidated') DESC, usage_count DESC, success_score DESC
        LIMIT ?`
     )
     .all(...params, limit) as Array<Record<string, unknown>>;

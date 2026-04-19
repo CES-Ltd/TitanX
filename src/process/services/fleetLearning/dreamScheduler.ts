@@ -50,8 +50,26 @@ const DEFAULT_KEEP_TOP_N = 500;
 const HIGH_FREQUENCY_MIN_DEVICES = 3;
 const HIGH_FREQUENCY_MIN_USAGE = 5;
 
+/**
+ * v2.5.0 Phase A2 — threshold-triggered consolidation. If this many
+ * unconsolidated trajectories pile up, the scheduler fires immediately
+ * instead of waiting for the nightly timer. Keeps latency bounded for
+ * active fleets without burning LLM tokens on quiet ones.
+ */
+const CONSOLIDATION_THRESHOLD = 50;
+/** Cadence of the threshold poll. Cheap COUNT(*) query, safe to run often. */
+const THRESHOLD_POLL_INTERVAL_MS = 10 * 60 * 1000; // 10 min
+/**
+ * v2.5.0 Phase A2 — catch-up window on boot. If the last consolidation
+ * finished more than CATCHUP_GRACE_MS ago, the scheduler fires a pass
+ * at boot instead of waiting for the next 03:00. Covers the "app was
+ * down at 03:00" case.
+ */
+const CATCHUP_GRACE_MS = 24 * 60 * 60 * 1000; // 24h
+
 let _dreamTimer: ReturnType<typeof setInterval> | null = null;
 let _firstRunTimeout: ReturnType<typeof setTimeout> | null = null;
+let _thresholdPollTimer: ReturnType<typeof setInterval> | null = null;
 let _inFlight = false;
 
 export type DreamPassResult = {
@@ -88,6 +106,21 @@ export function startDreamScheduler(db: ISqliteDriver): void {
   if (_dreamTimer || _firstRunTimeout) return;
   const hour = resolveDreamHour();
   const delayMs = msUntilNextHour(new Date(), hour);
+
+  // v2.5.0 Phase A2 — catch-up on boot. If the master was offline past
+  // a scheduled pass, the nightly fixed-hour schedule would silently
+  // skip that day. Check last consolidation recency: if stale, fire
+  // now (after a short jitter so we don't hammer the LLM on every boot
+  // of a cluster of masters).
+  const stale = isConsolidationStale(db);
+  if (stale) {
+    const jitterMs = 30_000 + Math.floor(Math.random() * 60_000); // 30-90s
+    console.log(
+      `[Dream] Last consolidation is stale (>24h) — firing catch-up pass in ${String(Math.round(jitterMs / 1000))}s`
+    );
+    setTimeout(() => void runDreamPass(db), jitterMs);
+  }
+
   console.log(
     `[Dream] Scheduler started — first run in ${String(Math.round(delayMs / 1000 / 60))} min (${String(hour)}:00 local), then every 24h`
   );
@@ -95,6 +128,48 @@ export function startDreamScheduler(db: ISqliteDriver): void {
     void runDreamPass(db);
     _dreamTimer = setInterval(() => void runDreamPass(db), DAY_MS);
   }, delayMs);
+
+  // v2.5.0 Phase A2 — threshold poll. Every 10 min, check how many
+  // unconsolidated rows sit in fleet_learnings; if over the threshold,
+  // fire a pass. Lets active fleets consolidate near-real-time without
+  // burning LLM tokens on quiet ones.
+  _thresholdPollTimer = setInterval(() => {
+    try {
+      const count = countUnconsolidated(db);
+      if (count >= CONSOLIDATION_THRESHOLD && !_inFlight) {
+        console.log(`[Dream] Threshold reached (${String(count)} unconsolidated) — firing pass now`);
+        void runDreamPass(db);
+      }
+    } catch (e) {
+      console.warn('[Dream] threshold poll failed:', e);
+    }
+  }, THRESHOLD_POLL_INTERVAL_MS);
+}
+
+function isConsolidationStale(db: ISqliteDriver): boolean {
+  try {
+    const row = db.prepare('SELECT MAX(published_at) AS ts FROM consolidated_learnings').get() as
+      | { ts: number | null }
+      | undefined;
+    const last = row?.ts ?? 0;
+    // Never consolidated → yes, stale (but only fire if there are
+    // rows to consolidate).
+    if (last === 0) return countUnconsolidated(db) > 0;
+    return Date.now() - last > CATCHUP_GRACE_MS;
+  } catch {
+    return false;
+  }
+}
+
+function countUnconsolidated(db: ISqliteDriver): number {
+  try {
+    const row = db
+      .prepare("SELECT COUNT(*) AS n FROM fleet_learnings WHERE consolidated_version IS NULL AND learning_type = 'trajectory'")
+      .get() as { n: number } | undefined;
+    return row?.n ?? 0;
+  } catch {
+    return 0;
+  }
 }
 
 export function stopDreamScheduler(): void {
@@ -105,6 +180,10 @@ export function stopDreamScheduler(): void {
   if (_dreamTimer) {
     clearInterval(_dreamTimer);
     _dreamTimer = null;
+  }
+  if (_thresholdPollTimer) {
+    clearInterval(_thresholdPollTimer);
+    _thresholdPollTimer = null;
   }
 }
 

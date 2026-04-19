@@ -105,6 +105,20 @@ export const LEARNING_EXPORT_LIMITS = {
   MAX_PAYLOAD_BYTES: 500_000,
 } as const;
 
-/** Default cadence for the slave push loop. 24h aligns with the nightly
- *  master dream pass so the master always sees fresh data each run. */
-export const LEARNING_PUSH_INTERVAL_MS = 24 * 60 * 60 * 1000;
+/**
+ * Default cadence for the slave push loop.
+ *
+ * v2.5.0 Phase A2 — lowered from 24h → 2h. The 24h setting aligned with
+ * the nightly 03:00 dream pass, but it meant a lesson learned at
+ * 10:00 AM on Slave A couldn't help Slave B until 40+ hours later
+ * (24h push + 24h dream cycle + 30s config-pull). Two hours is still
+ * lightweight at scale (payloads are capped at 500KB, the dream
+ * scheduler now threshold-triggers before the nightly timer, and
+ * push only fires if there are unexported trajectories in the
+ * window), so the extra frequency is effectively free when fleets
+ * are idle.
+ *
+ * Operators can still tune via TITANX_LEARNING_PUSH_HOURS (min 1,
+ * max 168); 2h is the sensible default for self-evolving fleets.
+ */
+export const LEARNING_PUSH_INTERVAL_MS = 2 * 60 * 60 * 1000;
