@@ -1,0 +1,383 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>TitanX — Master / Slave Fleet</title>
+    <style>
+      :root {
+        --bg: #0f172a;
+        --panel: #1e293b;
+        --panel-2: #334155;
+        --master: #3370ff;
+        --master-soft: #1e3a8a;
+        --slave: #10b981;
+        --slave-soft: #065f46;
+        --config: #f59e0b;
+        --telemetry: #ef4444;
+        --text: #e2e8f0;
+        --text-dim: #94a3b8;
+        --stroke: #475569;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: 'Inter', 'Trebuchet MS', Verdana, sans-serif;
+      }
+      body {
+        width: 1280px;
+        height: 720px;
+        overflow: hidden;
+        padding: 28px 40px;
+      }
+      h1 {
+        margin: 0 0 4px 0;
+        font-size: 22px;
+        font-weight: 600;
+      }
+      .subtitle {
+        color: var(--text-dim);
+        font-size: 13px;
+        margin: 0 0 18px 0;
+      }
+      .stage {
+        position: relative;
+        height: 600px;
+      }
+      .node {
+        position: absolute;
+        background: var(--panel);
+        border: 1px solid var(--stroke);
+        border-radius: 10px;
+        padding: 12px 14px;
+        min-width: 160px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+      }
+      .node.master {
+        background: linear-gradient(135deg, #1e40af, #3370ff);
+        border-color: var(--master);
+        box-shadow:
+          0 0 24px rgba(51, 112, 255, 0.35),
+          0 4px 12px rgba(0, 0, 0, 0.3);
+      }
+      .node.slave {
+        background: linear-gradient(135deg, var(--slave-soft), #0f766e);
+        border-color: var(--slave);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      }
+      .node.hub {
+        background: linear-gradient(135deg, #7c2d12, #ea580c);
+        border-color: #f97316;
+      }
+      .node .title {
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 4px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .node .sub {
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.7);
+        line-height: 1.4;
+      }
+      .node .ico {
+        font-size: 16px;
+      }
+
+      /* Master top */
+      #master {
+        left: 520px;
+        top: 0;
+        min-width: 240px;
+      }
+
+      /* Config hub (middle) */
+      #hub {
+        left: 520px;
+        top: 140px;
+        min-width: 240px;
+      }
+
+      /* Slaves — 3 across bottom */
+      #slave1 {
+        left: 60px;
+        top: 360px;
+      }
+      #slave2 {
+        left: 560px;
+        top: 360px;
+      }
+      #slave3 {
+        left: 1060px;
+        top: 360px;
+      }
+
+      /* Feature badges under each slave */
+      .badges {
+        position: absolute;
+        top: 460px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        width: 200px;
+      }
+      .badge {
+        background: var(--panel);
+        border: 1px solid var(--stroke);
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-size: 10.5px;
+        color: var(--text-dim);
+      }
+      .badge b {
+        color: var(--slave);
+        font-weight: 600;
+      }
+
+      /* SVG overlay for lines + flow particles */
+      svg.overlay {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        width: 100%;
+        height: 100%;
+      }
+      .line {
+        stroke: var(--stroke);
+        stroke-width: 2;
+        fill: none;
+      }
+      .line.dashed {
+        stroke-dasharray: 6 6;
+      }
+
+      /* Flowing particles — pulses along the paths */
+      .pulse {
+        fill: var(--config);
+        r: 5;
+        filter: drop-shadow(0 0 6px currentColor);
+      }
+      .pulse.config {
+        fill: var(--config);
+        color: var(--config);
+      }
+      .pulse.telemetry {
+        fill: var(--telemetry);
+        color: var(--telemetry);
+      }
+      .pulse.command {
+        fill: #8b5cf6;
+        color: #8b5cf6;
+      }
+
+      @keyframes fade-in {
+        from {
+          opacity: 0;
+          transform: translateY(4px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      .node,
+      .badges {
+        animation: fade-in 0.6s ease backwards;
+      }
+      #master {
+        animation-delay: 0s;
+      }
+      #hub {
+        animation-delay: 0.2s;
+      }
+      #slave1 {
+        animation-delay: 0.4s;
+      }
+      #slave2 {
+        animation-delay: 0.5s;
+      }
+      #slave3 {
+        animation-delay: 0.6s;
+      }
+
+      /* Label chips on flow lanes */
+      .lane-label {
+        position: absolute;
+        background: var(--panel);
+        border: 1px solid var(--stroke);
+        padding: 3px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        color: var(--text-dim);
+      }
+      .lane-label.config {
+        color: var(--config);
+        border-color: var(--config);
+      }
+      .lane-label.telemetry {
+        color: var(--telemetry);
+        border-color: var(--telemetry);
+      }
+      .lane-label.command {
+        color: #a78bfa;
+        border-color: #8b5cf6;
+      }
+
+      /* Signed badge */
+      .signed {
+        position: absolute;
+        right: -8px;
+        top: -8px;
+        background: #065f46;
+        color: #10b981;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 600;
+      }
+
+      .corner {
+        position: absolute;
+        bottom: 12px;
+        left: 40px;
+        color: var(--text-dim);
+        font-size: 11px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>TitanX Fleet Mode — Master / Slave (Workforce)</h1>
+    <p class="subtitle">
+      IT-administered fleets. Master publishes signed config bundles. Slaves enroll, apply policies, report telemetry,
+      and execute destructive commands only with admin re-auth.
+    </p>
+
+    <div class="stage">
+      <!-- Master at top -->
+      <div class="node master" id="master">
+        <div class="title"><span class="ico">🏛️</span> Master</div>
+        <div class="sub">IT admin · Ed25519 signing key<br />IAM policies · Agent templates</div>
+      </div>
+
+      <!-- Config hub -->
+      <div class="node hub" id="hub">
+        <div class="title"><span class="ico">📦</span> Signed Config Bundle</div>
+        <div class="sub">version++ · IAM · templates · managed keys · security features</div>
+        <div class="signed">ED25519</div>
+      </div>
+
+      <!-- Slaves -->
+      <div class="node slave" id="slave1">
+        <div class="title"><span class="ico">💻</span> Slave · Device A</div>
+        <div class="sub">Enrolled · JWT cached · polls every 30s</div>
+      </div>
+      <div class="node slave" id="slave2">
+        <div class="title"><span class="ico">💻</span> Slave · Device B</div>
+        <div class="sub">Enrolled · JWT cached · polls every 30s</div>
+      </div>
+      <div class="node slave" id="slave3">
+        <div class="title"><span class="ico">💻</span> Slave · Device C</div>
+        <div class="sub">Enrolled · JWT cached · polls every 30s</div>
+      </div>
+
+      <!-- Feature badges under each slave -->
+      <div class="badges" style="left: 40px">
+        <div class="badge"><b>Applies</b> IAM policies from bundle</div>
+        <div class="badge"><b>Installs</b> agent templates → gallery</div>
+        <div class="badge"><b>Locks</b> managed config keys</div>
+      </div>
+      <div class="badges" style="left: 540px">
+        <div class="badge"><b>Reports</b> telemetry windows</div>
+        <div class="badge"><b>Executes</b> signed destructive commands</div>
+        <div class="badge"><b>Refuses</b> master-locked key writes</div>
+      </div>
+      <div class="badges" style="left: 1040px">
+        <div class="badge"><b>Acks</b> commands with nonce replay-defense</div>
+        <div class="badge"><b>Revokable</b> by master at any time</div>
+        <div class="badge"><b>Full audit</b> trail on both sides</div>
+      </div>
+
+      <!-- Lane labels -->
+      <div class="lane-label config" style="left: 800px; top: 160px">⬇ config bundle (30s poll)</div>
+      <div class="lane-label telemetry" style="left: 1100px; top: 240px">telemetry ⬆</div>
+      <div class="lane-label command" style="left: 260px; top: 220px">signed commands ⬇</div>
+
+      <!-- SVG overlay -->
+      <svg class="overlay" viewBox="0 0 1200 600">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" />
+          </marker>
+        </defs>
+
+        <!-- Master to Hub -->
+        <path class="line" d="M 640 84 L 640 140" marker-end="url(#arrow)" />
+
+        <!-- Hub to each slave (config flow) -->
+        <path id="path-to-s1" class="line dashed" d="M 560 220 C 400 260, 280 280, 160 360" marker-end="url(#arrow)" />
+        <path id="path-to-s2" class="line dashed" d="M 640 220 L 640 360" marker-end="url(#arrow)" />
+        <path id="path-to-s3" class="line dashed" d="M 720 220 C 900 260, 1040 280, 1120 360" marker-end="url(#arrow)" />
+
+        <!-- Slave to Master (telemetry return) -->
+        <path
+          id="return-1"
+          class="line dashed"
+          d="M 160 360 C 280 280, 420 220, 570 60"
+          stroke="#ef4444"
+          opacity="0.55"
+        />
+        <path id="return-2" class="line dashed" d="M 640 360 L 640 90" stroke="#ef4444" opacity="0.55" />
+        <path
+          id="return-3"
+          class="line dashed"
+          d="M 1120 360 C 1040 280, 900 220, 720 60"
+          stroke="#ef4444"
+          opacity="0.55"
+        />
+
+        <!-- Animated pulses along config paths -->
+        <circle cx="-100" cy="-100" class="pulse config" r="5">
+          <animateMotion dur="3s" repeatCount="indefinite" rotate="auto">
+            <mpath href="#path-to-s1" />
+          </animateMotion>
+        </circle>
+        <circle cx="-100" cy="-100" class="pulse config" r="5">
+          <animateMotion dur="3s" repeatCount="indefinite" rotate="auto" begin="0.5s">
+            <mpath href="#path-to-s2" />
+          </animateMotion>
+        </circle>
+        <circle cx="-100" cy="-100" class="pulse config" r="5">
+          <animateMotion dur="3s" repeatCount="indefinite" rotate="auto" begin="1s">
+            <mpath href="#path-to-s3" />
+          </animateMotion>
+        </circle>
+
+        <!-- Telemetry pulses back -->
+        <circle cx="-100" cy="-100" class="pulse telemetry" r="4">
+          <animateMotion dur="4s" repeatCount="indefinite" rotate="auto" begin="1.5s">
+            <mpath href="#return-1" />
+          </animateMotion>
+        </circle>
+        <circle cx="-100" cy="-100" class="pulse telemetry" r="4">
+          <animateMotion dur="4s" repeatCount="indefinite" rotate="auto" begin="2s">
+            <mpath href="#return-2" />
+          </animateMotion>
+        </circle>
+        <circle cx="-100" cy="-100" class="pulse telemetry" r="4">
+          <animateMotion dur="4s" repeatCount="indefinite" rotate="auto" begin="2.5s">
+            <mpath href="#return-3" />
+          </animateMotion>
+        </circle>
+      </svg>
+    </div>
+
+    <div class="corner">TitanX v2.5.1 · Fleet Mode (Alpha) · Apache-2.0</div>
+  </body>
+</html>

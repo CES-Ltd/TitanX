@@ -14,6 +14,23 @@
 
 Fleet Mode turns TitanX from a single-machine app into a control-plane that coordinates many. One machine runs as **Master**, any number run as **Slaves** (in one of two flavors — Workforce or Farm), and they exchange signed commands, config bundles, and telemetry over a small HTTP surface.
 
+## Visual overview
+
+<p align="center">
+  <img src="../../diagrams/fleet-master-slave.gif" alt="Master / Slave fleet (Workforce)" width="820">
+  <br/><em>Master / Slave (Workforce) — config bundle pushed down on 30s poll; telemetry + command acks streamed back.</em>
+</p>
+
+<p align="center">
+  <img src="../../diagrams/fleet-farm-mode.gif" alt="Master / Slave / Farm mode (distributed compute)" width="820">
+  <br/><em>Master / Slave / Farm — hybrid teams dispatch signed <code>agent.execute</code> per turn; each farm slave runs a cached ACP session and streams back.</em>
+</p>
+
+<p align="center">
+  <img src="../../diagrams/dream-mode.gif" alt="Dream Mode self-evolution loop" width="820">
+  <br/><em>Dream Mode — six-step self-evolution loop: capture → push → dream → version++ → broadcast → apply.</em>
+</p>
+
 This guide covers:
 
 1. [Mode matrix](#1-mode-matrix)

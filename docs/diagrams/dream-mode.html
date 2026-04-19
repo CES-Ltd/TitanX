@@ -1,0 +1,514 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>TitanX — Dream Mode Self-Evolution</title>
+    <style>
+      :root {
+        --bg: #0f172a;
+        --panel: #1e293b;
+        --panel-light: #2a3a52;
+        --slave: #10b981;
+        --master: #3370ff;
+        --bank: #f97316;
+        --dream: #7c3aed;
+        --broadcast: #ec4899;
+        --text: #e2e8f0;
+        --text-dim: #94a3b8;
+        --stroke: #475569;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: 'Inter', 'Trebuchet MS', Verdana, sans-serif;
+      }
+      body {
+        width: 1280px;
+        height: 760px;
+        overflow: hidden;
+        padding: 28px 40px;
+      }
+      h1 {
+        margin: 0 0 4px 0;
+        font-size: 22px;
+        font-weight: 600;
+      }
+      .subtitle {
+        color: var(--text-dim);
+        font-size: 13px;
+        margin: 0 0 16px 0;
+      }
+      .stage {
+        position: relative;
+        height: 640px;
+      }
+      .node {
+        position: absolute;
+        background: var(--panel);
+        border: 1px solid var(--stroke);
+        border-radius: 10px;
+        padding: 12px 14px;
+        min-width: 180px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      }
+      .node .title {
+        font-size: 13.5px;
+        font-weight: 600;
+        margin-bottom: 4px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .node .sub {
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.75);
+        line-height: 1.4;
+      }
+      .node .ico {
+        font-size: 16px;
+      }
+      .node.slave {
+        background: linear-gradient(135deg, #065f46, #10b981);
+        border-color: #10b981;
+      }
+      .node.master {
+        background: linear-gradient(135deg, #1e40af, #3370ff);
+        border-color: var(--master);
+        box-shadow:
+          0 0 22px rgba(51, 112, 255, 0.3),
+          0 4px 12px rgba(0, 0, 0, 0.3);
+      }
+      .node.bank {
+        background: linear-gradient(135deg, #7c2d12, #ea580c);
+        border-color: var(--bank);
+      }
+      .node.dream {
+        background: linear-gradient(135deg, #4c1d95, #7c3aed);
+        border-color: var(--dream);
+        box-shadow:
+          0 0 30px rgba(124, 58, 237, 0.5),
+          0 4px 12px rgba(0, 0, 0, 0.3);
+      }
+      .node.broadcast {
+        background: linear-gradient(135deg, #9f1239, #be185d);
+        border-color: var(--broadcast);
+      }
+
+      /* Layout — circular flow reads CW */
+      #slave-a {
+        left: 40px;
+        top: 20px;
+      }
+      #slave-b {
+        left: 40px;
+        top: 500px;
+      }
+      #slave-c {
+        left: 40px;
+        top: 260px;
+      }
+      #bank {
+        left: 300px;
+        top: 260px;
+      }
+      #push {
+        left: 540px;
+        top: 100px;
+      }
+      #master {
+        left: 540px;
+        top: 260px;
+        min-width: 220px;
+      }
+      #dream {
+        left: 840px;
+        top: 260px;
+        min-width: 240px;
+      }
+      #consolidated {
+        left: 1050px;
+        top: 100px;
+      }
+      #broadcast {
+        left: 840px;
+        top: 500px;
+        min-width: 240px;
+      }
+      #apply {
+        left: 300px;
+        top: 500px;
+        min-width: 220px;
+      }
+
+      .step {
+        position: absolute;
+        background: var(--dream);
+        color: white;
+        font-size: 11px;
+        font-weight: 600;
+        padding: 4px 8px;
+        border-radius: 12px;
+        z-index: 10;
+      }
+
+      svg.overlay {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        width: 100%;
+        height: 100%;
+      }
+      .line {
+        stroke: var(--stroke);
+        stroke-width: 2;
+        fill: none;
+      }
+      .line.dashed {
+        stroke-dasharray: 6 6;
+      }
+      .pulse {
+        filter: drop-shadow(0 0 8px currentColor);
+      }
+      .pulse.traj {
+        fill: var(--bank);
+        color: var(--bank);
+      }
+      .pulse.push {
+        fill: #fbbf24;
+        color: #fbbf24;
+      }
+      .pulse.dream {
+        fill: var(--dream);
+        color: var(--dream);
+      }
+      .pulse.broadcast {
+        fill: var(--broadcast);
+        color: var(--broadcast);
+      }
+
+      @keyframes fade-in {
+        from {
+          opacity: 0;
+          transform: translateY(4px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      .node {
+        animation: fade-in 0.6s ease backwards;
+      }
+      #slave-a {
+        animation-delay: 0s;
+      }
+      #slave-b {
+        animation-delay: 0.1s;
+      }
+      #slave-c {
+        animation-delay: 0.1s;
+      }
+      #bank {
+        animation-delay: 0.25s;
+      }
+      #master {
+        animation-delay: 0.4s;
+      }
+      #dream {
+        animation-delay: 0.55s;
+      }
+      #broadcast {
+        animation-delay: 0.7s;
+      }
+      #apply {
+        animation-delay: 0.85s;
+      }
+
+      @keyframes dream-pulse {
+        0%,
+        100% {
+          box-shadow:
+            0 0 30px rgba(124, 58, 237, 0.4),
+            0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+        50% {
+          box-shadow:
+            0 0 60px rgba(124, 58, 237, 0.85),
+            0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+      }
+      .node.dream {
+        animation: dream-pulse 2.5s ease-in-out infinite;
+      }
+
+      .lane-label {
+        position: absolute;
+        background: var(--panel);
+        border: 1px solid var(--stroke);
+        padding: 3px 8px;
+        border-radius: 4px;
+        font-size: 10.5px;
+        color: var(--text-dim);
+      }
+
+      .corner {
+        position: absolute;
+        bottom: 12px;
+        left: 40px;
+        color: var(--text-dim);
+        font-size: 11px;
+      }
+      .legend {
+        position: absolute;
+        bottom: 12px;
+        right: 40px;
+        display: flex;
+        gap: 14px;
+        font-size: 11px;
+        color: var(--text-dim);
+      }
+      .legend .dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        vertical-align: middle;
+        margin-right: 4px;
+        box-shadow: 0 0 6px currentColor;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>TitanX Dream Mode — Self-Evolving Fleet (v2.5.0)</h1>
+    <p class="subtitle">
+      Slaves capture trajectories locally. A 2 h push sends them to master. A nightly dream pass dedup + distill +
+      rank + consolidate. Fleet-wide wisdom broadcasts back in the config bundle. Every slave is smarter on the next
+      turn.
+    </p>
+
+    <div class="stage">
+      <!-- Slaves (capture side) -->
+      <div class="node slave" id="slave-a">
+        <div class="title"><span class="ico">🟢</span> Slave A · Agent Turn</div>
+        <div class="sub">TurnFinalizer stamps workspace + failure flag</div>
+      </div>
+      <div class="node slave" id="slave-c">
+        <div class="title"><span class="ico">🟢</span> Slave B · Agent Turn</div>
+        <div class="sub">ReasoningBank trajectory captured (success + failure)</div>
+      </div>
+      <div class="node slave" id="slave-b">
+        <div class="title"><span class="ico">🟢</span> Slave C · Agent Turn</div>
+        <div class="sub">Step[0] = reasoning snippet, rest = tool sequence</div>
+      </div>
+
+      <div class="node bank" id="bank">
+        <div class="title"><span class="ico">📚</span> Local reasoning_bank</div>
+        <div class="sub">trajectory_hash · workspace_id · failure_pattern · consumption counters</div>
+      </div>
+
+      <!-- Push to master -->
+      <div class="node master" id="master">
+        <div class="title"><span class="ico">🏛️</span> Master · fleet_learnings</div>
+        <div class="sub">
+          Ingested per device + workspace<br />
+          Ingestion-time dedup on (hash, workspaceId)
+        </div>
+      </div>
+
+      <!-- Dream scheduler -->
+      <div class="node dream" id="dream">
+        <div class="title"><span class="ico">🌙</span> Dream Scheduler</div>
+        <div class="sub">
+          <b>Pass 1</b> dedup by (hash, workspace)<br />
+          <b>Pass 2</b> LLM distill → insight JSON<br />
+          <b>Pass 3</b> rank by score × usage × adoption
+        </div>
+      </div>
+
+      <!-- Broadcast -->
+      <div class="node broadcast" id="broadcast">
+        <div class="title"><span class="ico">📡</span> consolidated_learnings</div>
+        <div class="sub">
+          trajectories + memory summaries + template patches<br />
+          carried on the next config bundle pull
+        </div>
+      </div>
+
+      <!-- Apply -->
+      <div class="node slave" id="apply">
+        <div class="title"><span class="ico">♻️</span> Slave applies patches</div>
+        <div class="sub">
+          reasoning_bank upserts `source_tag=fleet_consolidated`<br />
+          agent_memory gets fleet summaries · templates get persona patches
+        </div>
+      </div>
+
+      <!-- Step markers -->
+      <div class="step" style="left: 260px; top: 240px">1</div>
+      <div class="step" style="left: 510px; top: 190px">2 · 2 h push</div>
+      <div class="step" style="left: 810px; top: 240px">3 · dream</div>
+      <div class="step" style="left: 1050px; top: 240px">4 · version++</div>
+      <div class="step" style="left: 810px; top: 480px">5 · bundle</div>
+      <div class="step" style="left: 260px; top: 480px">6 · apply</div>
+
+      <div class="lane-label" style="left: 190px; top: 360px">capture</div>
+      <div class="lane-label" style="left: 700px; top: 560px">broadcast ⬅</div>
+      <div class="lane-label" style="left: 60px; top: 360px">retrieval boosted ⟳</div>
+
+      <svg class="overlay" viewBox="0 0 1200 640">
+        <defs>
+          <marker id="a-traj" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#f97316" />
+          </marker>
+          <marker id="a-push" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#fbbf24" />
+          </marker>
+          <marker id="a-dream" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#7c3aed" />
+          </marker>
+          <marker
+            id="a-broadcast"
+            viewBox="0 0 10 10"
+            refX="8"
+            refY="5"
+            markerWidth="6"
+            markerHeight="6"
+            orient="auto"
+          >
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#ec4899" />
+          </marker>
+        </defs>
+
+        <!-- (1) Slaves → local reasoning_bank -->
+        <path
+          id="p-a-bank"
+          class="line dashed"
+          stroke="#f97316"
+          d="M 240 50 C 280 120, 300 220, 300 290"
+          marker-end="url(#a-traj)"
+        />
+        <path id="p-c-bank" class="line dashed" stroke="#f97316" d="M 240 290 L 300 290" marker-end="url(#a-traj)" />
+        <path
+          id="p-b-bank"
+          class="line dashed"
+          stroke="#f97316"
+          d="M 240 530 C 280 450, 300 360, 300 300"
+          marker-end="url(#a-traj)"
+        />
+
+        <!-- (2) Bank → master push -->
+        <path
+          id="p-bank-master"
+          class="line dashed"
+          stroke="#fbbf24"
+          d="M 480 290 L 540 290"
+          marker-end="url(#a-push)"
+        />
+
+        <!-- (3) Master → Dream -->
+        <path
+          id="p-master-dream"
+          class="line dashed"
+          stroke="#7c3aed"
+          d="M 760 290 L 840 290"
+          marker-end="url(#a-dream)"
+        />
+
+        <!-- (4) Dream → broadcast -->
+        <path
+          id="p-dream-bcast"
+          class="line dashed"
+          stroke="#ec4899"
+          d="M 960 340 L 960 500"
+          marker-end="url(#a-broadcast)"
+        />
+
+        <!-- (5) Broadcast → apply on slave -->
+        <path
+          id="p-bcast-apply"
+          class="line dashed"
+          stroke="#ec4899"
+          d="M 840 540 L 520 540"
+          marker-end="url(#a-broadcast)"
+        />
+
+        <!-- (6) Apply → back to local bank (closes the loop) -->
+        <path
+          id="p-apply-bank"
+          class="line dashed"
+          stroke="#10b981"
+          d="M 320 510 C 200 440, 200 370, 300 320"
+          marker-end="url(#a-traj)"
+        />
+
+        <!-- Animated pulses — ordered timings to tell the story -->
+        <!-- Capture -->
+        <circle cx="-100" cy="-100" class="pulse traj" r="5">
+          <animateMotion dur="2s" repeatCount="indefinite" rotate="auto">
+            <mpath href="#p-a-bank" />
+          </animateMotion>
+        </circle>
+        <circle cx="-100" cy="-100" class="pulse traj" r="5">
+          <animateMotion dur="2s" repeatCount="indefinite" rotate="auto" begin="0.5s">
+            <mpath href="#p-c-bank" />
+          </animateMotion>
+        </circle>
+        <circle cx="-100" cy="-100" class="pulse traj" r="5">
+          <animateMotion dur="2s" repeatCount="indefinite" rotate="auto" begin="1s">
+            <mpath href="#p-b-bank" />
+          </animateMotion>
+        </circle>
+
+        <!-- Push to master -->
+        <circle cx="-100" cy="-100" class="pulse push" r="5">
+          <animateMotion dur="1.6s" repeatCount="indefinite" rotate="auto" begin="1.2s">
+            <mpath href="#p-bank-master" />
+          </animateMotion>
+        </circle>
+
+        <!-- Master → dream -->
+        <circle cx="-100" cy="-100" class="pulse dream" r="5">
+          <animateMotion dur="1.6s" repeatCount="indefinite" rotate="auto" begin="2s">
+            <mpath href="#p-master-dream" />
+          </animateMotion>
+        </circle>
+
+        <!-- Dream → broadcast -->
+        <circle cx="-100" cy="-100" class="pulse broadcast" r="5">
+          <animateMotion dur="1.4s" repeatCount="indefinite" rotate="auto" begin="2.6s">
+            <mpath href="#p-dream-bcast" />
+          </animateMotion>
+        </circle>
+
+        <!-- Broadcast → apply -->
+        <circle cx="-100" cy="-100" class="pulse broadcast" r="5">
+          <animateMotion dur="1.8s" repeatCount="indefinite" rotate="auto" begin="3.2s">
+            <mpath href="#p-bcast-apply" />
+          </animateMotion>
+        </circle>
+
+        <!-- Apply → bank (loop close, green) -->
+        <circle cx="-100" cy="-100" class="pulse" r="5" fill="#10b981" style="color: #10b981">
+          <animateMotion dur="2s" repeatCount="indefinite" rotate="auto" begin="4s">
+            <mpath href="#p-apply-bank" />
+          </animateMotion>
+        </circle>
+      </svg>
+    </div>
+
+    <div class="corner">TitanX v2.5.1 · Dream Mode (v2.5.0 final) · Apache-2.0</div>
+    <div class="legend">
+      <span><span class="dot" style="background: #f97316; color: #f97316"></span>capture</span>
+      <span><span class="dot" style="background: #fbbf24; color: #fbbf24"></span>push</span>
+      <span><span class="dot" style="background: #7c3aed; color: #7c3aed"></span>dream</span>
+      <span><span class="dot" style="background: #ec4899; color: #ec4899"></span>broadcast</span>
+      <span><span class="dot" style="background: #10b981; color: #10b981"></span>apply</span>
+    </div>
+  </body>
+</html>

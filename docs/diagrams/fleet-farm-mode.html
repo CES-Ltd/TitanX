@@ -1,0 +1,414 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>TitanX — Agent Farm Mode</title>
+    <style>
+      :root {
+        --bg: #0f172a;
+        --panel: #1e293b;
+        --master: #3370ff;
+        --farm: #f97316;
+        --farm-soft: #7c2d12;
+        --job: #fbbf24;
+        --result: #10b981;
+        --text: #e2e8f0;
+        --text-dim: #94a3b8;
+        --stroke: #475569;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: 'Inter', 'Trebuchet MS', Verdana, sans-serif;
+      }
+      body {
+        width: 1280px;
+        height: 720px;
+        overflow: hidden;
+        padding: 28px 40px;
+      }
+      h1 {
+        margin: 0 0 4px 0;
+        font-size: 22px;
+        font-weight: 600;
+      }
+      .subtitle {
+        color: var(--text-dim);
+        font-size: 13px;
+        margin: 0 0 18px 0;
+      }
+      .stage {
+        position: relative;
+        height: 600px;
+      }
+      .node {
+        position: absolute;
+        background: var(--panel);
+        border: 1px solid var(--stroke);
+        border-radius: 10px;
+        padding: 12px 14px;
+        min-width: 160px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+      }
+      .node.master {
+        background: linear-gradient(135deg, #1e40af, #3370ff);
+        border-color: var(--master);
+        box-shadow:
+          0 0 24px rgba(51, 112, 255, 0.35),
+          0 4px 12px rgba(0, 0, 0, 0.3);
+      }
+      .node.farm {
+        background: linear-gradient(135deg, var(--farm-soft), #c2410c);
+        border-color: var(--farm);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      }
+      .node.team {
+        background: linear-gradient(135deg, #065f46, #10b981);
+        border-color: #10b981;
+      }
+      .node .title {
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 4px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .node .sub {
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.78);
+        line-height: 1.4;
+      }
+      .node .ico {
+        font-size: 16px;
+      }
+
+      /* Master team chat on left */
+      #master {
+        left: 40px;
+        top: 20px;
+        min-width: 260px;
+      }
+      #team {
+        left: 40px;
+        top: 130px;
+        min-width: 260px;
+        padding: 10px 14px;
+      }
+      #team .member {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 6px;
+        border-radius: 4px;
+        font-size: 11.5px;
+        margin-top: 2px;
+      }
+      #team .member.local {
+        background: rgba(16, 185, 129, 0.18);
+        color: #a7f3d0;
+      }
+      #team .member.farm-bind {
+        background: rgba(249, 115, 22, 0.18);
+        color: #fed7aa;
+      }
+      #team .member .pill {
+        margin-left: auto;
+        font-size: 9px;
+        background: rgba(0, 0, 0, 0.25);
+        padding: 2px 5px;
+        border-radius: 3px;
+      }
+
+      /* Farm devices on right */
+      #farm1 {
+        left: 860px;
+        top: 40px;
+      }
+      #farm2 {
+        left: 860px;
+        top: 180px;
+      }
+      #farm3 {
+        left: 860px;
+        top: 320px;
+      }
+
+      /* Job envelope in middle */
+      #envelope {
+        left: 500px;
+        top: 200px;
+        min-width: 240px;
+        background: linear-gradient(135deg, #7c2d12, #b45309);
+        border-color: #fbbf24;
+      }
+
+      .badges {
+        position: absolute;
+        left: 40px;
+        top: 440px;
+        display: flex;
+        flex-direction: row;
+        gap: 8px;
+        flex-wrap: wrap;
+        width: 1200px;
+      }
+      .badge {
+        background: var(--panel);
+        border: 1px solid var(--stroke);
+        padding: 6px 10px;
+        border-radius: 6px;
+        font-size: 11px;
+        color: var(--text-dim);
+      }
+      .badge b {
+        color: var(--farm);
+        font-weight: 600;
+      }
+      .badge.job b {
+        color: var(--job);
+      }
+      .badge.policy b {
+        color: #a78bfa;
+      }
+      .badge.result b {
+        color: var(--result);
+      }
+
+      svg.overlay {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        width: 100%;
+        height: 100%;
+      }
+      .line {
+        stroke: var(--stroke);
+        stroke-width: 2;
+        fill: none;
+      }
+      .line.dashed {
+        stroke-dasharray: 6 6;
+      }
+      .pulse {
+        filter: drop-shadow(0 0 6px currentColor);
+      }
+      .pulse.job {
+        fill: var(--job);
+        color: var(--job);
+      }
+      .pulse.result {
+        fill: var(--result);
+        color: var(--result);
+      }
+
+      @keyframes fade-in {
+        from {
+          opacity: 0;
+          transform: translateY(4px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      .node,
+      .badges {
+        animation: fade-in 0.6s ease backwards;
+      }
+      #master {
+        animation-delay: 0s;
+      }
+      #team {
+        animation-delay: 0.15s;
+      }
+      #envelope {
+        animation-delay: 0.3s;
+      }
+      #farm1 {
+        animation-delay: 0.4s;
+      }
+      #farm2 {
+        animation-delay: 0.5s;
+      }
+      #farm3 {
+        animation-delay: 0.6s;
+      }
+
+      .lane-label {
+        position: absolute;
+        background: var(--panel);
+        border: 1px solid var(--stroke);
+        padding: 3px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        color: var(--text-dim);
+      }
+      .lane-label.job {
+        color: var(--job);
+        border-color: var(--job);
+      }
+      .lane-label.result {
+        color: var(--result);
+        border-color: var(--result);
+      }
+
+      .corner {
+        position: absolute;
+        bottom: 12px;
+        left: 40px;
+        color: var(--text-dim);
+        font-size: 11px;
+      }
+
+      /* Running pulse on farm nodes when job lands */
+      @keyframes run-glow {
+        0%,
+        100% {
+          box-shadow: 0 0 10px rgba(249, 115, 22, 0.3);
+        }
+        50% {
+          box-shadow: 0 0 28px rgba(249, 115, 22, 0.7);
+        }
+      }
+      .node.farm {
+        animation: run-glow 3s ease-in-out infinite;
+      }
+      #farm1 {
+        animation-delay: 0s, 0.5s;
+      }
+      #farm2 {
+        animation-delay: 0.15s, 1.5s;
+      }
+      #farm3 {
+        animation-delay: 0.3s, 2.5s;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>TitanX Fleet Mode — Agent Farm (Distributed Compute)</h1>
+    <p class="subtitle">
+      Hybrid teams where master's Team chat drives remote agents running ACP CLIs on farm-role slaves. One signed
+      <code>agent.execute</code> per turn. Tool allowlist enforced slave-side.
+    </p>
+
+    <div class="stage">
+      <!-- Master side -->
+      <div class="node master" id="master">
+        <div class="title"><span class="ico">🏛️</span> Master · Team Chat</div>
+        <div class="sub">Operator sends a message to a hybrid team</div>
+      </div>
+      <div class="node team" id="team">
+        <div class="title"><span class="ico">🧩</span> Hybrid Team</div>
+        <div class="member local">
+          <span>🟢</span> Lead (local)
+          <span class="pill">local</span>
+        </div>
+        <div class="member farm-bind">
+          <span>🟠</span> Backend Eng <span class="pill">farm · device B</span>
+        </div>
+        <div class="member farm-bind">
+          <span>🟠</span> QA Engineer <span class="pill">farm · device C</span>
+        </div>
+      </div>
+
+      <!-- Signed envelope -->
+      <div class="node" id="envelope">
+        <div class="title"><span class="ico">✉️</span> agent.execute (signed)</div>
+        <div class="sub">
+          jobId · slotId · messages[]<br />
+          toolsAllowlist[] · timeoutMs
+        </div>
+      </div>
+
+      <!-- Farm devices -->
+      <div class="node farm" id="farm1">
+        <div class="title"><span class="ico">🖥️</span> Farm · Device A</div>
+        <div class="sub">Claude Code · idle</div>
+      </div>
+      <div class="node farm" id="farm2">
+        <div class="title"><span class="ico">🖥️</span> Farm · Device B</div>
+        <div class="sub">Claude Code · running jobId #b812</div>
+      </div>
+      <div class="node farm" id="farm3">
+        <div class="title"><span class="ico">🖥️</span> Farm · Device C</div>
+        <div class="sub">Codex · streaming back result</div>
+      </div>
+
+      <div class="badges">
+        <div class="badge job"><b>Signed envelope</b> · Ed25519 · replay nonce</div>
+        <div class="badge policy"><b>Tool allowlist</b> enforced per turn on the slave</div>
+        <div class="badge"><b>Slave mirror team</b> materialized on farm_provision</div>
+        <div class="badge result"><b>Heartbeat stream</b> surfaces output in master's Team UI</div>
+        <div class="badge"><b>Timeout budget</b> mirrored on master + slave</div>
+        <div class="badge result"><b>Cost + usage</b> rolled up per device per day</div>
+      </div>
+
+      <div class="lane-label job" style="left: 380px; top: 180px">⬇ agent.execute</div>
+      <div class="lane-label result" style="left: 760px; top: 300px">stream ⬆</div>
+
+      <svg class="overlay" viewBox="0 0 1200 600">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" />
+          </marker>
+        </defs>
+
+        <!-- Team to envelope -->
+        <path class="line" d="M 310 170 L 480 240" marker-end="url(#arrow)" />
+
+        <!-- Envelope to each farm device -->
+        <path id="p-to-f1" class="line dashed" d="M 700 220 C 780 120, 820 80, 880 80" marker-end="url(#arrow)" />
+        <path id="p-to-f2" class="line dashed" d="M 700 240 L 880 220" marker-end="url(#arrow)" />
+        <path id="p-to-f3" class="line dashed" d="M 700 260 C 780 340, 820 360, 880 360" marker-end="url(#arrow)" />
+
+        <!-- Result streams back (farm → team) -->
+        <path id="r-1" class="line dashed" stroke="#10b981" opacity="0.55" d="M 880 80 C 620 80, 420 120, 310 180" />
+        <path id="r-2" class="line dashed" stroke="#10b981" opacity="0.55" d="M 880 220 L 310 190" />
+        <path id="r-3" class="line dashed" stroke="#10b981" opacity="0.55" d="M 880 360 C 620 360, 420 260, 310 200" />
+
+        <!-- Job pulses out -->
+        <circle cx="-100" cy="-100" class="pulse job" r="5">
+          <animateMotion dur="2s" repeatCount="indefinite" rotate="auto" begin="0.3s">
+            <mpath href="#p-to-f1" />
+          </animateMotion>
+        </circle>
+        <circle cx="-100" cy="-100" class="pulse job" r="5">
+          <animateMotion dur="2s" repeatCount="indefinite" rotate="auto" begin="0.7s">
+            <mpath href="#p-to-f2" />
+          </animateMotion>
+        </circle>
+        <circle cx="-100" cy="-100" class="pulse job" r="5">
+          <animateMotion dur="2s" repeatCount="indefinite" rotate="auto" begin="1.1s">
+            <mpath href="#p-to-f3" />
+          </animateMotion>
+        </circle>
+
+        <!-- Result pulses back -->
+        <circle cx="-100" cy="-100" class="pulse result" r="4">
+          <animateMotion dur="2.5s" repeatCount="indefinite" rotate="auto" begin="1.5s">
+            <mpath href="#r-1" />
+          </animateMotion>
+        </circle>
+        <circle cx="-100" cy="-100" class="pulse result" r="4">
+          <animateMotion dur="2.5s" repeatCount="indefinite" rotate="auto" begin="2s">
+            <mpath href="#r-2" />
+          </animateMotion>
+        </circle>
+        <circle cx="-100" cy="-100" class="pulse result" r="4">
+          <animateMotion dur="2.5s" repeatCount="indefinite" rotate="auto" begin="2.5s">
+            <mpath href="#r-3" />
+          </animateMotion>
+        </circle>
+      </svg>
+    </div>
+
+    <div class="corner">TitanX v2.5.1 · Agent Farm (Alpha) · Apache-2.0</div>
+  </body>
+</html>
