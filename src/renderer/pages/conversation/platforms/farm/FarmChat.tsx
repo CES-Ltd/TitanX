@@ -17,12 +17,17 @@
 import { ConversationProvider } from '@/renderer/hooks/context/ConversationContext';
 import FlexFullContainer from '@renderer/components/layout/FlexFullContainer';
 import MessageList from '@renderer/pages/conversation/Messages/MessageList';
-import { MessageListProvider, useMessageLstCache } from '@renderer/pages/conversation/Messages/hooks';
+import {
+  MessageListProvider,
+  useAddOrUpdateMessage,
+  useMessageLstCache,
+} from '@renderer/pages/conversation/Messages/hooks';
 import HOC from '@renderer/utils/ui/HOC';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Tag } from '@arco-design/web-react';
 import { ipcBridge } from '@/common';
+import { transformMessage } from '@/common/chat/chatLib';
 import FarmSendBox from './FarmSendBox';
 
 const FarmChat: React.FC<{
@@ -42,6 +47,35 @@ const FarmChat: React.FC<{
 }> = ({ conversation_id, workspace, teamId, agentSlotId, hideSendBox, isSlaveMirror }) => {
   const { t } = useTranslation();
   useMessageLstCache(conversation_id);
+  const addOrUpdateMessage = useAddOrUpdateMessage();
+
+  // v2.3.4 — subscribe to the response stream so farm messages the
+  // WakeRunner persists on master (user bubble + assistant reply)
+  // land in MessageList without a reload. Mirrors the pattern
+  // AcpSendBox / RemoteSendBox use; FarmSendBox itself stays
+  // send-only. Slave-side mirror conversations don't need this
+  // subscription (the farmExecutor writes messages directly to their
+  // DB and the cache loader picks them up on open), but subscribing
+  // is a harmless no-op because no events target farm-mirror-* ids.
+  useEffect(() => {
+    const off = ipcBridge.conversation.responseStream.on((message) => {
+      if (!message || message.conversation_id !== conversation_id) return;
+      // Content chunks + user echoes both flow through the generic
+      // transformer used by RemoteSendBox. Finish/status/thought are
+      // no-ops for farm (we don't show thinking UI yet).
+      if (message.type === 'content' || message.type === 'user_content') {
+        const transformed = transformMessage(message);
+        if (transformed) addOrUpdateMessage(transformed);
+      }
+    });
+    return () => {
+      try {
+        off();
+      } catch {
+        /* noop */
+      }
+    };
+  }, [conversation_id, addOrUpdateMessage]);
 
   // v2.2.1 — detect if the current machine is running in slave mode.
   // When it is, farm conversations are always read-only because the
