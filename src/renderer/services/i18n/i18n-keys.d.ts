@@ -2238,6 +2238,7 @@ export type I18nKey =
   | 'team.farm.runningOn'
   | 'team.farm.send'
   | 'team.farm.sendPlaceholder'
+  | 'team.farm.slaveMirrorBadge'
   | 'team.newAgent'
   | 'team.noMessages'
   | 'team.sendBox.placeholder'

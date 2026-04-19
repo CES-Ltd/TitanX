@@ -53,6 +53,7 @@
     "noBinding": "无车队绑定",
     "emptyHint": "发送消息以向此远程代理派发一个轮次。响应将在命令超时内通过车队通道到达。",
     "sendPlaceholder": "向农场代理发送消息…",
-    "send": "发送"
+    "send": "发送",
+    "slaveMirrorBadge": "主机农场插槽的镜像 (只读)"
   }
 }

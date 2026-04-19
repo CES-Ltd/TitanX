@@ -53,6 +53,7 @@
     "noBinding": "Filo bağı yok",
     "emptyHint": "Bu uzak ajana bir tur göndermek için mesaj gönderin. Yanıtlar komut zaman aşımı içinde filo kanalından gelir.",
     "sendPlaceholder": "Çiftlik ajanına mesaj…",
-    "send": "Gönder"
+    "send": "Gönder",
+    "slaveMirrorBadge": "Ana makinenin çiftlik yuvasının aynası (salt okunur)"
   }
 }

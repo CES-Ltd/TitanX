@@ -125,7 +125,14 @@ function recordJobFinished(
  * the rest.
  */
 export function createFleetAgentAdapter(
-  slotInfo: { slotId: string; displayName: string; teamId: string },
+  /**
+   * v2.2.1 — `teamName` (optional) threads the master's team display
+   * name through to the slave so the slave can mirror the farm work
+   * into a Teams UI that matches what the master sees. Old callers
+   * that omit it still work — the slave just names the mirror team
+   * "Farm" as a generic fallback.
+   */
+  slotInfo: { slotId: string; displayName: string; teamId: string; teamName?: string },
   config: FleetAgentAdapterConfig
 ): IAgent {
   return {
@@ -188,6 +195,11 @@ export function createFleetAgentAdapter(
           messages,
           toolsAllowlist: config.toolsAllowlist,
           timeoutMs,
+          // v2.2.1 — master team context for slave-side mirror.
+          teamId: slotInfo.teamId,
+          teamName: slotInfo.teamName ?? 'Farm',
+          agentSlotId: slotInfo.slotId,
+          agentName: slotInfo.displayName,
         },
         ttlSeconds: Math.max(60, Math.ceil(timeoutMs / 1000) + 60),
         createdBy: config.createdBy,

@@ -19,7 +19,10 @@ import FlexFullContainer from '@renderer/components/layout/FlexFullContainer';
 import MessageList from '@renderer/pages/conversation/Messages/MessageList';
 import { MessageListProvider, useMessageLstCache } from '@renderer/pages/conversation/Messages/hooks';
 import HOC from '@renderer/utils/ui/HOC';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Tag } from '@arco-design/web-react';
+import { ipcBridge } from '@/common';
 import FarmSendBox from './FarmSendBox';
 
 const FarmChat: React.FC<{
@@ -29,16 +32,47 @@ const FarmChat: React.FC<{
   agentSlotId: string;
   deviceId?: string;
   hideSendBox?: boolean;
-}> = ({ conversation_id, workspace, teamId, agentSlotId, hideSendBox }) => {
+  /**
+   * v2.2.1 — when true, the conversation is a slave-side mirror of a
+   * master-hired farm slot. The SendBox is hidden regardless of
+   * `hideSendBox` because the slave operator can't directly drive the
+   * conversation — master owns it. Also flips the header badge.
+   */
+  isSlaveMirror?: boolean;
+}> = ({ conversation_id, workspace, teamId, agentSlotId, hideSendBox, isSlaveMirror }) => {
+  const { t } = useTranslation();
   useMessageLstCache(conversation_id);
 
+  // v2.2.1 — detect if the current machine is running in slave mode.
+  // When it is, farm conversations are always read-only because the
+  // user can't initiate farm turns from a slave — they're driven by
+  // master's agent.execute commands. Local master runs (master or
+  // regular mode) render the SendBox normally.
+  const [isSlave, setIsSlave] = useState(false);
+  useEffect(() => {
+    void ipcBridge.fleet.getMode
+      .invoke()
+      .then((mode) => setIsSlave(mode === 'slave'))
+      .catch(() => setIsSlave(false));
+  }, []);
+
+  const readOnly = hideSendBox || isSlaveMirror || isSlave;
+  const showMirrorBadge = isSlaveMirror || isSlave;
+
   return (
-    <ConversationProvider value={{ conversationId: conversation_id, workspace, type: 'farm', hideSendBox }}>
+    <ConversationProvider value={{ conversationId: conversation_id, workspace, type: 'farm', hideSendBox: readOnly }}>
       <div className='flex-1 flex flex-col px-20px min-h-0'>
+        {showMirrorBadge && (
+          <div className='shrink-0 py-6px flex items-center gap-8px'>
+            <Tag size='small' color='blue' bordered>
+              {t('team.farm.slaveMirrorBadge', { defaultValue: 'Mirror of master\u2019s farm slot (read-only)' })}
+            </Tag>
+          </div>
+        )}
         <FlexFullContainer>
           <MessageList className='flex-1'></MessageList>
         </FlexFullContainer>
-        {!hideSendBox && (
+        {!readOnly && (
           <FarmSendBox conversation_id={conversation_id} teamId={teamId} agentSlotId={agentSlotId} />
         )}
       </div>

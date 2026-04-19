@@ -53,6 +53,7 @@
     "noBinding": "Nessun binding flotta",
     "emptyHint": "Invia un messaggio per dispacciare un turno a questo agente remoto. Le risposte arrivano sul canale flotta entro il timeout del comando.",
     "sendPlaceholder": "Messaggio all’agente farm…",
-    "send": "Invia"
+    "send": "Invia",
+    "slaveMirrorBadge": "Mirror dello slot farm del master (solo lettura)"
   }
 }

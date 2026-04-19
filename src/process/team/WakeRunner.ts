@@ -59,6 +59,12 @@ export type IncomingConversationMessage = {
 
 export type WakeContext = {
   teamId: string;
+  /**
+   * v2.2.1 — optional team display name threaded through to the
+   * farm adapter so slave-side mirror UI can name the team after
+   * master's team, not the opaque teamId.
+   */
+  teamName?: string;
   registry: AgentRegistry;
   wakeState: WakeState;
   streamBuffer: ResponseStreamBuffer;
@@ -252,7 +258,7 @@ export class WakeRunner {
     // parent tree.
     const { createFleetAgentAdapter } = await import('./adapters/FleetAgentAdapter');
     const adapter = createFleetAgentAdapter(
-      { slotId, displayName: agent.agentName, teamId: this.ctx.teamId },
+      { slotId, displayName: agent.agentName, teamId: this.ctx.teamId, teamName: this.ctx.teamName },
       {
         deviceId: agent.fleetBinding.deviceId,
         agentTemplateId: agent.fleetBinding.remoteSlotId,

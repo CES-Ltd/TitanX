@@ -65,6 +65,16 @@ type ExecuteParams = {
   temperature?: number;
   toolsAllowlist?: string[];
   timeoutMs?: number;
+  /**
+   * v2.2.1 — master team context so the slave can mirror the team +
+   * farm conversation locally. Absent when the caller is a pre-v2.2.1
+   * master (in which case the slave skips the mirror and still
+   * executes the turn).
+   */
+  teamId?: string;
+  teamName?: string;
+  agentSlotId?: string;
+  agentName?: string;
 };
 
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -105,7 +115,137 @@ function parseParams(params: Record<string, unknown>): ExecuteParams | null {
     temperature: typeof params.temperature === 'number' ? params.temperature : undefined,
     toolsAllowlist,
     timeoutMs: typeof params.timeoutMs === 'number' ? params.timeoutMs : undefined,
+    teamId: typeof params.teamId === 'string' ? params.teamId : undefined,
+    teamName: typeof params.teamName === 'string' ? params.teamName : undefined,
+    agentSlotId: typeof params.agentSlotId === 'string' ? params.agentSlotId : undefined,
+    agentName: typeof params.agentName === 'string' ? params.agentName : undefined,
   };
+}
+
+/**
+ * v2.2.1 — mirror the master's team + farm conversation on the slave
+ * so the operator can see the work happening on this device in a
+ * familiar Teams UI. Idempotent: if the mirror team + conversation
+ * already exist, only the message log grows.
+ *
+ * On failure each step is logged non-critically and the function
+ * returns the best partial state it produced — we never want a
+ * mirror-write error to abort the actual farm turn.
+ */
+function upsertSlaveMirror(
+  db: ISqliteDriver,
+  params: ExecuteParams,
+  assistantText: string | null
+): { mirroredConversationId: string | null } {
+  const teamId = params.teamId;
+  const teamName = params.teamName;
+  const agentSlotId = params.agentSlotId;
+  const agentName = params.agentName;
+  if (!teamId || !teamName || !agentSlotId || !agentName) {
+    return { mirroredConversationId: null };
+  }
+  // Team row. Keyed by master's teamId directly so a second
+  // agent.execute for the same master team updates the same row.
+  try {
+    const existing = db.prepare('SELECT id FROM teams WHERE id = ?').get(teamId) as { id: string } | undefined;
+    if (!existing) {
+      // Fresh mirror team. Workspace is empty because farm work runs
+      // in the ACP runtime's own workspace context on this machine.
+      // lead_agent_id is a placeholder — this team has no lead; all
+      // activity is farm-driven. Mailbox/tasks tables won't be hit.
+      db.prepare(
+        `INSERT INTO teams (id, user_id, name, workspace, workspace_mode, lead_agent_id, agents, created_at, updated_at)
+         VALUES (?, 'system_default_user', ?, '', 'shared', ?, ?, ?, ?)`
+      ).run(teamId, teamName, agentSlotId, JSON.stringify([]), Date.now(), Date.now());
+    } else {
+      // Touch updated_at so the team floats in the slave's TeamSider.
+      db.prepare('UPDATE teams SET name = ?, updated_at = ? WHERE id = ?').run(teamName, Date.now(), teamId);
+    }
+  } catch (e) {
+    logNonCritical('fleet.farm.mirror.team', e);
+  }
+
+  // Conversation row. One conversation per farm slot inside the
+  // mirror team — same grouping the master uses. ID is stable
+  // (farm-mirror-<agentSlotId>) so a follow-up agent.execute hits the
+  // same conversation and extends its message log.
+  const conversationId = `farm-mirror-${agentSlotId}`;
+  try {
+    const exists = db.prepare('SELECT id FROM conversations WHERE id = ?').get(conversationId) as
+      | { id: string }
+      | undefined;
+    if (!exists) {
+      const extra = JSON.stringify({
+        deviceId: 'self',
+        remoteSlotId: params.agentTemplateId,
+        teamId,
+        agentSlotId,
+        toolsAllowlist: params.toolsAllowlist ?? [],
+        // v2.2.1 — signals the renderer (FarmChat) that this is a
+        // slave-side mirror of a master-hired farm slot. Drives the
+        // read-only SendBox rendering + "Viewing master's work" badge.
+        isSlaveMirror: true,
+      });
+      db.prepare(
+        `INSERT INTO conversations (id, user_id, name, type, extra, status, created_at, updated_at)
+         VALUES (?, 'system_default_user', ?, 'farm', ?, 'finished', ?, ?)`
+      ).run(conversationId, agentName, extra, Date.now(), Date.now());
+    }
+  } catch (e) {
+    logNonCritical('fleet.farm.mirror.conversation', e);
+  }
+
+  // Update the team row's agents array to include this slot. Cheap
+  // read-then-write — fleet mirror teams are small.
+  try {
+    const row = db.prepare('SELECT agents FROM teams WHERE id = ?').get(teamId) as { agents: string } | undefined;
+    const agents = row ? (JSON.parse(row.agents) as Array<Record<string, unknown>>) : [];
+    if (!agents.some((a) => a.slotId === agentSlotId)) {
+      agents.push({
+        slotId: agentSlotId,
+        conversationId,
+        role: 'teammate',
+        agentType: 'farm',
+        agentName,
+        conversationType: 'farm',
+        status: 'idle',
+        backend: 'farm',
+      });
+      db.prepare('UPDATE teams SET agents = ?, updated_at = ? WHERE id = ?').run(
+        JSON.stringify(agents),
+        Date.now(),
+        teamId
+      );
+    }
+  } catch (e) {
+    logNonCritical('fleet.farm.mirror.agents', e);
+  }
+
+  // Persist messages. The final user prompt in the envelope is the
+  // most recent master-side prompt; earlier messages are history/
+  // teammates context we don't re-log. assistantText is only non-null
+  // on success — failure paths write their own error bubble.
+  try {
+    const lastUser = [...params.messages].reverse().find((m) => m.role === 'user');
+    if (lastUser) {
+      const msgId = `${params.jobId}-user`;
+      db.prepare(
+        `INSERT OR IGNORE INTO messages (id, conversation_id, msg_id, type, content, position, status, hidden, created_at)
+         VALUES (?, ?, ?, 'text', ?, 'right', 'finished', 0, ?)`
+      ).run(msgId, conversationId, msgId, JSON.stringify({ content: lastUser.content }), Date.now());
+    }
+    if (assistantText && assistantText.length > 0) {
+      const msgId = `${params.jobId}-assistant`;
+      db.prepare(
+        `INSERT OR IGNORE INTO messages (id, conversation_id, msg_id, type, content, position, status, hidden, created_at)
+         VALUES (?, ?, ?, 'text', ?, 'left', 'finished', 0, ?)`
+      ).run(msgId, conversationId, msgId, JSON.stringify({ content: assistantText }), Date.now());
+    }
+  } catch (e) {
+    logNonCritical('fleet.farm.mirror.messages', e);
+  }
+
+  return { mirroredConversationId: conversationId };
 }
 
 /** Minimal shape of an agent_gallery row — only fields farm needs. */
@@ -242,6 +382,7 @@ export async function handleAgentExecute(rawParams: Record<string, unknown>): Pr
     } catch (e) {
       logNonCritical('fleet.agent-execute.job-finish-no-template', e);
     }
+    upsertSlaveMirror(driver, parsed, 'Template not found on this device — is it synced from master?');
     return {
       status: 'skipped',
       result: { reason: 'template_not_found', agentTemplateId: parsed.agentTemplateId },
@@ -255,6 +396,7 @@ export async function handleAgentExecute(rawParams: Record<string, unknown>): Pr
     } catch (e) {
       logNonCritical('fleet.agent-execute.job-finish-no-provider', e);
     }
+    upsertSlaveMirror(driver, parsed, 'No ACP runtime / LLM provider configured on this device.');
     return { status: 'skipped', result: { reason: 'no_provider_configured' } };
   }
 
@@ -311,6 +453,11 @@ export async function handleAgentExecute(rawParams: Record<string, unknown>): Pr
       logNonCritical('fleet.agent-execute.job-finish-ok', e);
     }
 
+    // v2.2.1 — write the slave-side mirror so the operator can see
+    // the farm work in this device's own Teams UI. Best-effort; any
+    // error is logged and the turn still completes.
+    upsertSlaveMirror(driver, parsed, assistantText);
+
     try {
       logActivity(driver, {
         userId: 'system_default_user',
@@ -339,6 +486,9 @@ export async function handleAgentExecute(rawParams: Record<string, unknown>): Pr
     } catch (finishErr) {
       logNonCritical('fleet.agent-execute.job-finish-err', finishErr);
     }
+    // v2.2.1 — mirror the prompt + failure reason so the slave operator
+    // sees what went wrong in their Teams UI.
+    upsertSlaveMirror(driver, parsed, `Execution failed: ${message}`);
     return {
       status: isTimeout ? 'skipped' : 'failed',
       result: {

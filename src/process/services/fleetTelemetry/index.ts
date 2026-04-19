@@ -47,14 +47,15 @@ export function buildTelemetryReport(
   since: number,
   until: number = Date.now(),
   /**
-   * v2.2.0 — optional LLM provider summary fetched by the caller from
-   * `ProcessConfig('model.config')`. Kept out of this fn's body because
-   * ProcessConfig is async and buildTelemetryReport's callers (slavePush,
-   * unit tests) prefer a pure sync signature. Pass `undefined` (or omit)
-   * on pre-v2.2.0 paths — the report's `providers` field just stays
-   * absent, which the master treats as "unknown" rather than "empty".
+   * v2.2.1 — ACP runtime summary fetched by the caller from
+   * `acpDetector.getDetectedAgents()`. Kept out of this fn's body
+   * because the detector is async-initialized elsewhere and callers
+   * (slavePush, unit tests) prefer a pure sync signature. Pass
+   * `undefined` (or omit) on paths where runtime detection isn't
+   * available — the report's `runtimes` field just stays absent,
+   * which the master treats as "unknown" rather than "empty".
    */
-  providers?: import('./types').TelemetryProviderInfo[]
+  runtimes?: import('./types').TelemetryRuntimeInfo[]
 ): TelemetryReport {
   const windowStart = Math.max(0, since);
   const windowEnd = Math.max(windowStart, until);
@@ -109,7 +110,7 @@ export function buildTelemetryReport(
     policyViolationCount,
     agentCount,
     topActions,
-    providers,
+    runtimes,
   };
 }
 
@@ -229,9 +230,11 @@ export function ingestTelemetryReport(db: ISqliteDriver, deviceId: string, repor
 
   const payload = JSON.stringify({
     topActions: report.topActions,
-    // v2.2.0 — provider summary lives inside the JSON blob so no schema
-    // migration is required. Omitted when the slave is pre-v2.2.0.
-    providers: report.providers,
+    // v2.2.1 — runtime summary lives inside the JSON blob so no schema
+    // migration is required. Omitted when the slave is pre-v2.2.1.
+    // NB: v2.2.0's `providers` field was wrong semantically (LLM API
+    // providers instead of ACP runtimes) and is ignored on read.
+    runtimes: report.runtimes,
   });
 
   db.prepare(
@@ -340,14 +343,14 @@ export function getDeviceTelemetry(db: ISqliteDriver, deviceId: string, limit: n
 
   return rows.map((r) => {
     let topActions: Array<{ action: string; count: number }> = [];
-    let providers: import('./types').TelemetryProviderInfo[] | undefined;
+    let runtimes: import('./types').TelemetryRuntimeInfo[] | undefined;
     try {
       const parsed = JSON.parse(r.report_payload) as {
         topActions?: Array<{ action: string; count: number }>;
-        providers?: import('./types').TelemetryProviderInfo[];
+        runtimes?: import('./types').TelemetryRuntimeInfo[];
       };
       topActions = parsed.topActions ?? [];
-      providers = parsed.providers;
+      runtimes = parsed.runtimes;
     } catch {
       // Corrupt payload — surface the numeric aggregates anyway.
     }
@@ -361,22 +364,23 @@ export function getDeviceTelemetry(db: ISqliteDriver, deviceId: string, limit: n
       policyViolationCount: r.policy_violation_count,
       agentCount: r.agent_count,
       topActions,
-      providers,
+      runtimes,
       receivedAt: r.received_at,
     };
   });
 }
 
 /**
- * v2.2.0 — return the most recent provider summary per device, keyed by
- * deviceId. Powers the master-side HireFarmAgentModal's provider badges
- * + no-providers warning without requiring a per-device drill-down.
+ * v2.2.1 — return the most recent ACP-runtime summary per device,
+ * keyed by deviceId. Powers the master-side HireFarmAgentModal's
+ * runtime badges + agentType-mismatch warning without requiring a
+ * per-device drill-down.
  *
- * Returns an empty map on any query failure (best-effort — the UI still
- * renders devices, it just can't gate on providers).
+ * Returns an empty map on any query failure (best-effort — the UI
+ * still renders devices, it just can't gate on runtimes).
  */
-export function getLatestProvidersByDevice(db: ISqliteDriver): Map<string, import('./types').TelemetryProviderInfo[]> {
-  const map = new Map<string, import('./types').TelemetryProviderInfo[]>();
+export function getLatestRuntimesByDevice(db: ISqliteDriver): Map<string, import('./types').TelemetryRuntimeInfo[]> {
+  const map = new Map<string, import('./types').TelemetryRuntimeInfo[]>();
   try {
     // Single query: latest report per device via GROUP BY + MAX(window_end).
     // A correlated subquery would be clearer but slower at scale.
@@ -395,17 +399,17 @@ export function getLatestProvidersByDevice(db: ISqliteDriver): Map<string, impor
     for (const row of rows) {
       try {
         const parsed = JSON.parse(row.report_payload) as {
-          providers?: import('./types').TelemetryProviderInfo[];
+          runtimes?: import('./types').TelemetryRuntimeInfo[];
         };
-        if (Array.isArray(parsed.providers)) {
-          map.set(row.device_id, parsed.providers);
+        if (Array.isArray(parsed.runtimes)) {
+          map.set(row.device_id, parsed.runtimes);
         }
       } catch {
         // Corrupt payload — skip this device.
       }
     }
   } catch (e) {
-    logNonCritical('fleet.telemetry.latest-providers-query', e);
+    logNonCritical('fleet.telemetry.latest-runtimes-query', e);
   }
   return map;
 }

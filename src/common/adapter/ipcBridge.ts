@@ -1060,19 +1060,18 @@ export const fleet = {
         lastHeartbeatAt?: number;
         capabilities: Record<string, unknown>;
         /**
-         * v2.2.0 — summary of LLM providers configured on the slave, taken
-         * from its most recent telemetry report. Absent (undefined) when
-         * the slave hasn't pushed telemetry yet or is on a pre-v2.2.0 build
-         * that doesn't emit this field; the hire modal then falls back to a
-         * neutral "Provider status unknown" note instead of blocking.
+         * v2.2.1 — detected ACP runtimes on the slave (Claude Code CLI,
+         * OpenCode, Codex, Gemini, etc.), taken from its most recent
+         * telemetry report. Absent (undefined) when the slave hasn't
+         * pushed v2.2.1+ telemetry yet; the hire modal then falls back
+         * to a neutral "Runtime status unknown" note instead of
+         * blocking. `backend` matches `AgentTemplate.agentType` so the
+         * modal can warn on mismatch.
          */
-        providers?: Array<{
-          id: string;
-          platform: string;
+        runtimes?: Array<{
+          backend: string;
           name: string;
-          enabled: boolean;
-          modelCount: number;
-          enabledModelCount: number;
+          cliAvailable: boolean;
         }>;
       }>;
     },

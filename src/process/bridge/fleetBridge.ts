@@ -298,11 +298,11 @@ export function initFleetBridge(): void {
   ipcBridge.fleet.listFarmDevices.provider(async () => {
     const db = await getDatabase();
     const rows = fleetEnrollment.listFarmDevices(db.getDriver());
-    // v2.2.0 — attach each device's most recent provider summary from
-    // telemetry. One batched query via getLatestProvidersByDevice; empty
-    // map when no slave has pushed v2.2.0+ telemetry yet.
-    const { getLatestProvidersByDevice } = await import('@process/services/fleetTelemetry');
-    const providersByDevice = getLatestProvidersByDevice(db.getDriver());
+    // v2.2.1 — attach each device's most recent ACP-runtime summary
+    // from telemetry. One batched query via getLatestRuntimesByDevice;
+    // empty map when no slave has pushed v2.2.1+ telemetry yet.
+    const { getLatestRuntimesByDevice } = await import('@process/services/fleetTelemetry');
+    const runtimesByDevice = getLatestRuntimesByDevice(db.getDriver());
     return {
       devices: rows.map((r) => ({
         deviceId: r.deviceId,
@@ -312,7 +312,7 @@ export function initFleetBridge(): void {
         enrolledAt: r.enrolledAt,
         lastHeartbeatAt: r.lastHeartbeatAt,
         capabilities: r.capabilities,
-        providers: providersByDevice.get(r.deviceId),
+        runtimes: runtimesByDevice.get(r.deviceId),
       })),
     };
   });

@@ -43,6 +43,7 @@ export class TeamSession extends EventEmitter {
     this.taskManager = new TaskManager(repo);
     this.teammateManager = new TeammateManager({
       teamId: team.id,
+      teamName: team.name,
       agents: team.agents,
       mailbox: this.mailbox,
       taskManager: this.taskManager,

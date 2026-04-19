@@ -17,13 +17,10 @@ import { ipcBridge } from '@/common';
 
 const REFRESH_INTERVAL_MS = 30_000;
 
-export type FarmDeviceProvider = {
-  id: string;
-  platform: string;
+export type FarmDeviceRuntime = {
+  backend: string;
   name: string;
-  enabled: boolean;
-  modelCount: number;
-  enabledModelCount: number;
+  cliAvailable: boolean;
 };
 
 export type FarmDevice = {
@@ -35,12 +32,14 @@ export type FarmDevice = {
   lastHeartbeatAt?: number;
   capabilities: Record<string, unknown>;
   /**
-   * v2.2.0 — LLM provider summary from the device's most recent
-   * telemetry push. Undefined means "no telemetry yet OR slave is
-   * pre-v2.2.0"; empty array means "slave pushed, has zero providers".
-   * HireFarmAgentModal distinguishes the two.
+   * v2.2.1 — detected ACP runtimes (Claude Code CLI, OpenCode, Codex,
+   * Gemini, etc.) from the device's most recent telemetry push.
+   * Undefined means "no telemetry yet OR slave is pre-v2.2.1"; empty
+   * array means "slave pushed, has zero detected runtimes".
+   * HireFarmAgentModal distinguishes the two to avoid blocking
+   * on unknown.
    */
-  providers?: FarmDeviceProvider[];
+  runtimes?: FarmDeviceRuntime[];
 };
 
 export type FarmJobSummary = {

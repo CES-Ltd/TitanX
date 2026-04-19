@@ -148,14 +148,21 @@ const TeamChatView: React.FC<TeamChatViewProps> = ({ conversation, hideSendBox, 
         // comes from the prop; agentSlotId is stored in the farm
         // conversation's extras when TeamSessionService.addAgent
         // creates the row.
+        //
+        // v2.2.1 — farm conversations can also be slave-side mirrors
+        // of master-hired slots. When `isSlaveMirror=true` in the
+        // extras, FarmChat renders read-only regardless of the other
+        // flags.
         const farmExtra = conversation.extra as {
           workspace?: string;
           teamId?: string;
           agentSlotId?: string;
           deviceId?: string;
+          isSlaveMirror?: boolean;
         };
         const resolvedTeamId = teamId ?? farmExtra.teamId ?? '';
         const resolvedSlotId = agentSlotId ?? farmExtra.agentSlotId ?? '';
+        const isSlaveMirror = farmExtra.isSlaveMirror === true;
         if (!resolvedTeamId || !resolvedSlotId) {
           // Shouldn't happen on well-formed farm rows. Fall back to
           // a read-only panel so the UI still renders.
@@ -168,6 +175,7 @@ const TeamChatView: React.FC<TeamChatViewProps> = ({ conversation, hideSendBox, 
               agentSlotId={resolvedSlotId}
               deviceId={farmExtra.deviceId}
               hideSendBox={true}
+              isSlaveMirror={isSlaveMirror}
             />
           );
         }
@@ -180,6 +188,7 @@ const TeamChatView: React.FC<TeamChatViewProps> = ({ conversation, hideSendBox, 
             agentSlotId={resolvedSlotId}
             deviceId={farmExtra.deviceId}
             hideSendBox={hideSendBox}
+            isSlaveMirror={isSlaveMirror}
           />
         );
       }

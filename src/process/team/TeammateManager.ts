@@ -56,6 +56,12 @@ export const MCP_CAPABLE_TYPES: ReadonlySet<string> = new Set(
 
 type TeammateManagerParams = {
   teamId: string;
+  /**
+   * v2.2.1 — optional team display name, threaded through to the
+   * FleetAgentAdapter so farm `agent.execute` envelopes can carry
+   * the master's team label for slave-side mirror rendering.
+   */
+  teamName?: string;
   agents: TeamAgent[];
   mailbox: Mailbox;
   taskManager: TaskManager;
@@ -76,6 +82,8 @@ type TeammateManagerParams = {
  */
 export class TeammateManager extends EventEmitter {
   private readonly teamId: string;
+  /** v2.2.1 — display name threaded to the farm adapter's envelope. */
+  private readonly teamName: string | undefined;
   /**
    * Single source of truth for the team's in-memory agents. Extracted to
    * AgentRegistry (Phase 3.2) — owns agents[], ownedConversationIds Set,
@@ -155,6 +163,7 @@ export class TeammateManager extends EventEmitter {
   constructor(params: TeammateManagerParams) {
     super();
     this.teamId = params.teamId;
+    this.teamName = params.teamName;
     this.registry = new AgentRegistry(params.agents);
     this.events = params.events ?? getSharedEventPublisher();
     this.mailbox = params.mailbox;
@@ -183,6 +192,7 @@ export class TeammateManager extends EventEmitter {
     // so the full wake cycle is testable without a real TeammateManager.
     this.wakeRunner = new WakeRunner({
       teamId: this.teamId,
+      teamName: this.teamName,
       registry: this.registry,
       wakeState: this.wakeState,
       streamBuffer: this.streamBuffer,

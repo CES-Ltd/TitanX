@@ -470,6 +470,12 @@ export type TChatConversation =
           agentSlotId?: string;
           /** Reserved for v2.3.0 tool allowlist enforcement. */
           toolsAllowlist?: string[];
+          /**
+           * v2.2.1 — set on slave-side mirror rows written by farmExecutor
+           * when it handles an `agent.execute` command. Drives FarmChat's
+           * read-only rendering + "viewing master's work" badge.
+           */
+          isSlaveMirror?: boolean;
           /** Enabled skills list (honored by hub components that scan conversations). */
           enabledSkills?: string[];
           /** Preset assistant id — carries through hub UI helpers. */

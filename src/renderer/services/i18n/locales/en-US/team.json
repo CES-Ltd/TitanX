@@ -34,7 +34,8 @@
     "noBinding": "No fleet binding",
     "emptyHint": "Send a message to dispatch a turn to this remote agent. Responses arrive over the fleet channel within the command timeout.",
     "sendPlaceholder": "Message the farm agent...",
-    "send": "Send"
+    "send": "Send",
+    "slaveMirrorBadge": "Mirror of master's farm slot (read-only)"
   },
   "sendBox": {
     "placeholder": "Message dispatch agent..."

@@ -31,8 +31,8 @@ import { decrypt, loadOrCreateMasterKey } from '@process/services/secrets/encryp
 import { logNonCritical } from '@process/utils/logNonCritical';
 import { getDatabase } from '@process/services/database';
 import { buildTelemetryReport, getTelemetryState, setTelemetryState } from './index';
-import type { IngestResult, TelemetryProviderInfo } from './types';
-import type { IProvider } from '@/common/config/storage';
+import type { IngestResult, TelemetryRuntimeInfo } from './types';
+import { acpDetector } from '@process/agent/acp/AcpDetector';
 
 /** 6 hours — see module docstring for the sizing rationale. */
 const PUSH_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -134,11 +134,14 @@ export async function pushOnce(masterUrl: string): Promise<void> {
       return;
     }
 
-    // v2.2.0 — summarize local LLM providers so the master's hire-farm-agent
-    // modal can warn before a turn gets dispatched that would just ack with
-    // `no_provider_configured`. Summary is shape-only (no API keys).
-    const providers = await summarizeLocalProviders();
-    const report = buildTelemetryReport(db.getDriver(), windowStart, windowEnd, providers);
+    // v2.2.1 — summarize the slave's detected ACP runtimes (Claude
+    // Code CLI, OpenCode, Codex, etc.) so the master's
+    // HireFarmAgentModal can gate hires on a runtime that matches the
+    // template's agentType. Farm agents execute through an ACP
+    // runtime on the slave; the v2.2.0 "LLM API providers" field was
+    // the wrong layer.
+    const runtimes = summarizeDetectedRuntimes();
+    const report = buildTelemetryReport(db.getDriver(), windowStart, windowEnd, runtimes);
 
     const response = await fetch(`${stripTrailingSlash(masterUrl)}/api/fleet/telemetry`, {
       method: 'POST',
@@ -198,41 +201,42 @@ function stripTrailingSlash(url: string): string {
 }
 
 /**
- * v2.2.0 — summarize this slave's LLM providers from
- * `ProcessConfig('model.config')` into the shape the telemetry report
- * carries to master. NO secrets (`apiKey`, `bedrockConfig`, `baseUrl`,
- * `modelHealth` diagnostics) leave the slave — only identity, platform,
- * and enablement counts.
+ * v2.2.1 — summarize the slave's detected ACP runtimes for the
+ * telemetry payload. Each entry reports the backend id (matching
+ * AgentTemplate.agentType) + display label + whether the CLI was
+ * found on PATH at detection time. Runtime *without* an available
+ * CLI is still reported so the hire modal can explain "you have a
+ * record for Claude Code CLI on this machine, but it's not currently
+ * installed" — more actionable than silently dropping it.
  *
- * Returns `undefined` on a read failure so the master distinguishes
- * "no providers" (zero-length array) from "couldn't determine"
- * (undefined → gating is disabled in the UI).
+ * Dedupes by `backend` so a builtin + an extension both targeting
+ * the same backend show as one row. Returns `undefined` on error so
+ * master distinguishes "no runtimes" (zero-length array) from
+ * "couldn't determine" (undefined → no UI gating).
  */
-async function summarizeLocalProviders(): Promise<TelemetryProviderInfo[] | undefined> {
+function summarizeDetectedRuntimes(): TelemetryRuntimeInfo[] | undefined {
   try {
-    const raw = await ProcessConfig.get('model.config');
-    if (!Array.isArray(raw)) return [];
-    const providers = raw as IProvider[];
-    return providers.map((p) => {
-      const models = Array.isArray(p.model) ? p.model : [];
-      const modelEnabled = p.modelEnabled ?? {};
-      const enabledModelCount = models.reduce((acc, m) => {
-        const on = modelEnabled[m];
-        // Default is "enabled" when the map doesn't mention the model,
-        // mirroring the convention in IProvider's JSDoc.
-        return acc + (on === false ? 0 : 1);
-      }, 0);
-      return {
-        id: p.id,
-        platform: p.platform,
-        name: p.name,
-        enabled: p.enabled !== false,
-        modelCount: models.length,
-        enabledModelCount,
-      };
-    });
+    const detected = acpDetector.getDetectedAgents();
+    const seen = new Map<string, TelemetryRuntimeInfo>();
+    for (const a of detected) {
+      // Skip custom/preset agents — they don't represent a distinct
+      // runtime the master could select against; the user's template
+      // agentType is already more precise.
+      if (a.backend === 'custom' && !a.isExtension) continue;
+      const key = String(a.backend);
+      if (seen.has(key)) continue;
+      // CLI availability: the detector only includes agents it has
+      // verified via `which` (or extension manifest). Everything in
+      // the list at this point has a runnable entry point.
+      seen.set(key, {
+        backend: key,
+        name: a.name,
+        cliAvailable: true,
+      });
+    }
+    return Array.from(seen.values());
   } catch (e) {
-    logNonCritical('fleet.telemetry.summarize-providers', e);
+    logNonCritical('fleet.telemetry.summarize-runtimes', e);
     return undefined;
   }
 }

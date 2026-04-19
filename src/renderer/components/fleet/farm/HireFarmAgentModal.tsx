@@ -82,21 +82,34 @@ const HireFarmAgentModal: React.FC<Props> = ({ open, onClose, defaultTeamId }) =
     [devices]
   );
 
-  // v2.2.0 — watch the selected device in the form so we can render a
-  // provider-badge strip + a red callout when the slave has no enabled
-  // providers. The Hire button disables when the slave clearly has
-  // nothing to run inference against (explicit empty array); undefined
-  // means the slave is pre-v2.2.0 or hasn't pushed telemetry yet, so we
-  // don't block the operator.
+  // v2.2.1 — watch the selected device + template in the form so we
+  // can render a runtime-badge strip + warn when the template's
+  // agentType isn't among the slave's detected ACP runtimes. The Hire
+  // button disables when runtimes array is explicitly empty (slave
+  // pushed but has no detected runtimes); undefined means the slave
+  // is pre-v2.2.1 or hasn't pushed telemetry yet, so we don't block
+  // the operator.
   const selectedDeviceId = Form.useWatch('deviceId', form) as string | undefined;
+  const selectedTemplateId = Form.useWatch('templateId', form) as string | undefined;
   const selectedDevice = useMemo(
     () => devices.find((d) => d.deviceId === selectedDeviceId),
     [devices, selectedDeviceId]
   );
-  const selectedProviders = selectedDevice?.providers;
-  const providersUnknown = selectedProviders === undefined;
-  const hasUsableProvider =
-    providersUnknown || (selectedProviders?.some((p) => p.enabled && p.enabledModelCount > 0) ?? false);
+  const selectedTemplate = useMemo(
+    () => templates.find((tpl) => tpl.id === selectedTemplateId),
+    [templates, selectedTemplateId]
+  );
+  const selectedRuntimes = selectedDevice?.runtimes;
+  const runtimesUnknown = selectedRuntimes === undefined;
+  const hasAnyRuntime = runtimesUnknown || (selectedRuntimes?.length ?? 0) > 0;
+  // Template/runtime compatibility: the template's agentType must
+  // match one of the detected backends on the slave (unless the slave
+  // reported an unknown — pre-v2.2.1).
+  const templateAgentType = selectedTemplate?.agentType;
+  const templateRuntimeMatch =
+    runtimesUnknown ||
+    templateAgentType === undefined ||
+    (selectedRuntimes?.some((r) => r.backend === templateAgentType) ?? false);
 
   const handleSubmit = useCallback(async () => {
     try {
@@ -163,7 +176,7 @@ const HireFarmAgentModal: React.FC<Props> = ({ open, onClose, defaultTeamId }) =
           <Button
             type='primary'
             loading={submitting}
-            disabled={devices.length === 0 || templates.length === 0 || !hasUsableProvider}
+            disabled={devices.length === 0 || templates.length === 0 || !hasAnyRuntime || !templateRuntimeMatch}
             onClick={() => void handleSubmit()}
           >
             {t('fleet.farm.hire.confirm', { defaultValue: 'Hire' })}
@@ -208,47 +221,51 @@ const HireFarmAgentModal: React.FC<Props> = ({ open, onClose, defaultTeamId }) =
             />
           </Form.Item>
 
-          {/* v2.2.0 — provider visibility for the selected device. Three
-              states: (a) not selected yet → nothing, (b) selected +
-              providers reported → badge strip, (c) selected + empty
-              providers → red callout + Hire disabled upstream. */}
+          {/* v2.2.1 — ACP runtime visibility for the selected device.
+              Three states: (a) not selected yet → nothing, (b) slave
+              on pre-v2.2.1 (runtimes undefined) → neutral note, (c)
+              slave reported → badge strip + optional
+              template/runtime mismatch warning. */}
           {selectedDevice && (
             <div className='mb-3'>
-              {providersUnknown ? (
+              {runtimesUnknown ? (
                 <div className='text-11px text-t-tertiary'>
-                  {t('fleet.farm.hire.providersUnknown', {
+                  {t('fleet.farm.hire.runtimesUnknown', {
                     defaultValue:
-                      'Provider status unknown (this device hasn\u2019t pushed telemetry yet). Hire at your own risk.',
+                      'Runtime status unknown (this device hasn\u2019t pushed v2.2.1 telemetry yet). Hire at your own risk.',
                   })}
                 </div>
-              ) : selectedProviders && selectedProviders.length > 0 ? (
+              ) : selectedRuntimes && selectedRuntimes.length > 0 ? (
                 <div>
                   <div className='text-11px font-medium text-t-secondary mb-1'>
-                    {t('fleet.farm.hire.providersLabel', { defaultValue: 'Providers on this device' })}
+                    {t('fleet.farm.hire.runtimesLabel', { defaultValue: 'Runtimes detected on this device' })}
                   </div>
                   <div className='flex flex-wrap gap-1'>
-                    {selectedProviders.map((p) => {
-                      const usable = p.enabled && p.enabledModelCount > 0;
+                    {selectedRuntimes.map((rt) => {
+                      const matches = templateAgentType === rt.backend;
                       return (
                         <Tag
-                          key={p.id}
+                          key={rt.backend}
                           size='small'
-                          color={usable ? 'green' : undefined}
-                          bordered={!usable}
+                          color={matches ? 'green' : undefined}
+                          bordered={!matches}
                         >
-                          {p.name} · {String(p.enabledModelCount)}/{String(p.modelCount)}
-                          {!p.enabled ? ` (${t('fleet.farm.hire.providerDisabled', { defaultValue: 'disabled' })})` : ''}
+                          {rt.name}
+                          {!rt.cliAvailable
+                            ? ` (${t('fleet.farm.hire.runtimeCliMissing', { defaultValue: 'CLI missing' })})`
+                            : ''}
                         </Tag>
                       );
                     })}
                   </div>
-                  {!hasUsableProvider && (
+                  {!templateRuntimeMatch && templateAgentType && (
                     <Alert
                       className='mt-2'
                       type='warning'
-                      content={t('fleet.farm.hire.providersNoneUsable', {
+                      content={t('fleet.farm.hire.runtimeMismatch', {
                         defaultValue:
-                          'All providers on this device are disabled or have no enabled models. Farm turns would ack with no_provider_configured.',
+                          'Selected template needs runtime "{{type}}" but that isn\u2019t detected on this device.',
+                        type: templateAgentType,
                       })}
                     />
                   )}
@@ -256,9 +273,9 @@ const HireFarmAgentModal: React.FC<Props> = ({ open, onClose, defaultTeamId }) =
               ) : (
                 <Alert
                   type='error'
-                  content={t('fleet.farm.hire.providersEmpty', {
+                  content={t('fleet.farm.hire.runtimesEmpty', {
                     defaultValue:
-                      'This device has no LLM providers configured. On that machine, open Settings \u2192 Model providers and add one before hiring.',
+                      'No ACP runtimes detected on this device (Claude Code CLI, OpenCode, Codex, \u2026). Install one on that machine before hiring.',
                   })}
                 />
               )}
