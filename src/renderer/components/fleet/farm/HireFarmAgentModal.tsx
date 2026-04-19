@@ -22,10 +22,37 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Form, Input, Message, Modal, Select } from '@arco-design/web-react';
+import { Alert, Button, Form, Input, Message, Modal, Select, Tag } from '@arco-design/web-react';
 import { ipcBridge } from '@/common';
 import type { IGalleryAgent } from '@/common/adapter/ipcBridge';
 import { useFarmDevices } from '@renderer/hooks/fleet/useFarm';
+
+// v2.2.2 — fallback list for the hire modal's Runtime dropdown when a
+// slave hasn't pushed v2.2.1+ telemetry yet. Operator can still pick
+// an expected runtime; the slave will fail fast on agent.execute if
+// the runtime isn't actually installed, but at least the modal is
+// never an empty dropdown.
+const KNOWN_ACP_RUNTIMES: Array<{ backend: string; name: string }> = [
+  { backend: 'claude', name: 'Claude Code CLI' },
+  { backend: 'opencode', name: 'OpenCode' },
+  { backend: 'codex', name: 'OpenAI Codex' },
+  { backend: 'gemini', name: 'Google Gemini' },
+  { backend: 'qwen', name: 'Qwen Code' },
+  { backend: 'goose', name: 'Block Goose' },
+  { backend: 'auggie', name: 'Augment Code' },
+  { backend: 'kimi', name: 'Kimi CLI' },
+  { backend: 'copilot', name: 'GitHub Copilot CLI' },
+  { backend: 'codebuddy', name: 'CodeBuddy' },
+  { backend: 'droid', name: 'Factory Droid' },
+  { backend: 'cursor', name: 'Cursor Agent' },
+  { backend: 'kiro', name: 'Kiro' },
+  { backend: 'iflow', name: 'iFlow CLI' },
+  { backend: 'vibe', name: 'Mistral Vibe' },
+  { backend: 'qoder', name: 'Qoder' },
+  { backend: 'nanobot', name: 'nanobot' },
+  { backend: 'aionrs', name: 'Aion CLI' },
+  { backend: 'deepagents', name: 'DeepAgents' },
+];
 
 type Props = {
   open: boolean;
@@ -82,6 +109,57 @@ const HireFarmAgentModal: React.FC<Props> = ({ open, onClose, defaultTeamId }) =
     [devices]
   );
 
+  // v2.2.1 — watch the selected device + template in the form so we
+  // can render a runtime-badge strip + warn when the template's
+  // agentType isn't among the slave's detected ACP runtimes. The Hire
+  // button disables when runtimes array is explicitly empty (slave
+  // pushed but has no detected runtimes); undefined means the slave
+  // is pre-v2.2.1 or hasn't pushed telemetry yet, so we don't block
+  // the operator.
+  const selectedDeviceId = Form.useWatch('deviceId', form) as string | undefined;
+  const selectedTemplateId = Form.useWatch('templateId', form) as string | undefined;
+  const selectedDevice = useMemo(
+    () => devices.find((d) => d.deviceId === selectedDeviceId),
+    [devices, selectedDeviceId]
+  );
+  const selectedTemplate = useMemo(
+    () => templates.find((tpl) => tpl.id === selectedTemplateId),
+    [templates, selectedTemplateId]
+  );
+  const selectedRuntimes = selectedDevice?.runtimes;
+  const runtimesUnknown = selectedRuntimes === undefined;
+  const templateAgentType = selectedTemplate?.agentType;
+
+  // v2.2.2 — runtime picker is editable. Options come from the device's
+  // reported runtimes first, falling back to the KNOWN_ACP_RUNTIMES list
+  // when the slave is pre-v2.2.1 or hasn't pushed yet. We never block
+  // hire on a missing detected runtime — operators can still pick any
+  // backend, and the slave will ack with a clear reason if it isn't
+  // actually available.
+  const runtimeOptions = useMemo(() => {
+    const detected = selectedRuntimes ?? [];
+    const map = new Map<string, { backend: string; name: string; detected: boolean }>();
+    for (const r of detected) {
+      map.set(r.backend, { backend: r.backend, name: r.name, detected: true });
+    }
+    for (const r of KNOWN_ACP_RUNTIMES) {
+      if (!map.has(r.backend)) {
+        map.set(r.backend, { backend: r.backend, name: r.name, detected: false });
+      }
+    }
+    return Array.from(map.values());
+  }, [selectedRuntimes]);
+
+  // Auto-default the runtime field when a template is picked. Form.setFieldValue
+  // is safe to call repeatedly — arco no-ops when the value is unchanged.
+  useEffect(() => {
+    if (!selectedTemplateId) return;
+    const current = form.getFieldValue('runtimeBackend') as string | undefined;
+    if (current) return; // operator already picked
+    const defaultRuntime = templateAgentType ?? runtimeOptions[0]?.backend;
+    if (defaultRuntime) form.setFieldValue('runtimeBackend', defaultRuntime);
+  }, [selectedTemplateId, templateAgentType, runtimeOptions, form]);
+
   const handleSubmit = useCallback(async () => {
     try {
       const values = (await form.validate()) as {
@@ -89,6 +167,7 @@ const HireFarmAgentModal: React.FC<Props> = ({ open, onClose, defaultTeamId }) =
         deviceId: string;
         templateId: string;
         agentName: string;
+        runtimeBackend: string;
       };
       setSubmitting(true);
       const template = templates.find((tpl) => tpl.id === values.templateId);
@@ -103,9 +182,12 @@ const HireFarmAgentModal: React.FC<Props> = ({ open, onClose, defaultTeamId }) =
         agent: {
           conversationId: '',
           role: 'teammate',
-          agentType: template.agentType,
+          // v2.2.2 — the operator's chosen runtime determines the
+          // slave's ACP backend. We stamp agentType with it so the
+          // team UI + template matching stay consistent.
+          agentType: values.runtimeBackend,
           agentName: values.agentName,
-          conversationType: template.agentType === 'gemini' ? 'gemini' : 'acp',
+          conversationType: values.runtimeBackend === 'gemini' ? 'gemini' : 'acp',
           status: 'pending',
           agentGalleryId: template.id,
           backend: 'farm',
@@ -116,6 +198,7 @@ const HireFarmAgentModal: React.FC<Props> = ({ open, onClose, defaultTeamId }) =
             // was synced via the Phase A publish flow.
             remoteSlotId: template.id,
             toolsAllowlist: [],
+            runtimeBackend: values.runtimeBackend,
           },
         },
       });
@@ -191,6 +274,70 @@ const HireFarmAgentModal: React.FC<Props> = ({ open, onClose, defaultTeamId }) =
               options={deviceOptions}
             />
           </Form.Item>
+
+          {/* v2.2.2 — editable Runtime picker. Options are the union
+              of runtimes reported by the selected device's telemetry
+              and a known-ACP fallback list. Operator can override the
+              template's expected agentType, or pick a runtime even
+              when the slave hasn't pushed telemetry yet. The slave
+              will ack with a clear reason on agent.execute if the
+              chosen runtime isn't actually available. */}
+          <Form.Item
+            field='runtimeBackend'
+            label={t('fleet.farm.hire.runtimeLabel', { defaultValue: 'Runtime' })}
+            rules={[
+              { required: true, message: t('fleet.farm.hire.runtimeRequired', { defaultValue: 'Pick a runtime' }) },
+            ]}
+            extra={
+              selectedDevice ? (
+                runtimesUnknown ? (
+                  <span className='text-11px text-t-tertiary'>
+                    {t('fleet.farm.hire.runtimesUnknown', {
+                      defaultValue:
+                        'This device hasn\u2019t pushed v2.2.1 telemetry yet — the list falls back to known ACP CLIs. Pick what\u2019s actually installed on that machine.',
+                    })}
+                  </span>
+                ) : (
+                  <span className='text-11px text-t-tertiary'>
+                    {t('fleet.farm.hire.runtimesDetectedHint', {
+                      defaultValue:
+                        'Detected runtimes are marked \u201Con device\u201D. Picking one that isn\u2019t detected will fail fast with a clear reason.',
+                    })}
+                  </span>
+                )
+              ) : undefined
+            }
+          >
+            <Select
+              showSearch
+              placeholder={t('fleet.farm.hire.runtimePlaceholder', {
+                defaultValue: 'Select an ACP runtime for this agent',
+              })}
+              options={runtimeOptions.map((rt) => ({
+                label: (
+                  <span>
+                    {rt.name}
+                    {rt.detected ? (
+                      <Tag size='small' color='green' style={{ marginLeft: 8 }}>
+                        {t('fleet.farm.hire.runtimeDetected', { defaultValue: 'on device' })}
+                      </Tag>
+                    ) : null}
+                  </span>
+                ) as unknown as string,
+                value: rt.backend,
+              }))}
+            />
+          </Form.Item>
+          {selectedDevice && !runtimesUnknown && selectedRuntimes && selectedRuntimes.length === 0 && (
+            <Alert
+              className='mb-3'
+              type='warning'
+              content={t('fleet.farm.hire.runtimesEmpty', {
+                defaultValue:
+                  'No ACP runtimes detected on this device (Claude Code CLI, OpenCode, Codex, \u2026). You can still pick one above, but hire will fail unless it\u2019s installed on that machine.',
+              })}
+            />
+          )}
           <Form.Item
             field='templateId'
             label={t('fleet.farm.hire.templateLabel', { defaultValue: 'Agent template' })}

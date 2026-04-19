@@ -558,6 +558,17 @@ const handleAppReady = async (): Promise<void> => {
         console.error('[App] Failed to start pruning scheduler:', err);
       }
 
+      // v2.1.0 [CRIT]: wire CronBusyGuard's hourly cleanup timer to
+      // prevent unbounded growth of its `states` Map. One hour is a
+      // good balance — conversations over an hour old with no
+      // activity are very unlikely to resume.
+      try {
+        const { cronBusyGuard } = await import('@process/services/cron/CronBusyGuard');
+        cronBusyGuard.startAutoCleanup();
+      } catch (err) {
+        console.error('[App] Failed to start cronBusyGuard cleanup:', err);
+      }
+
       // Phase C v1.11.0: start the nightly dream scheduler when running
       // as master. Slaves never run it; their learnings push UP to the
       // master which runs the consolidation. Gated on fleet mode to

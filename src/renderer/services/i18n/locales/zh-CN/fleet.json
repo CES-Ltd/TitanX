@@ -58,7 +58,8 @@
       "body": "Changing the mode will restart TitanX. Your teams, conversations, and local data will be preserved.",
       "restartNow": "Restart now",
       "restartLater": "I'll restart later"
-    }
+    },
+    "locationHint": "Mode changes are now in the titlebar, next to Caveman Mode."
   },
   "restricted": {
     "title": "{{feature}} is not available",
@@ -426,6 +427,37 @@
       "nameRequired": "Enter a name",
       "success": "{{name}} hired as a farm agent.",
       "notes": "Farm agents run on the selected device. v1.10.0: pure LLM turn, no tools. Conversational wake integration ships in v1.10.1."
+    }
+  },
+  "topbar": {
+    "title": "Fleet mode",
+    "subtitle": "Switch between single-machine, organization master, and managed slave modes.",
+    "cancel": "Cancel",
+    "applyRestart": "Save & restart",
+    "restartHint": "Mode change requires a restart. Your teams and conversations are preserved.",
+    "tooltip": "Fleet mode (Regular)",
+    "tooltipActive": "Fleet mode: {{mode}}"
+  },
+  "role": {
+    "title": "Slave role",
+    "subtitle": "Role is locked at enrollment. Changing it clears your JWT + prompts for a fresh token from your admin.",
+    "warning": "Ask your admin to revoke this device on master and mint a fresh enrollment token, then paste it below.",
+    "tokenLabel": "New enrollment token",
+    "tokenPlaceholder": "Paste the one-time token…",
+    "tokenRequired": "Paste a fresh enrollment token from your admin to re-enroll.",
+    "setFailed": "Could not persist the new role.",
+    "clearFailed": "Could not clear previous enrollment state.",
+    "restartPrompt": "Role updated. Restarting to complete enrollment…",
+    "cancel": "Cancel",
+    "applyRestart": "Re-enroll & restart",
+    "tooltip": "Slave role: {{role}}",
+    "workforce": {
+      "name": "Workforce",
+      "description": "Managed employee endpoint. Receives policies and templates from master."
+    },
+    "farm": {
+      "name": "Farm",
+      "description": "Compute node exposing local agents for remote execution."
     }
   }
 }

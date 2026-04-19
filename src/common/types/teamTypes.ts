@@ -41,6 +41,14 @@ export type AgentFleetBinding = {
    * v1.10.x wires tool dispatch on the slave side.
    */
   toolsAllowlist: string[];
+  /**
+   * v2.2.2 — operator's chosen ACP runtime on the slave. Threaded
+   * through the signed envelope so the slave can dispatch the turn
+   * to the right runtime (claude, opencode, codex, gemini, \u2026).
+   * Optional for back-compat with pre-v2.2.2 hires where the slave
+   * fell back to the template's agentType.
+   */
+  runtimeBackend?: string;
 };
 
 /** Persisted agent configuration within a team */

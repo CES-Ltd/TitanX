@@ -758,6 +758,26 @@ export const fleet = {
   /** Broadcast when mode changes so renderers can refresh their SWR caches. */
   modeChanged: bridge.buildEmitter<{ mode: FleetMode }>('fleet:mode-changed'),
   /**
+   * v2.1.0 — slave-only: clear device JWT + enrollment token + master
+   * pubkey so the next heartbeat fails → next enrollment cycle uses a
+   * fresh token. Required when flipping fleet.enrollmentRole since the
+   * server-side role is locked at enroll time.
+   *
+   * The slave still needs a new enrollment token after calling this;
+   * the UI flow is (1) admin revokes device on master, (2) admin
+   * generates new token, (3) slave sets enrollmentRole + token + calls
+   * this.
+   */
+  clearEnrollment: bridge.buildProvider<{ ok: boolean; error?: string }, void>('fleet:clear-enrollment'),
+  /**
+   * v2.1.0 — read/write fleet.enrollmentRole from the renderer. The
+   * slave-side config key that travels on enroll. Writing it does NOT
+   * force re-enrollment on its own (master locks role at enroll);
+   * pair with clearEnrollment + new token paste.
+   */
+  getEnrollmentRole: bridge.buildProvider<{ role: 'workforce' | 'farm' }, void>('fleet:get-enrollment-role'),
+  setEnrollmentRole: bridge.buildProvider<{ ok: boolean }, { role: 'workforce' | 'farm' }>('fleet:set-enrollment-role'),
+  /**
    * Slave-side enrollment status snapshot. Used by the offline banner
    * + Settings to show whether the slave is online with its master,
    * offline (transient), unenrolled, or revoked.
@@ -861,6 +881,14 @@ export const fleet = {
     newlyManagedKeys: string[];
   }>('fleet:config-applied'),
   /**
+   * v2.2.2 — master-side notification when a slave finishes pushing
+   * a new telemetry report. The payload is minimal (just the device
+   * that pushed); the renderer's hire modal re-fetches
+   * listFarmDevices to pick up the latest runtime list without
+   * waiting for the 30s SWR poll.
+   */
+  telemetryReceived: bridge.buildEmitter<{ deviceId: string }>('fleet:telemetry-received'),
+  /**
    * v1.9.38 — slave-side notification when a destructive remote
    * command executes successfully. Renderer listens and shows an
    * Arco Notification so the user knows IT just cleared their cache
@@ -941,7 +969,8 @@ export const fleet = {
           | 'credential.rotate'
           | 'agent.restart'
           | 'force.upgrade'
-          | 'agent.execute';
+          | 'agent.execute'
+          | 'team.farm_provision';
         params: Record<string, unknown>;
         createdAt: number;
         createdBy: string;
@@ -1039,6 +1068,20 @@ export const fleet = {
         enrolledAt: number;
         lastHeartbeatAt?: number;
         capabilities: Record<string, unknown>;
+        /**
+         * v2.2.1 — detected ACP runtimes on the slave (Claude Code CLI,
+         * OpenCode, Codex, Gemini, etc.), taken from its most recent
+         * telemetry report. Absent (undefined) when the slave hasn't
+         * pushed v2.2.1+ telemetry yet; the hire modal then falls back
+         * to a neutral "Runtime status unknown" note instead of
+         * blocking. `backend` matches `AgentTemplate.agentType` so the
+         * modal can warn on mismatch.
+         */
+        runtimes?: Array<{
+          backend: string;
+          name: string;
+          cliAvailable: boolean;
+        }>;
       }>;
     },
     void

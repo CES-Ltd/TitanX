@@ -13,30 +13,78 @@ import type { HitlStep } from '@/common/types/hitlTypes';
 
 type InterruptResolver = (response: { accepted: boolean; steps?: HitlStep[] }) => void;
 
+/**
+ * Default timeout for HITL interrupts. If the user never responds,
+ * the resolver is evicted to prevent unbounded growth of
+ * interruptResolvers across long-running sessions. 10 minutes is
+ * generous for human response + safe against silent hangs.
+ */
+const INTERRUPT_TIMEOUT_MS = 10 * 60 * 1000;
+
 export class StreamBridge {
   private readonly conversationId: string;
   private readonly agUiEmitter: AgUiToIpcEmitter;
   private msgCounter = 0;
   private activeMsgId: string;
   private interruptResolvers = new Map<string, InterruptResolver>();
+  /** Timeout handles keyed by interruptId so destroy() can sweep them all. */
+  private interruptTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Unsubscribe from the response-stream listener registered in ctor. */
+  private readonly unsubscribeResponseStream: () => void;
 
   constructor(conversationId: string) {
     this.conversationId = conversationId;
     this.agUiEmitter = new AgUiToIpcEmitter(conversationId);
     this.activeMsgId = `lg_msg_${Date.now()}`;
 
-    // Listen for HITL responses from renderer
-    ipcBridge.acpConversation.responseStream.on((message) => {
+    // v2.1.0 [CRIT]: capture the unsubscribe return value so destroy()
+    // can clean up. Previously every StreamBridge leaked a listener,
+    // accumulating across long sessions (thousands after days of use).
+    this.unsubscribeResponseStream = ipcBridge.acpConversation.responseStream.on((message) => {
       if (message.conversation_id !== conversationId) return;
       if (message.type !== 'agui_interrupt_response') return;
       const data = message.data as { interruptId: string; accepted: boolean; steps?: HitlStep[] } | null;
       if (!data?.interruptId) return;
       const resolver = this.interruptResolvers.get(data.interruptId);
       if (resolver) {
-        this.interruptResolvers.delete(data.interruptId);
+        this.clearInterrupt(data.interruptId);
         resolver({ accepted: data.accepted, steps: data.steps });
       }
     });
+  }
+
+  /**
+   * Release all resources — unsubscribes the response-stream listener
+   * and rejects any pending interrupt promises so upstream awaiters
+   * don't hang forever. Called from the LangGraph executor's cleanup
+   * path when a conversation ends.
+   */
+  destroy(): void {
+    try {
+      this.unsubscribeResponseStream();
+    } catch {
+      /* idempotent cleanup — ignore double-unsubscribe */
+    }
+    // Fire all pending resolvers with a sentinel 'rejected' response so
+    // any code awaiting emitInterrupt() completes rather than hangs.
+    for (const [id, resolver] of this.interruptResolvers) {
+      try {
+        resolver({ accepted: false });
+      } catch {
+        /* one resolver failing shouldn't block the rest */
+      }
+      const timeout = this.interruptTimeouts.get(id);
+      if (timeout) clearTimeout(timeout);
+    }
+    this.interruptResolvers.clear();
+    this.interruptTimeouts.clear();
+  }
+
+  private clearInterrupt(id: string): void {
+    this.interruptResolvers.delete(id);
+    const timeout = this.interruptTimeouts.get(id);
+    if (timeout) clearTimeout(timeout);
+    this.interruptTimeouts.delete(id);
   }
 
   // ─── Content Streaming ──────────────────────────────────────────────
@@ -126,12 +174,27 @@ export class StreamBridge {
 
   // ─── Human-in-the-Loop ─────────────────────────────────────────────
 
-  /** Emit an interrupt and wait for user response. */
+  /**
+   * Emit an interrupt and wait for user response. v2.1.0: auto-evicts
+   * the resolver after INTERRUPT_TIMEOUT_MS so a never-responding user
+   * doesn't leak promise state. Timeout resolves with `accepted: false`
+   * so upstream callers treat it the same as an explicit reject.
+   */
   async emitInterrupt(steps: HitlStep[], message: string): Promise<{ accepted: boolean; steps?: HitlStep[] }> {
     const interruptId = `lg_interrupt_${Date.now()}_${String(this.msgCounter++)}`;
 
     return new Promise((resolve) => {
       this.interruptResolvers.set(interruptId, resolve);
+      // Safety valve — if the user never responds within 10 min,
+      // evict + resolve as declined so the promise doesn't pin
+      // memory indefinitely. See INTERRUPT_TIMEOUT_MS.
+      const timeout = setTimeout(() => {
+        if (this.interruptResolvers.has(interruptId)) {
+          this.clearInterrupt(interruptId);
+          resolve({ accepted: false });
+        }
+      }, INTERRUPT_TIMEOUT_MS);
+      this.interruptTimeouts.set(interruptId, timeout);
 
       ipcBridge.acpConversation.responseStream.emit({
         type: 'agui_interrupt',

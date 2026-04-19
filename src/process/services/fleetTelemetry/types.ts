@@ -7,6 +7,38 @@
  * tractable payloads on every push.
  */
 
+/**
+ * v2.2.1 — Summary of a single ACP agent runtime detected on the
+ * slave (e.g. Claude Code CLI, OpenCode, Codex, Qwen). Farm agents
+ * execute through an ACP runtime, so this is what determines whether
+ * a given farm template (with its required agentType) can run on a
+ * given slave. NOT to be confused with LLM API providers — those are
+ * consumed by the runtime internally and are not exposed to master.
+ *
+ * Shape is intentionally minimal: backend id + display name. No
+ * `cliPath` (slave-local, useless to master), no version strings
+ * (not detected in current AcpDetector).
+ */
+export type TelemetryRuntimeInfo = {
+  /**
+   * Backend id matching `AcpBackendAll` (e.g. 'claude', 'opencode',
+   * 'codex', 'qwen', 'goose') or 'gemini' for the always-available
+   * built-in. Matches against `AgentTemplate.agentType` so the hire
+   * modal can warn when a template's required backend isn't on the
+   * slave.
+   */
+  backend: string;
+  /** Display label — what the slave's ACP detector reports. */
+  name: string;
+  /**
+   * Whether the CLI binary was found on the slave's PATH at the time
+   * of the telemetry push. For 'gemini' (and any future built-ins)
+   * this is always true; for CLI-backed runtimes this reflects the
+   * `isCliAvailable` probe result.
+   */
+  cliAvailable: boolean;
+};
+
 /** Report pushed by a slave to master for a single time window. */
 export type TelemetryReport = {
   /** Inclusive epoch-ms start of the aggregation window. */
@@ -25,6 +57,19 @@ export type TelemetryReport = {
   agentCount: number;
   /** Top-5 action values by frequency in the window — helps identify hotspots. */
   topActions: Array<{ action: string; count: number }>;
+  /**
+   * v2.2.1 — ACP agent runtimes detected on the slave. Optional for
+   * backward compatibility with pre-v2.2.1 slaves that don't emit this
+   * field; the master treats an absent array as "unknown" (not "empty")
+   * and skips runtime-based gating in the UI.
+   *
+   * The v2.2.0 `providers` field (LLM API providers from `model.config`)
+   * was misaligned with the farm execution model — farm agents run via
+   * ACP CLIs, not direct LLM API calls. The `runtimes` field replaces
+   * it; any pre-v2.2.1 slave's `providers` payload is ignored by
+   * v2.2.1+ master.
+   */
+  runtimes?: TelemetryRuntimeInfo[];
 };
 
 /**

@@ -279,7 +279,30 @@ export function applyConfigBundle(db: ISqliteDriver, bundle: FleetConfigBundle):
   // because the master-side author's id isn't meaningful here, and
   // agent_gallery.user_id has an FK to users(id) that wouldn't resolve
   // otherwise. Local source='local' rows are untouched.
+  //
+  // v2.1.1 fix: every TitanX install seeds local templates with the
+  // same canonical names (e.g. "Senior Developer"). Without a rename
+  // pass, the first INSERT hits UNIQUE(user_id, name) vs the seed row,
+  // throws, and aborts the whole bundle apply — the slave gets
+  // stuck at its pre-bundle version forever because the `fleet_config_version`
+  // bump below never runs. We now rename conflicting master templates with
+  // a " (Fleet)" suffix and wrap each INSERT in try/catch so one bad row
+  // can't stall the rest of the apply.
   db.prepare("DELETE FROM agent_gallery WHERE source = 'master'").run();
+  const findLocalNameConflict = db.prepare(
+    "SELECT 1 FROM agent_gallery WHERE user_id = 'system_default_user' AND name = ? AND source != 'master' LIMIT 1"
+  );
+  const resolveMasterTemplateName = (base: string): string => {
+    if (!findLocalNameConflict.get(base)) return base;
+    // Try "(Fleet)" first, then "(Fleet 2)", "(Fleet 3)"… up to 99.
+    // Past that we give up and stamp with the bundle version to stay
+    // deterministic rather than randomly falling back to Date.now().
+    for (let i = 1; i < 100; i++) {
+      const candidate = i === 1 ? `${base} (Fleet)` : `${base} (Fleet ${String(i)})`;
+      if (!findLocalNameConflict.get(candidate)) return candidate;
+    }
+    return `${base} (Fleet v${String(bundle.version)})`;
+  };
   const insertTemplate = db.prepare(
     `INSERT INTO agent_gallery
      (id, user_id, name, agent_type, category, description, avatar_sprite_idx, capabilities, config,
@@ -290,28 +313,39 @@ export function applyConfigBundle(db: ISqliteDriver, bundle: FleetConfigBundle):
   );
   const now = Date.now();
   const agentTemplates = bundle.agentTemplates ?? [];
+  let agentTemplatesInserted = 0;
   for (const a of agentTemplates) {
-    insertTemplate.run(
-      a.id,
-      a.name,
-      a.agentType,
-      a.category ?? 'technical',
-      a.description ?? null,
-      a.avatarSpriteIdx ?? 0,
-      JSON.stringify(a.capabilities ?? []),
-      JSON.stringify(a.config ?? {}),
-      a.maxBudgetCents ?? null,
-      JSON.stringify(a.allowedTools ?? []),
-      a.instructionsMd ?? null,
-      a.skillsMd ?? null,
-      a.heartbeatMd ?? null,
-      a.heartbeatIntervalSec ?? 0,
-      JSON.stringify(a.envBindings ?? {}),
-      bundle.version,
-      a.createdAt,
-      now
-    );
-    newlyManagedKeys.add(`agent.template.${a.id}`);
+    const resolvedName = resolveMasterTemplateName(a.name);
+    try {
+      insertTemplate.run(
+        a.id,
+        resolvedName,
+        a.agentType,
+        a.category ?? 'technical',
+        a.description ?? null,
+        a.avatarSpriteIdx ?? 0,
+        JSON.stringify(a.capabilities ?? []),
+        JSON.stringify(a.config ?? {}),
+        a.maxBudgetCents ?? null,
+        JSON.stringify(a.allowedTools ?? []),
+        a.instructionsMd ?? null,
+        a.skillsMd ?? null,
+        a.heartbeatMd ?? null,
+        a.heartbeatIntervalSec ?? 0,
+        JSON.stringify(a.envBindings ?? {}),
+        bundle.version,
+        a.createdAt,
+        now
+      );
+      agentTemplatesInserted++;
+      newlyManagedKeys.add(`agent.template.${a.id}`);
+    } catch (e) {
+      // Covers the still-possible residual case: the bundle itself has
+      // two templates whose names both resolve to the same suffix, or
+      // a concurrent DB edit. Log + keep going so the rest of the
+      // bundle (feature toggles, learnings, version bump) still applies.
+      logNonCritical('fleet.config.apply-template', e);
+    }
   }
 
   // Register managed keys so the UI + IPC know what's IT-controlled.
@@ -369,7 +403,8 @@ export function applyConfigBundle(db: ISqliteDriver, bundle: FleetConfigBundle):
         version: bundle.version,
         iamPolicies: bundle.iamPolicies.length,
         securityFeatures: bundle.securityFeatures.length,
-        agentTemplates: agentTemplates.length,
+        agentTemplates: agentTemplatesInserted,
+        agentTemplatesSkipped: agentTemplates.length - agentTemplatesInserted,
         newlyManagedKeys: newlyManagedKeys.size,
       },
     });
@@ -381,7 +416,7 @@ export function applyConfigBundle(db: ISqliteDriver, bundle: FleetConfigBundle):
     version: bundle.version,
     iamPoliciesReplaced: bundle.iamPolicies.length,
     securityFeaturesUpdated: bundle.securityFeatures.length,
-    agentTemplatesReplaced: agentTemplates.length,
+    agentTemplatesReplaced: agentTemplatesInserted,
     consolidatedLearningsApplied,
     newlyManagedKeys: Array.from(newlyManagedKeys),
   };

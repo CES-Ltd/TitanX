@@ -30,10 +30,13 @@ export type DestructiveCommandTypeT = 'cache.clear' | 'credential.rotate' | 'age
  * master-minted) but NOT admin re-auth on enqueue (would gate every
  * high-frequency farm call behind a password prompt).
  *
- * Currently just `agent.execute`; future additions (e.g. `agent.stop`
- * to cancel an in-flight job) plug in here.
+ * v2.4.0 adds `team.farm_provision` — fired by the master at hire
+ * time so the slave materializes the mirror team (Lead + first
+ * farm teammate) before the first agent.execute arrives. Keeps the
+ * slave's Teams UI in sync with master's roster immediately instead
+ * of lazily on the first message.
  */
-export type SignedNonDestructiveCommandType = 'agent.execute';
+export type SignedNonDestructiveCommandType = 'agent.execute' | 'team.farm_provision';
 
 export type CommandType = NonDestructiveCommandType | DestructiveCommandTypeT | SignedNonDestructiveCommandType;
 
@@ -52,7 +55,10 @@ export const DESTRUCTIVE_COMMAND_TYPES: ReadonlySet<CommandType> = new Set([
  * Subset that requires signing but NOT admin re-auth. Disjoint with
  * DESTRUCTIVE_COMMAND_TYPES.
  */
-export const SIGNED_NON_DESTRUCTIVE_COMMAND_TYPES: ReadonlySet<CommandType> = new Set(['agent.execute']);
+export const SIGNED_NON_DESTRUCTIVE_COMMAND_TYPES: ReadonlySet<CommandType> = new Set([
+  'agent.execute',
+  'team.farm_provision',
+]);
 
 export function isDestructive(t: CommandType): boolean {
   return DESTRUCTIVE_COMMAND_TYPES.has(t);

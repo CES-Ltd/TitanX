@@ -413,7 +413,10 @@ export class TeamSessionService {
     await this.sessions.get(id)?.dispose();
     this.sessions.delete(id);
 
-    // Delete conversations owned by this team's agents
+    // Delete conversations owned by this team's agents. v2.2.0 —
+    // farm-backed agents now own a real `type: 'farm'` conversation
+    // row, so the filter is back to the simple "has a conversationId"
+    // check (no more farm-specific exclusion).
     const team = await this.repo.findById(id);
     if (team) {
       const results = await Promise.allSettled(
@@ -453,10 +456,11 @@ export class TeamSessionService {
     const team = await this.repo.findById(teamId);
     if (!team) throw new Error(`Team "${teamId}" not found`);
 
-    // Phase B v1.10.0 — farm-backed agent short-circuit. Farm agents
-    // don't have a local conversation (turns run remotely on a slave
-    // via agent.execute), so we skip conversation creation and the
-    // gallery whitelist check that infers from local templates.
+    // Phase B v1.10.0 — farm-backed agent. Turns run remotely on a
+    // slave via agent.execute. v2.2.0 gives the slot a real
+    // `type: 'farm'` conversation row so the Lead-chat UI pipeline
+    // (MessageList, markdown, avatars, SendBox) can render it
+    // identically to a local teammate — no bespoke panel needed.
     //
     // The whitelist still gets a chance to reject: master's
     // fleetBinding.remoteSlotId must reference a template the slave
@@ -467,15 +471,42 @@ export class TeamSessionService {
       if (!agent.fleetBinding) {
         throw new Error('Farm-backed agent requires a fleetBinding (deviceId + remoteSlotId)');
       }
+      const slotId = `slot-${uuid(8)}`;
+      // farm-<uuid> keeps the id visually distinct from other convo
+      // types in logs, and stays unique across installs.
+      const conversationId = `farm-${uuid(16)}`;
+
+      // Create the farm conversation row. Model is intentionally
+      // omitted — the slave's resolveProvider picks its own default
+      // enabled provider at dispatch time. The extras carry enough
+      // context for FarmSendBox (via TeamChatView's 'farm' case) to
+      // route messages through team.sendMessageToAgent.
+      try {
+        await this.conversationService.createConversation({
+          type: 'farm',
+          id: conversationId,
+          name: agent.agentName,
+          // TProviderWithModel stub — the slave picks its own provider
+          // at dispatch time; this object is never consumed by the farm
+          // branch of ConversationServiceImpl.createConversation.
+          model: { id: 'farm-placeholder', platform: 'farm', name: 'farm', baseUrl: '', apiKey: '', useModel: '' },
+          extra: {
+            deviceId: agent.fleetBinding.deviceId,
+            remoteSlotId: agent.fleetBinding.remoteSlotId,
+            teamId,
+            agentSlotId: slotId,
+            toolsAllowlist: agent.fleetBinding.toolsAllowlist ?? [],
+          },
+        });
+      } catch (err) {
+        console.error('[TeamSessionService] Failed to create farm conversation row:', err);
+        throw err;
+      }
+
       const farmAgent: TeamAgent = {
         ...agent,
-        slotId: `slot-${uuid(8)}`,
-        // Synthetic placeholder — farm agents don't have a local
-        // conversation but the TeamAgent schema requires a string.
-        // Prefixing with 'farm-' keeps it distinguishable in logs +
-        // prevents any accidental lookup-by-id from matching a real
-        // conversation row.
-        conversationId: `farm-${uuid(16)}`,
+        slotId,
+        conversationId,
       };
       const updatedAgentsFarm = [...team.agents, farmAgent];
       await this.repo.update(teamId, { agents: updatedAgentsFarm, updatedAt: Date.now() });
@@ -497,11 +528,49 @@ export class TeamSessionService {
             agentType: farmAgent.agentType,
             deviceId: agent.fleetBinding.deviceId,
             remoteSlotId: agent.fleetBinding.remoteSlotId,
+            conversationId,
           },
         });
       } catch {
         /* non-critical audit */
       }
+
+      // v2.4.0 — fire `team.farm_provision` so the slave
+      // pre-materializes the mirror team (Lead + teammate) right now,
+      // before any agent.execute turns. Ensures the slave's Teams
+      // UI reflects the hire immediately instead of lazily on first
+      // message. Failures here are non-fatal — the slave will still
+      // self-heal via `upsertSlaveMirror` in farmExecutor on the
+      // first agent.execute.
+      try {
+        const logDb = await getDatabase();
+        const { enqueueSignedCommand } = await import('@process/services/fleetCommands');
+        const result = enqueueSignedCommand(logDb.getDriver(), {
+          targetDeviceId: agent.fleetBinding.deviceId,
+          commandType: 'team.farm_provision',
+          params: {
+            teamId,
+            teamName: team.name,
+            // Default the slave Lead's runtime to the teammate's
+            // runtime — keeps the operator's single-runtime choice
+            // meaningful on both master + slave sides.
+            leadRuntimeBackend: agent.fleetBinding.runtimeBackend ?? agent.agentType,
+            agentSlotId: farmAgent.slotId,
+            agentName: farmAgent.agentName,
+            remoteSlotId: agent.fleetBinding.remoteSlotId,
+            runtimeBackend: agent.fleetBinding.runtimeBackend ?? agent.agentType,
+            toolsAllowlist: agent.fleetBinding.toolsAllowlist ?? [],
+          },
+          ttlSeconds: 300,
+          createdBy: 'system_default_user',
+        });
+        if (!result.ok) {
+          console.warn('[TeamSessionService] farm_provision enqueue failed:', (result as { error: string }).error);
+        }
+      } catch (e) {
+        console.warn('[TeamSessionService] farm_provision enqueue threw:', e);
+      }
+
       return farmAgent;
     }
 
@@ -670,11 +739,22 @@ export class TeamSessionService {
     session = new TeamSession(team, this.repo, this.workerTaskManager, spawnAgent);
     this.sessions.set(teamId, session);
 
-    // Start MCP server and inject per-agent stdio config into all agent conversations.
-    // After DB update, rebuild cached agent tasks so they pick up teamMcpStdioConfig.
+    // Start MCP server and inject per-agent stdio config into local
+    // agent conversations. After DB update, rebuild cached agent tasks
+    // so they pick up teamMcpStdioConfig.
+    //
+    // v2.2.0: farm-backed agents DO have a real conversation row now
+    // (`type: 'farm'`), but they still don't participate in the local
+    // MCP stdio pipeline — their turns run remotely via agent.execute,
+    // and the slave's local MCP is completely separate. So we keep the
+    // farm skip here to avoid (a) a meaningless teamMcpStdioConfig
+    // write to the farm conversation's extras and (b) a guaranteed
+    // `Conversation not found` from workerTaskManager, which only
+    // tracks local agent tasks.
     await session.startMcpServer();
     await Promise.all(
       team.agents.map(async (agent) => {
+        if (agent.backend === 'farm') return;
         if (agent.conversationId) {
           const agentStdioConfig = session.getStdioConfig(agent.slotId);
           await this.conversationService.updateConversation(

@@ -35,6 +35,7 @@ import * as activityLogService from '@process/services/activityLog';
 import { TEAM_CONFIG } from './config';
 import { logNonCritical } from '@process/utils/logNonCritical';
 import { sendShapeFor } from './conversationTypes';
+import { ipcBridge } from '@/common';
 import type { AgentMessage } from './ports/IAgent';
 
 /** Available agent backend types surfaced to the leader for spawn_agent. */
@@ -58,6 +59,12 @@ export type IncomingConversationMessage = {
 
 export type WakeContext = {
   teamId: string;
+  /**
+   * v2.2.1 — optional team display name threaded through to the
+   * farm adapter so slave-side mirror UI can name the team after
+   * master's team, not the opaque teamId.
+   */
+  teamName?: string;
   registry: AgentRegistry;
   wakeState: WakeState;
   streamBuffer: ResponseStreamBuffer;
@@ -251,11 +258,15 @@ export class WakeRunner {
     // parent tree.
     const { createFleetAgentAdapter } = await import('./adapters/FleetAgentAdapter');
     const adapter = createFleetAgentAdapter(
-      { slotId, displayName: agent.agentName, teamId: this.ctx.teamId },
+      { slotId, displayName: agent.agentName, teamId: this.ctx.teamId, teamName: this.ctx.teamName },
       {
         deviceId: agent.fleetBinding.deviceId,
         agentTemplateId: agent.fleetBinding.remoteSlotId,
         toolsAllowlist: agent.fleetBinding.toolsAllowlist,
+        // v2.2.2 — operator's runtime choice at hire time. Falls back
+        // to the agent's own agentType for pre-v2.2.2 slots that were
+        // hired before the field existed.
+        runtimeBackend: agent.fleetBinding.runtimeBackend ?? agent.agentType,
         // Audit actor for the signed envelope. 'system_default_user'
         // is the seeded single-user id; future multi-user support
         // would need to thread the real admin id here.
@@ -284,6 +295,49 @@ export class WakeRunner {
       };
       const raw = success.assistantText?.trim() ?? '';
       const preview = raw.length > 0 ? raw : '(farm agent returned empty response)';
+
+      // v2.2.0 — persist the assistant reply into the farm agent's
+      // conversation so the Lead-chat MessageList renders the
+      // transcript identically to a local teammate. Fire the IPC
+      // stream event too so any open FarmChat MessageList picks it up
+      // without waiting for the DB poll.
+      const assistantText = raw.length > 0 ? raw : preview;
+      this.writeFarmAssistantMessage(agent, assistantText);
+
+      // v2.4.1 — farm agents are teammates that happen to live on
+      // another machine. When a local teammate responds, its ACP
+      // session uses the team MCP `send_message` tool to post back
+      // to the Lead. Farm teammates don't have access to that tool
+      // (they run headless, no team MCP stdio injected), so we do
+      // the mailbox write + recipient wake on their behalf. Senders
+      // we reply to: every distinct fromAgentId in the mailbox
+      // messages that triggered this turn, except 'user' (user sees
+      // the reply via the FarmChat responseStream subscription).
+      const senders = new Set<string>();
+      for (const msg of mailboxMessages) {
+        if (msg.fromAgentId && msg.fromAgentId !== slotId && msg.fromAgentId !== 'user') {
+          senders.add(msg.fromAgentId);
+        }
+      }
+      for (const toAgentId of senders) {
+        try {
+          await this.ctx.mailbox.write({
+            teamId: this.ctx.teamId,
+            toAgentId,
+            fromAgentId: slotId,
+            content: assistantText,
+          });
+        } catch (e) {
+          logNonCritical('fleet.agent.mailbox.write', e);
+        }
+        // Wake the recipient so the Lead / other teammate processes
+        // this new inbox entry immediately — matches how local
+        // send_message via the MCP tool wakes its recipients.
+        void this.wake(toAgentId).catch((e: unknown) => {
+          logNonCritical('fleet.agent.mailbox.wake-recipient', e);
+        });
+      }
+
       this.ctx.setStatus(slotId, 'completed', preview.slice(0, 200));
       this.auditAsync('fleet.agent.wake_completed', slotId, {
         teamId: this.ctx.teamId,
@@ -291,11 +345,16 @@ export class WakeRunner {
         templateId: agent.fleetBinding.remoteSlotId,
         inputTokens: success.usage?.inputTokens,
         outputTokens: success.usage?.outputTokens,
+        repliedTo: Array.from(senders),
       });
       return;
     }
 
     const failure = result as { ok: false; failure: { message: string; kind: string; retryable: boolean } };
+    // v2.2.0 — surface the farm failure reason in the transcript too
+    // so the user sees (e.g.) "no_provider_configured" instead of
+    // silently-empty UI.
+    this.writeFarmAssistantMessage(agent, `Farm dispatch failed: ${failure.failure.message}`);
     this.ctx.setStatus(slotId, 'failed', failure.failure.message.slice(0, 200));
     this.auditAsync('fleet.agent.wake_failed', slotId, {
       teamId: this.ctx.teamId,
@@ -304,6 +363,35 @@ export class WakeRunner {
       failureKind: failure.failure.kind,
       retryable: failure.failure.retryable,
     });
+  }
+
+  /**
+   * v2.2.0 — persist an assistant bubble into the farm agent's
+   * conversation and emit the stream event any open renderer is
+   * listening to. Keeps farm transcripts on parity with local agents'.
+   */
+  private writeFarmAssistantMessage(agent: TeamAgent, content: string): void {
+    if (!agent.conversationId) return;
+    const msgId = crypto.randomUUID();
+    try {
+      addMessage(agent.conversationId, {
+        id: msgId,
+        msg_id: msgId,
+        type: 'text',
+        position: 'left',
+        conversation_id: agent.conversationId,
+        content: { content },
+        createdAt: Date.now(),
+      });
+      ipcBridge.conversation.responseStream.emit({
+        type: 'content',
+        conversation_id: agent.conversationId,
+        msg_id: msgId,
+        data: content,
+      } as unknown as Parameters<typeof ipcBridge.conversation.responseStream.emit>[0]);
+    } catch (e) {
+      logNonCritical('fleet.agent.write-assistant-message', e);
+    }
   }
 
   /**

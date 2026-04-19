@@ -31,10 +31,19 @@ import { decrypt, loadOrCreateMasterKey } from '@process/services/secrets/encryp
 import { logNonCritical } from '@process/utils/logNonCritical';
 import { getDatabase } from '@process/services/database';
 import { buildTelemetryReport, getTelemetryState, setTelemetryState } from './index';
-import type { IngestResult } from './types';
+import type { IngestResult, TelemetryRuntimeInfo } from './types';
+import { acpDetector } from '@process/agent/acp/AcpDetector';
 
-/** 6 hours — see module docstring for the sizing rationale. */
-const PUSH_INTERVAL_MS = 6 * 60 * 60 * 1000;
+/**
+ * v2.2.2 — tightened from 6h to 60s. The payload is small
+ * (a few hundred bytes + provider/runtime shapes) and the
+ * interactive-hire flow needs fresh runtime info within seconds of
+ * a slave upgrade or CLI install, not hours. For a 1,000-slave
+ * fleet that's ~17 POSTs/sec at master — still trivial given the
+ * POST handler does a single upsert. Revisit if the master starts
+ * throttling the ingest path.
+ */
+const PUSH_INTERVAL_MS = 60 * 1000;
 
 let _pushTimer: ReturnType<typeof setInterval> | null = null;
 let _inFlight = false;
@@ -133,7 +142,14 @@ export async function pushOnce(masterUrl: string): Promise<void> {
       return;
     }
 
-    const report = buildTelemetryReport(db.getDriver(), windowStart, windowEnd);
+    // v2.2.1 — summarize the slave's detected ACP runtimes (Claude
+    // Code CLI, OpenCode, Codex, etc.) so the master's
+    // HireFarmAgentModal can gate hires on a runtime that matches the
+    // template's agentType. Farm agents execute through an ACP
+    // runtime on the slave; the v2.2.0 "LLM API providers" field was
+    // the wrong layer.
+    const runtimes = summarizeDetectedRuntimes();
+    const report = buildTelemetryReport(db.getDriver(), windowStart, windowEnd, runtimes);
 
     const response = await fetch(`${stripTrailingSlash(masterUrl)}/api/fleet/telemetry`, {
       method: 'POST',
@@ -190,4 +206,45 @@ async function getCachedDeviceJwt(): Promise<string | null> {
 
 function stripTrailingSlash(url: string): string {
   return url.endsWith('/') ? url.slice(0, -1) : url;
+}
+
+/**
+ * v2.2.1 — summarize the slave's detected ACP runtimes for the
+ * telemetry payload. Each entry reports the backend id (matching
+ * AgentTemplate.agentType) + display label + whether the CLI was
+ * found on PATH at detection time. Runtime *without* an available
+ * CLI is still reported so the hire modal can explain "you have a
+ * record for Claude Code CLI on this machine, but it's not currently
+ * installed" — more actionable than silently dropping it.
+ *
+ * Dedupes by `backend` so a builtin + an extension both targeting
+ * the same backend show as one row. Returns `undefined` on error so
+ * master distinguishes "no runtimes" (zero-length array) from
+ * "couldn't determine" (undefined → no UI gating).
+ */
+function summarizeDetectedRuntimes(): TelemetryRuntimeInfo[] | undefined {
+  try {
+    const detected = acpDetector.getDetectedAgents();
+    const seen = new Map<string, TelemetryRuntimeInfo>();
+    for (const a of detected) {
+      // Skip custom/preset agents — they don't represent a distinct
+      // runtime the master could select against; the user's template
+      // agentType is already more precise.
+      if (a.backend === 'custom' && !a.isExtension) continue;
+      const key = String(a.backend);
+      if (seen.has(key)) continue;
+      // CLI availability: the detector only includes agents it has
+      // verified via `which` (or extension manifest). Everything in
+      // the list at this point has a runnable entry point.
+      seen.set(key, {
+        backend: key,
+        name: a.name,
+        cliAvailable: true,
+      });
+    }
+    return Array.from(seen.values());
+  } catch (e) {
+    logNonCritical('fleet.telemetry.summarize-runtimes', e);
+    return undefined;
+  }
 }

@@ -43,6 +43,7 @@ export class TeamSession extends EventEmitter {
     this.taskManager = new TaskManager(repo);
     this.teammateManager = new TeammateManager({
       teamId: team.id,
+      teamName: team.name,
       agents: team.agents,
       mailbox: this.mailbox,
       taskManager: this.taskManager,
@@ -167,6 +168,10 @@ export class TeamSession extends EventEmitter {
     });
 
     const agent = this.teammateManager.getAgents().find((a) => a.slotId === slotId);
+    // v2.2.0: farm-backed agents now own a real `type: 'farm'`
+    // conversation row, so addMessage writes a persisted user bubble
+    // just like for local teammates. The v2.1.2 farm-guard here is
+    // removed — it was a workaround for the missing conversation.
     if (agent?.conversationId) {
       const msgId = crypto.randomUUID();
       const userMessage: TMessage = {

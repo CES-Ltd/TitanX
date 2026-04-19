@@ -64,6 +64,13 @@ const AgentChatSlot: React.FC<{
   onToggleFullscreen?: () => void;
   onRemove?: () => void;
 }> = ({ agent, teamId, isLead, isFullscreen = false, runtimeStatus, onToggleFullscreen, onRemove }) => {
+  // v2.2.0: farm-backed agents now own a real `type: 'farm'`
+  // conversation row, so the normal fetch + TeamChatView pipeline
+  // handles them (TeamChatView's 'farm' case renders FarmChat, which
+  // wraps MessageList + FarmSendBox identically to the Lead view).
+  // Only the model-selector chrome + workerTaskManager bootstrap are
+  // still farm-specific and skipped below.
+  const isFarm = agent.backend === 'farm';
   const { data: conversation } = useSWR(agent.conversationId ? ['team-conversation', agent.conversationId] : null, () =>
     ipcBridge.conversation.get.invoke({ id: agent.conversationId })
   );
@@ -121,7 +128,9 @@ const AgentChatSlot: React.FC<{
           )}
         </div>
         <div className='flex items-center gap-8px shrink-0'>
-          {agent.conversationId && !isAionrs && isAcpLike && (
+          {/* Model selectors drive conversation.update — pointless for
+              farm agents whose conversationId is synthetic. Skip them. */}
+          {!isFarm && agent.conversationId && !isAionrs && isAcpLike && (
             <div className='min-w-0 max-w-140px [&_button]:max-w-full [&_button_span]:truncate'>
               <AcpModelSelector
                 key={agent.conversationId}
@@ -131,12 +140,12 @@ const AgentChatSlot: React.FC<{
               />
             </div>
           )}
-          {agent.conversationId && isGemini && (
+          {!isFarm && agent.conversationId && isGemini && (
             <div className='min-w-0 max-w-140px [&_button]:max-w-full [&_button_span]:truncate'>
               <GeminiModelSelector selection={geminiModelSelection} />
             </div>
           )}
-          {isAionrs && agent.conversationId && (
+          {!isFarm && isAionrs && agent.conversationId && (
             <div className='min-w-0 max-w-140px [&_button]:max-w-full [&_button_span]:truncate'>
               <AionrsHeaderModelSelector
                 key={agent.conversationId}

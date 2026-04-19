@@ -50,6 +50,12 @@ type Draft =
       content: string;
       atPath: Array<string | FileOrFolderItem>;
       uploadFile: string[];
+    }
+  | {
+      _type: 'farm';
+      content: string;
+      atPath: Array<string | FileOrFolderItem>;
+      uploadFile: string[];
     };
 
 /**
@@ -67,6 +73,10 @@ const store: SendBoxDraftStore = {
   nanobot: new Map(),
   remote: new Map(),
   aionrs: new Map(),
+  // v2.2.0 — farm-backed team members. FarmSendBox uses its own local
+  // state (no persistent draft across conversations), but the store
+  // still needs a bucket to satisfy the exhaustive type check.
+  farm: new Map(),
 };
 
 const setDraft = <K extends TChatConversation['type']>(
@@ -125,6 +135,16 @@ const setDraft = <K extends TChatConversation['type']>(
         store.aionrs.delete(conversation_id);
       }
       break;
+    case 'farm':
+      // v2.4.2 — FarmSendBox doesn't use this hook today (it keeps
+      // local useState for the input), but the bucket exists so
+      // future code that does use it gets proper persistence.
+      if (draft) {
+        store.farm.set(conversation_id, draft as Extract<Draft, { _type: 'farm' }>);
+      } else {
+        store.farm.delete(conversation_id);
+      }
+      break;
     default:
       break;
   }
@@ -150,6 +170,8 @@ const getDraft = <K extends TChatConversation['type']>(
       return store.remote.get(conversation_id) as Extract<Draft, { _type: K }>;
     case 'aionrs':
       return store.aionrs.get(conversation_id) as Extract<Draft, { _type: K }>;
+    case 'farm':
+      return store.farm.get(conversation_id) as Extract<Draft, { _type: K }>;
     default:
       return undefined;
   }

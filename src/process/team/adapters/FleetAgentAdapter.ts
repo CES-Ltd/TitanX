@@ -49,6 +49,12 @@ export type FleetAgentAdapterConfig = {
   /** Admin user id for audit on enqueue. */
   createdBy: string;
   /**
+   * v2.2.2 — operator-chosen ACP runtime (claude, opencode, codex,
+   * gemini, \u2026). Slave routes to the corresponding ACP adapter; when
+   * omitted the slave falls back to the template's agentType.
+   */
+  runtimeBackend?: string;
+  /**
    * Injected DB driver accessor — adapter doesn't own a singleton
    * ref because it needs to work in test harnesses with a mock driver.
    */
@@ -125,7 +131,14 @@ function recordJobFinished(
  * the rest.
  */
 export function createFleetAgentAdapter(
-  slotInfo: { slotId: string; displayName: string; teamId: string },
+  /**
+   * v2.2.1 — `teamName` (optional) threads the master's team display
+   * name through to the slave so the slave can mirror the farm work
+   * into a Teams UI that matches what the master sees. Old callers
+   * that omit it still work — the slave just names the mirror team
+   * "Farm" as a generic fallback.
+   */
+  slotInfo: { slotId: string; displayName: string; teamId: string; teamName?: string },
   config: FleetAgentAdapterConfig
 ): IAgent {
   return {
@@ -188,6 +201,15 @@ export function createFleetAgentAdapter(
           messages,
           toolsAllowlist: config.toolsAllowlist,
           timeoutMs,
+          // v2.2.1 — master team context for slave-side mirror.
+          teamId: slotInfo.teamId,
+          teamName: slotInfo.teamName ?? 'Farm',
+          agentSlotId: slotInfo.slotId,
+          agentName: slotInfo.displayName,
+          // v2.2.2 — operator-chosen runtime (claude, opencode, codex, \u2026).
+          // Slave uses this to route to the right ACP adapter; absent
+          // values fall back to the template's agentType.
+          runtimeBackend: config.runtimeBackend,
         },
         ttlSeconds: Math.max(60, Math.ceil(timeoutMs / 1000) + 60),
         createdBy: config.createdBy,

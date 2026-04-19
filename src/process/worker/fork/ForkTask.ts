@@ -115,6 +115,18 @@ export class ForkTask<Data> extends Pipe {
     fcp.on('error', (...args: unknown[]) => {
       this.emit('error', args[0] as Error);
     });
+    // v2.1.0 [CRIT]: auto-cleanup on child exit. Previously if the
+    // child crashed or exited without kill() being called, the task
+    // stayed in activeForkTasks forever — one leaked reference per
+    // crashed agent run, which adds up fast over long sessions.
+    // 'close' fires after 'exit' and after all stdio has closed, so
+    // it's the safest terminal event to hook.
+    fcp.on('close', () => {
+      if (this.registered) {
+        activeForkTasks.delete(this);
+        this.registered = false;
+      }
+    });
     this.fcp = fcp;
   }
   start() {

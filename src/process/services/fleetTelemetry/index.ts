@@ -42,7 +42,21 @@ const DEFAULT_TOP_DEVICES_LIMIT = 10;
  * fresh install before some seed data lands) the missing field defaults
  * to 0 instead of crashing the push.
  */
-export function buildTelemetryReport(db: ISqliteDriver, since: number, until: number = Date.now()): TelemetryReport {
+export function buildTelemetryReport(
+  db: ISqliteDriver,
+  since: number,
+  until: number = Date.now(),
+  /**
+   * v2.2.1 — ACP runtime summary fetched by the caller from
+   * `acpDetector.getDetectedAgents()`. Kept out of this fn's body
+   * because the detector is async-initialized elsewhere and callers
+   * (slavePush, unit tests) prefer a pure sync signature. Pass
+   * `undefined` (or omit) on paths where runtime detection isn't
+   * available — the report's `runtimes` field just stays absent,
+   * which the master treats as "unknown" rather than "empty".
+   */
+  runtimes?: import('./types').TelemetryRuntimeInfo[]
+): TelemetryReport {
   const windowStart = Math.max(0, since);
   const windowEnd = Math.max(windowStart, until);
 
@@ -96,6 +110,7 @@ export function buildTelemetryReport(db: ISqliteDriver, since: number, until: nu
     policyViolationCount,
     agentCount,
     topActions,
+    runtimes,
   };
 }
 
@@ -215,6 +230,11 @@ export function ingestTelemetryReport(db: ISqliteDriver, deviceId: string, repor
 
   const payload = JSON.stringify({
     topActions: report.topActions,
+    // v2.2.1 — runtime summary lives inside the JSON blob so no schema
+    // migration is required. Omitted when the slave is pre-v2.2.1.
+    // NB: v2.2.0's `providers` field was wrong semantically (LLM API
+    // providers instead of ACP runtimes) and is ignored on read.
+    runtimes: report.runtimes,
   });
 
   db.prepare(
@@ -323,9 +343,14 @@ export function getDeviceTelemetry(db: ISqliteDriver, deviceId: string, limit: n
 
   return rows.map((r) => {
     let topActions: Array<{ action: string; count: number }> = [];
+    let runtimes: import('./types').TelemetryRuntimeInfo[] | undefined;
     try {
-      const parsed = JSON.parse(r.report_payload) as { topActions?: Array<{ action: string; count: number }> };
+      const parsed = JSON.parse(r.report_payload) as {
+        topActions?: Array<{ action: string; count: number }>;
+        runtimes?: import('./types').TelemetryRuntimeInfo[];
+      };
       topActions = parsed.topActions ?? [];
+      runtimes = parsed.runtimes;
     } catch {
       // Corrupt payload — surface the numeric aggregates anyway.
     }
@@ -339,9 +364,54 @@ export function getDeviceTelemetry(db: ISqliteDriver, deviceId: string, limit: n
       policyViolationCount: r.policy_violation_count,
       agentCount: r.agent_count,
       topActions,
+      runtimes,
       receivedAt: r.received_at,
     };
   });
+}
+
+/**
+ * v2.2.1 — return the most recent ACP-runtime summary per device,
+ * keyed by deviceId. Powers the master-side HireFarmAgentModal's
+ * runtime badges + agentType-mismatch warning without requiring a
+ * per-device drill-down.
+ *
+ * Returns an empty map on any query failure (best-effort — the UI
+ * still renders devices, it just can't gate on runtimes).
+ */
+export function getLatestRuntimesByDevice(db: ISqliteDriver): Map<string, import('./types').TelemetryRuntimeInfo[]> {
+  const map = new Map<string, import('./types').TelemetryRuntimeInfo[]>();
+  try {
+    // Single query: latest report per device via GROUP BY + MAX(window_end).
+    // A correlated subquery would be clearer but slower at scale.
+    const rows = db
+      .prepare(
+        `SELECT t.device_id, t.report_payload
+         FROM fleet_telemetry_reports t
+         INNER JOIN (
+           SELECT device_id, MAX(window_end) as max_we
+           FROM fleet_telemetry_reports
+           GROUP BY device_id
+         ) latest ON latest.device_id = t.device_id AND latest.max_we = t.window_end`
+      )
+      .all() as Array<{ device_id: string; report_payload: string }>;
+
+    for (const row of rows) {
+      try {
+        const parsed = JSON.parse(row.report_payload) as {
+          runtimes?: import('./types').TelemetryRuntimeInfo[];
+        };
+        if (Array.isArray(parsed.runtimes)) {
+          map.set(row.device_id, parsed.runtimes);
+        }
+      } catch {
+        // Corrupt payload — skip this device.
+      }
+    }
+  } catch (e) {
+    logNonCritical('fleet.telemetry.latest-runtimes-query', e);
+  }
+  return map;
 }
 
 // ── Master: agent-template adoption (Phase E Week 3) ────────────────────

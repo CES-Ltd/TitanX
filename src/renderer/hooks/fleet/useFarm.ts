@@ -13,9 +13,16 @@
  */
 
 import useSWR from 'swr';
+import { useEffect } from 'react';
 import { ipcBridge } from '@/common';
 
 const REFRESH_INTERVAL_MS = 30_000;
+
+export type FarmDeviceRuntime = {
+  backend: string;
+  name: string;
+  cliAvailable: boolean;
+};
 
 export type FarmDevice = {
   deviceId: string;
@@ -25,6 +32,15 @@ export type FarmDevice = {
   enrolledAt: number;
   lastHeartbeatAt?: number;
   capabilities: Record<string, unknown>;
+  /**
+   * v2.2.1 — detected ACP runtimes (Claude Code CLI, OpenCode, Codex,
+   * Gemini, etc.) from the device's most recent telemetry push.
+   * Undefined means "no telemetry yet OR slave is pre-v2.2.1"; empty
+   * array means "slave pushed, has zero detected runtimes".
+   * HireFarmAgentModal distinguishes the two to avoid blocking
+   * on unknown.
+   */
+  runtimes?: FarmDeviceRuntime[];
 };
 
 export type FarmJobSummary = {
@@ -63,6 +79,24 @@ export function useFarmDevices(): {
     () => ipcBridge.fleet.listFarmDevices.invoke(),
     { refreshInterval: REFRESH_INTERVAL_MS }
   );
+  // v2.2.2 — subscribe to the master-side telemetry-received IPC
+  // event so the hire modal picks up a slave's first v2.2.1+
+  // runtime report within seconds of it landing, not on the 30s poll
+  // tick. The emitter is fired from fleetRoutes after a successful
+  // ingest.
+  useEffect(() => {
+    const off = ipcBridge.fleet.telemetryReceived.on(() => {
+      void mutate();
+    });
+    return () => {
+      // Arco/IPC emitter unsubscribe returns void; wrap defensively.
+      try {
+        off();
+      } catch {
+        /* noop */
+      }
+    };
+  }, [mutate]);
   return {
     devices: data?.devices ?? [],
     isLoading,

@@ -42,21 +42,22 @@ export function pruneStaleData(db: ISqliteDriver): void {
   }
 
   try {
-    // 2. Messages — delete from conversations with no activity for 14+ days
+    // 2. Messages — delete from conversations with no activity for 14+ days.
+    // v2.1.0 [PERF]: was N+1 — fetched the stale conversation list, then
+    // ran one DELETE per conversation id. With thousands of stale rows
+    // this meant thousands of SQLite round-trips each cycle. Single
+    // correlated DELETE deletes them all in one statement.
     const msgCutoff = now - RETENTION.messages;
-    const staleConversations = db
+    const msgResult = db
       .prepare(
-        `SELECT id FROM conversations
-         WHERE updated_at < ? AND status != 'running'`
+        `DELETE FROM messages
+         WHERE conversation_id IN (
+           SELECT id FROM conversations
+           WHERE updated_at < ? AND status != 'running'
+         )`
       )
-      .all(msgCutoff) as Array<{ id: string }>;
-
-    let msgDeleted = 0;
-    for (const conv of staleConversations) {
-      const result = db.prepare('DELETE FROM messages WHERE conversation_id = ?').run(conv.id);
-      msgDeleted += result.changes;
-    }
-    results.messages = msgDeleted;
+      .run(msgCutoff);
+    results.messages = msgResult.changes;
   } catch (err) {
     console.warn('[Pruning] messages:', err instanceof Error ? err.message : err);
     results.messages = 0;
@@ -106,10 +107,15 @@ export function pruneStaleData(db: ISqliteDriver): void {
     console.log('[Pruning] No stale data to prune');
   }
 
-  // Run VACUUM to reclaim disk space after large deletes
-  if (total > 100) {
+  // v2.1.0 [PERF]: VACUUM only when a truly large delete happened.
+  // The previous >100 threshold triggered VACUUM every cycle on a
+  // busy install (activity_log alone easily clears 100 rows/day).
+  // Incremental VACUUM holds a write lock for the duration, blocking
+  // other DB writers. 10k-row threshold keeps lock contention rare
+  // while still reclaiming space when it matters.
+  if (total > 10_000) {
     try {
-      db.exec('PRAGMA incremental_vacuum(100)');
+      db.exec('PRAGMA incremental_vacuum(1000)');
     } catch {
       // auto_vacuum might not be enabled — non-critical
     }

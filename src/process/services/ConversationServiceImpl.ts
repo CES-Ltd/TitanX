@@ -163,6 +163,44 @@ export class ConversationServiceImpl implements IConversationService {
         conversation = await createAionrsAgent(params as any);
         break;
       }
+      case 'farm': {
+        // v2.2.0 — Farm-backed team member conversation. Unlike local
+        // agent types, there's no CLI / workspace / provider bootstrap
+        // to do here; the slave picks its own provider at dispatch
+        // time. We just shape the row and let the repo write it. The
+        // `model` field required by CreateConversationParams is
+        // ignored for farm conversations (the slave owns the model),
+        // and is therefore NOT stamped onto the row (matching the
+        // `Omit<..., 'model'>` declaration in storage.ts).
+        const now = Date.now();
+        const farmExtra = params.extra as {
+          workspace?: string;
+          deviceId?: string;
+          remoteSlotId?: string;
+          teamId?: string;
+          agentSlotId?: string;
+          toolsAllowlist?: string[];
+        };
+        if (!farmExtra.deviceId || !farmExtra.remoteSlotId) {
+          throw new Error('farm conversation requires extra.deviceId + extra.remoteSlotId');
+        }
+        conversation = {
+          id: params.id ?? uuid(),
+          type: 'farm',
+          name: params.name ?? 'Farm Agent',
+          createTime: now,
+          modifyTime: now,
+          extra: {
+            workspace: farmExtra.workspace,
+            deviceId: farmExtra.deviceId,
+            remoteSlotId: farmExtra.remoteSlotId,
+            teamId: farmExtra.teamId,
+            agentSlotId: farmExtra.agentSlotId,
+            toolsAllowlist: farmExtra.toolsAllowlist ?? [],
+          },
+        } as unknown as TChatConversation;
+        break;
+      }
       default: {
         throw new Error(`Invalid conversation type: ${(params as any).type}`);
       }

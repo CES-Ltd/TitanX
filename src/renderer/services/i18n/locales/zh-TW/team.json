@@ -46,5 +46,14 @@
       "workspace": "Workspace"
     },
     "error": "建立團隊失敗"
+  },
+  "farm": {
+    "badge": "農場",
+    "runningOn": "在 {{device}} 上執行",
+    "noBinding": "無艦隊綁定",
+    "emptyHint": "傳送訊息以向此遠端代理派發一個回合。回應將在命令逾時內透過艦隊通道到達。",
+    "sendPlaceholder": "向農場代理傳送訊息…",
+    "send": "傳送",
+    "slaveMirrorBadge": "主機農場插槽的映像 (唯讀)"
   }
 }

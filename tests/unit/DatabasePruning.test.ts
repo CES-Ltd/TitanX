@@ -101,46 +101,53 @@ describe('DatabasePruning', () => {
       expect(caveDeletes[0].sql).toMatch(/occurred_at\s*<\s*\?/);
     });
 
-    it('loops through stale conversations and deletes their messages', () => {
-      const allMap = new Map<string, (args: readonly unknown[]) => unknown[]>();
-      allMap.set(
-        `SELECT id FROM conversations
-         WHERE updated_at < ? AND status != 'running'`,
-        () => [{ id: 'stale-1' }, { id: 'stale-2' }]
-      );
-      const { driver, calls } = makeStubDriver({ allMap });
-      pruneStaleData(driver);
-
-      const messageDeletes = calls.filter(
-        (c) => c.sql === 'DELETE FROM messages WHERE conversation_id = ?' && c.method === 'run'
-      );
-      expect(messageDeletes).toHaveLength(2);
-      expect(messageDeletes[0].args).toEqual(['stale-1']);
-      expect(messageDeletes[1].args).toEqual(['stale-2']);
-    });
-
-    it('skips message deletion when no conversations are stale', () => {
+    it('deletes stale conversation messages in a single correlated DELETE (v2.1.0 N+1 fix)', () => {
+      // v2.1.0 [PERF]: was N+1 — one SELECT + N DELETEs. Now one DELETE
+      // with a correlated subquery scopes by conversations.updated_at.
+      // This test locks down the new single-query shape.
       const { driver, calls } = makeStubDriver({});
       pruneStaleData(driver);
-      const messageDeletes = calls.filter((c) => c.sql.startsWith('DELETE FROM messages'));
-      expect(messageDeletes).toHaveLength(0);
+
+      const messageDeletes = calls.filter((c) => c.sql.includes('DELETE FROM messages') && c.method === 'run');
+      expect(messageDeletes).toHaveLength(1);
+      // The new shape uses `WHERE conversation_id IN (SELECT id FROM conversations ...)`
+      expect(messageDeletes[0].sql).toMatch(/WHERE conversation_id IN \(/);
+      expect(messageDeletes[0].sql).toMatch(/FROM conversations/);
+      expect(messageDeletes[0].sql).toMatch(/status != 'running'/);
+      // One arg: the messages-cutoff timestamp, ~14 days ago.
+      expect(messageDeletes[0].args).toHaveLength(1);
+      expectCutoffNearMinusDays(messageDeletes[0].args[0] as number, 14);
+    });
+
+    it('still runs exactly one messages DELETE even when no conversations are stale', () => {
+      // With the new correlated DELETE we always issue one statement;
+      // SQLite's WHERE IN on an empty subquery just deletes 0 rows,
+      // which is cheaper than the old "skip the delete" branch.
+      const { driver, calls } = makeStubDriver({});
+      pruneStaleData(driver);
+      const messageDeletes = calls.filter((c) => c.sql.includes('DELETE FROM messages') && c.method === 'run');
+      expect(messageDeletes).toHaveLength(1);
     });
   });
 
   describe('VACUUM trigger', () => {
-    it('runs incremental_vacuum when > 100 rows were deleted', () => {
+    it('runs incremental_vacuum when > 10000 rows were deleted (v2.1.0 raised threshold)', () => {
+      // Threshold was 100 before v2.1.0 — too aggressive on busy installs.
+      // 10k keeps VACUUM for genuinely large sweeps; smaller deletes
+      // avoid the write-lock pause that came with the old cadence.
       const runMap = new Map<string, (args: readonly unknown[]) => number>();
-      runMap.set('DELETE FROM activity_log WHERE created_at < ?', () => 150);
+      runMap.set('DELETE FROM activity_log WHERE created_at < ?', () => 10_001);
       const { driver } = makeStubDriver({ runMap });
       pruneStaleData(driver);
-      expect(driver.exec).toHaveBeenCalledWith('PRAGMA incremental_vacuum(100)');
+      expect(driver.exec).toHaveBeenCalledWith('PRAGMA incremental_vacuum(1000)');
     });
 
-    it('does NOT run VACUUM when fewer than 100 rows were deleted', () => {
+    it('does NOT run VACUUM when fewer than 10000 rows were deleted', () => {
       const runMap = new Map<string, (args: readonly unknown[]) => number>();
       runMap.set('DELETE FROM activity_log WHERE created_at < ?', () => 5);
       const { driver } = makeStubDriver({ runMap });
       pruneStaleData(driver);
+      expect(driver.exec).not.toHaveBeenCalledWith('PRAGMA incremental_vacuum(1000)');
       expect(driver.exec).not.toHaveBeenCalledWith('PRAGMA incremental_vacuum(100)');
     });
   });

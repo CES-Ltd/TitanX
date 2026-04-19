@@ -11,6 +11,7 @@ const GeminiChat = React.lazy(() => import('@/renderer/pages/conversation/platfo
 const OpenClawChat = React.lazy(() => import('@/renderer/pages/conversation/platforms/openclaw/OpenClawChat'));
 const NanobotChat = React.lazy(() => import('@/renderer/pages/conversation/platforms/nanobot/NanobotChat'));
 const RemoteChat = React.lazy(() => import('@/renderer/pages/conversation/platforms/remote/RemoteChat'));
+const FarmChat = React.lazy(() => import('@/renderer/pages/conversation/platforms/farm/FarmChat'));
 
 // Narrow to Gemini conversations so model field is always available
 type GeminiConversation = Extract<TChatConversation, { type: 'gemini' }>;
@@ -141,6 +142,56 @@ const TeamChatView: React.FC<TeamChatViewProps> = ({ conversation, hideSendBox, 
             hideSendBox={hideSendBox}
           />
         );
+      case 'farm': {
+        // v2.2.0 — farm-backed team members. Routing messages requires
+        // teamId + agentSlotId (for team.sendMessageToAgent). teamId
+        // comes from the prop; agentSlotId is stored in the farm
+        // conversation's extras when TeamSessionService.addAgent
+        // creates the row.
+        //
+        // v2.2.1 — farm conversations can also be slave-side mirrors
+        // of master-hired slots. When `isSlaveMirror=true` in the
+        // extras, FarmChat renders read-only regardless of the other
+        // flags.
+        const farmExtra = conversation.extra as {
+          workspace?: string;
+          teamId?: string;
+          agentSlotId?: string;
+          deviceId?: string;
+          isSlaveMirror?: boolean;
+        };
+        const resolvedTeamId = teamId ?? farmExtra.teamId ?? '';
+        const resolvedSlotId = agentSlotId ?? farmExtra.agentSlotId ?? '';
+        const isSlaveMirror = farmExtra.isSlaveMirror === true;
+        if (!resolvedTeamId || !resolvedSlotId) {
+          // Shouldn't happen on well-formed farm rows. Fall back to
+          // a read-only panel so the UI still renders.
+          return (
+            <FarmChat
+              key={conversation.id}
+              conversation_id={conversation.id}
+              workspace={farmExtra.workspace}
+              teamId={resolvedTeamId}
+              agentSlotId={resolvedSlotId}
+              deviceId={farmExtra.deviceId}
+              hideSendBox={true}
+              isSlaveMirror={isSlaveMirror}
+            />
+          );
+        }
+        return (
+          <FarmChat
+            key={conversation.id}
+            conversation_id={conversation.id}
+            workspace={farmExtra.workspace}
+            teamId={resolvedTeamId}
+            agentSlotId={resolvedSlotId}
+            deviceId={farmExtra.deviceId}
+            hideSendBox={hideSendBox}
+            isSlaveMirror={isSlaveMirror}
+          />
+        );
+      }
       default:
         return null;
     }

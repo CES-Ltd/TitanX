@@ -209,6 +209,15 @@ export function rowToConversation(row: IConversationRow): TChatConversation {
     } as TChatConversation;
   }
 
+  // Farm type (v2.2.0) — farm-backed team member; turns run remotely on a slave.
+  if (row.type === 'farm') {
+    return {
+      ...base,
+      type: 'farm' as const,
+      extra: JSON.parse(row.extra),
+    } as TChatConversation;
+  }
+
   // Unknown type - should never happen with valid data
   throw new Error(`Unknown conversation type: ${row.type}`);
 }

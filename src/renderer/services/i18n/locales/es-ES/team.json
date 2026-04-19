@@ -46,5 +46,14 @@
       "workspace": "Workspace"
     },
     "error": "Failed to create team"
+  },
+  "farm": {
+    "badge": "Granja",
+    "runningOn": "Ejecutando en {{device}}",
+    "noBinding": "Sin enlace de flota",
+    "emptyHint": "Envía un mensaje para despachar un turno a este agente remoto. Las respuestas llegan por el canal de flota dentro del tiempo límite del comando.",
+    "sendPlaceholder": "Mensaje al agente de granja…",
+    "send": "Enviar",
+    "slaveMirrorBadge": "Espejo del slot de granja del maestro (solo lectura)"
   }
 }

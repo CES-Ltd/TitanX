@@ -52,7 +52,16 @@ import {
 // ── Ack listener registry (for IPC emitter wiring) ──────────────────────
 
 type AckNotification = { commandId: string; deviceId: string; status: AckStatus };
-let _ackListeners: Array<(n: AckNotification) => void> = [];
+
+/**
+ * v2.1.0 [PERF]: Set instead of Array. Unsubscribe was O(n) filter
+ * across the whole array before; Set.delete is O(1). At low listener
+ * counts the difference is noise, but on master installs with many
+ * admin surfaces (FleetDashboard + FleetLearning + CommandHistory)
+ * each subscribing independently, every unsubscribe was rescanning
+ * the array. Set keeps it tight regardless of size.
+ */
+const _ackListeners = new Set<(n: AckNotification) => void>();
 
 /**
  * Subscribe to ack events. Returns an unsubscribe function. fleetBridge
@@ -61,15 +70,15 @@ let _ackListeners: Array<(n: AckNotification) => void> = [];
  * instead of waiting for the next poll.
  */
 export function onCommandAcked(listener: (n: AckNotification) => void): () => void {
-  _ackListeners.push(listener);
+  _ackListeners.add(listener);
   return () => {
-    _ackListeners = _ackListeners.filter((l) => l !== listener);
+    _ackListeners.delete(listener);
   };
 }
 
 /** Reset module-level listener state — TEST ONLY. */
 export function __resetCommandListenersForTests(): void {
-  _ackListeners = [];
+  _ackListeners.clear();
 }
 
 // ── Master: enqueue ─────────────────────────────────────────────────────
