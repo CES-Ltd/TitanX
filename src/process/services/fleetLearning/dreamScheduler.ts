@@ -219,6 +219,51 @@ export async function runDreamPass(db: ISqliteDriver, options?: { keepTopN?: num
   const started = Date.now();
 
   try {
+    // v2.5.0 Phase B1 — build a consumption-feedback index first so
+    // Pass 1's cluster scoring can boost clusters that slaves have
+    // actually used successfully. Each fleet_learnings row with
+    // learning_type='consumption_feedback' has a JSON payload with
+    // { trajectoryHash, usedCount, successCount }.
+    const feedbackRows = db
+      .prepare(
+        `SELECT device_id, payload, usage_count_local
+         FROM fleet_learnings
+         WHERE learning_type = 'consumption_feedback' AND consolidated_version IS NULL`
+      )
+      .all() as Array<{ device_id: string; payload: string; usage_count_local: number | null }>;
+    const feedbackByHash = new Map<
+      string,
+      { usedCount: number; successCount: number; deviceSet: Set<string>; sourceIds: string[] }
+    >();
+    const feedbackSourceIds: string[] = [];
+    for (const row of feedbackRows) {
+      try {
+        const p = JSON.parse(row.payload) as { trajectoryHash?: string; usedCount?: number; successCount?: number };
+        if (!p.trajectoryHash || typeof p.trajectoryHash !== 'string') continue;
+        const entry = feedbackByHash.get(p.trajectoryHash) ?? {
+          usedCount: 0,
+          successCount: 0,
+          deviceSet: new Set<string>(),
+          sourceIds: [],
+        };
+        entry.usedCount += p.usedCount ?? 0;
+        entry.successCount += p.successCount ?? 0;
+        entry.deviceSet.add(row.device_id);
+        feedbackByHash.set(p.trajectoryHash, entry);
+      } catch {
+        /* skip malformed */
+      }
+    }
+    feedbackSourceIds.push(
+      ...(
+        db
+          .prepare(
+            `SELECT id FROM fleet_learnings WHERE learning_type = 'consumption_feedback' AND consolidated_version IS NULL`
+          )
+          .all() as Array<{ id: string }>
+      ).map((r) => r.id)
+    );
+
     // Pass 1: dedup + bucket-by-hash across devices.
     const trajectoryRows = db
       .prepare(
@@ -294,17 +339,45 @@ export async function runDreamPass(db: ISqliteDriver, options?: { keepTopN?: num
     }
 
     // Pass 3: RANK + top-N truncation.
+    //
+    // v2.5.0 Phase B1 — fold consumption feedback into the ranking.
+    // If slaves reported usage of a previously-consolidated trajectory
+    // via consumption_feedback rows, its adoption signal boosts the
+    // score. Formula: `score = maxScore * (ingestion_usage +
+    // adoption_usage) * adoption_success_ratio`. Trajectories that
+    // are actually used in the wild outrank those that only look good
+    // on paper.
     const ranked: ConsolidatedLearning[] = Array.from(byHash.values())
+      .map((c) => {
+        const feedback = feedbackByHash.get(c.trajectoryHash);
+        const adoptionUsage = feedback?.usedCount ?? 0;
+        const adoptionSuccess = feedback?.successCount ?? 0;
+        const adoptionRatio = feedback && feedback.usedCount > 0 ? feedback.successCount / feedback.usedCount : 1;
+        const rankScore = c.maxScore * (c.totalUsage + adoptionUsage) * adoptionRatio;
+        return {
+          trajectoryHash: c.trajectoryHash,
+          taskDescription: c.taskDescription,
+          trajectoryJson: c.trajectoryJson,
+          successScore: c.maxScore,
+          usageCountFleetwide: c.totalUsage + adoptionUsage,
+          contributingDevices: c.deviceSet.size + (feedback?.deviceSet.size ?? 0),
+          rankScore,
+          adoptionUsage,
+          adoptionSuccess,
+        };
+      })
+      .toSorted((a, b) => b.rankScore - a.rankScore)
+      .slice(0, keepTopN)
       .map((c) => ({
+        // Strip the internal-only ranking fields from the persisted
+        // payload — ranking was already applied.
         trajectoryHash: c.trajectoryHash,
         taskDescription: c.taskDescription,
         trajectoryJson: c.trajectoryJson,
-        successScore: c.maxScore,
-        usageCountFleetwide: c.totalUsage,
-        contributingDevices: c.deviceSet.size,
-      }))
-      .toSorted((a, b) => b.usageCountFleetwide * b.successScore - a.usageCountFleetwide * a.successScore)
-      .slice(0, keepTopN);
+        successScore: c.successScore,
+        usageCountFleetwide: c.usageCountFleetwide,
+        contributingDevices: c.contributingDevices,
+      }));
 
     const nextVersionRow = db.prepare('SELECT COALESCE(MAX(version), 0) AS v FROM consolidated_learnings').get() as {
       v: number;
@@ -319,13 +392,18 @@ export async function runDreamPass(db: ISqliteDriver, options?: { keepTopN?: num
     ).run(version, publishedAt, JSON.stringify(ranked), ranked.length, contributingDeviceCount);
 
     // Mark source rows as consumed so the next run only sees new data.
-    const allSourceIds = Array.from(byHash.values()).flatMap((c) => c.sourceIds);
+    // v2.5.0 Phase B1 — also consume consumption_feedback rows.
+    const allSourceIds = [...Array.from(byHash.values()).flatMap((c) => c.sourceIds), ...feedbackSourceIds];
     if (allSourceIds.length > 0) {
-      const placeholders = allSourceIds.map(() => '?').join(',');
-      db.prepare(`UPDATE fleet_learnings SET consolidated_version = ? WHERE id IN (${placeholders})`).run(
-        version,
-        ...allSourceIds
-      );
+      const chunkSize = 500;
+      for (let i = 0; i < allSourceIds.length; i += chunkSize) {
+        const slice = allSourceIds.slice(i, i + chunkSize);
+        const placeholders = slice.map(() => '?').join(',');
+        db.prepare(`UPDATE fleet_learnings SET consolidated_version = ? WHERE id IN (${placeholders})`).run(
+          version,
+          ...slice
+        );
+      }
     }
 
     try {

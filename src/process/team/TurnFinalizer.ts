@@ -94,6 +94,14 @@ export class TurnFinalizer {
     const serialActions = outcome.actions.filter((a) => a.type !== 'send_message');
     if (serialActions.length === 0) return;
     try {
+      // v2.5.0 Phase B2 — capture failures too. Pre-v2.5 only stored
+      // turns with successScore >= 0.7 (implicitly, by only writing
+      // the completed/active branch with 0.8). Failures were
+      // discarded — throwing away half the learning signal. Now we
+      // stamp `failure_pattern = 1` on non-success turns so Phase
+      // C's distillation prompt can extract avoidance rules
+      // ("don't do X, it fails on Y") alongside winning paths.
+      const isSuccess = outcome.agent.status === 'completed' || outcome.agent.status === 'active';
       const trajectoryId = reasoningBank.storeTrajectory(driver, {
         taskDescription: `${outcome.agent.agentName}: ${outcome.accumulatedText.slice(0, 100)}`,
         steps: serialActions.map((a) => ({
@@ -102,16 +110,21 @@ export class TurnFinalizer {
           result: outcome.accumulatedText.slice(0, 200),
           durationMs: 0,
         })),
-        successScore: outcome.agent.status === 'completed' || outcome.agent.status === 'active' ? 0.8 : 0.5,
+        successScore: isSuccess ? 0.8 : 0.3,
+        failurePattern: !isSuccess,
       });
       activityLogService.logActivity(driver, {
         userId: 'system_default_user',
         actorType: 'agent',
         actorId: outcome.agent.agentName,
-        action: 'reasoning_bank.trajectory_stored',
+        action: isSuccess ? 'reasoning_bank.trajectory_stored' : 'reasoning_bank.failure_stored',
         entityType: 'reasoning_bank',
         entityId: trajectoryId,
-        details: { steps: serialActions.length, agent: outcome.agent.agentName },
+        details: {
+          steps: serialActions.length,
+          agent: outcome.agent.agentName,
+          failurePattern: !isSuccess,
+        },
       });
     } catch (e) {
       logNonCritical('team.turn-finalizer.reasoning-bank', e);

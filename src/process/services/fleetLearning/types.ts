@@ -30,6 +30,14 @@ export type ExportedTrajectory = {
   successScore: number;
   /** Local usage_count on THIS slave. Master sums across devices. */
   usageCountLocal: number;
+  /**
+   * v2.5.0 Phase B2 — set when this trajectory came from a failed
+   * turn (status not completed/active). Master's distillation
+   * pass treats failure clusters as sources of avoidance rules
+   * rather than preferred paths. Optional for back-compat with
+   * pre-v2.5 slaves.
+   */
+  failurePattern?: boolean;
 };
 
 /** A single exported agent-memory summary — slave side. */
@@ -42,12 +50,40 @@ export type ExportedMemorySummary = {
   tokenCount: number;
 };
 
+/**
+ * v2.5.0 Phase B1 — consumption feedback item.
+ *
+ * When a slave's agent turn consumes a consolidated trajectory (via
+ * findSimilarTrajectories) and the turn closes with success, the
+ * slave tracks per-trajectory counters. These piggyback to master
+ * on the next learning push so the dream pass can re-rank by
+ * real-world adoption (not just ingestion-time signal).
+ */
+export type ConsumptionFeedbackItem = {
+  /** trajectory_hash — master joins this back to consolidated_learnings. */
+  trajectoryHash: string;
+  /** How many times this slave used the entry since last push. */
+  usedCount: number;
+  /** Of those uses, how many ended in successScore >= 0.7. */
+  successCount: number;
+  /** Whether this entry came from master's consolidation
+   *  (source_tag='fleet_consolidated') or is locally-minted. Master
+   *  only folds consolidated ones into usage_count_fleetwide; local
+   *  feedback is stored for audit but doesn't change ranking. */
+  fromFleet: boolean;
+};
+
 /** The push envelope — wire format slave→master. */
 export type LearningExportEnvelope = {
   windowStart: number;
   windowEnd: number;
   trajectories: ExportedTrajectory[];
   memorySummaries: ExportedMemorySummary[];
+  /**
+   * v2.5.0 Phase B1 — consumption feedback for consolidated entries.
+   * Optional for back-compat with pre-v2.5 master (which ignores it).
+   */
+  consumptionFeedback?: ConsumptionFeedbackItem[];
 };
 
 /** Master's reply to a slave learning push. */

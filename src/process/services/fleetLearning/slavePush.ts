@@ -176,6 +176,26 @@ export async function pushOnce(masterUrl: string): Promise<void> {
     // Record which rows were pushed so the next envelope skips them.
     markEnvelopePushed(driver, envelope);
 
+    // v2.5.0 Phase B1 — reset consumption counters on successful push
+    // so we don't double-count on the next envelope. Match by
+    // trajectory_hash → resolve to local ids via a cheap lookup.
+    if (envelope.consumptionFeedback && envelope.consumptionFeedback.length > 0) {
+      try {
+        const hashes = envelope.consumptionFeedback.map((c) => c.trajectoryHash);
+        const placeholders = hashes.map(() => '?').join(',');
+        const rows = driver
+          .prepare(`SELECT id FROM reasoning_bank WHERE trajectory_hash IN (${placeholders})`)
+          .all(...hashes) as Array<{ id: string }>;
+        const { resetConsumptionCounters } = await import('@process/services/reasoningBank');
+        resetConsumptionCounters(
+          driver,
+          rows.map((r) => r.id)
+        );
+      } catch (e) {
+        logNonCritical('fleet.learning.reset-consumption', e);
+      }
+    }
+
     setLearningState(driver, {
       lastWindowEnd: nextWindowStart,
       lastPushAt: Date.now(),

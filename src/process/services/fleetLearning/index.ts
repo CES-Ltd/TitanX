@@ -20,6 +20,7 @@ import type { ISqliteDriver } from '../database/drivers/ISqliteDriver';
 import { deepScrubForExport } from '@process/utils/redaction';
 import { logActivity } from '../activityLog';
 import { logNonCritical } from '@process/utils/logNonCritical';
+import { drainConsumptionFeedback } from '@process/services/reasoningBank';
 import {
   LEARNING_EXPORT_LIMITS,
   type ConsolidatedLearningsPayload,
@@ -156,7 +157,20 @@ export function buildLearningEnvelope(
   const trajectories = selectTrajectories(db, windowStart, windowEnd);
   const memorySummaries = selectMemorySummaries(db, windowStart, windowEnd);
 
-  if (trajectories.length === 0 && memorySummaries.length === 0) return null;
+  // v2.5.0 Phase B1 — drain pending consumption counters and ship
+  // them as part of the envelope. Only non-empty ones (count > 0
+  // enforced by drainConsumptionFeedback's WHERE clause).
+  const consumptionRaw = drainConsumptionFeedback(db);
+  const consumptionFeedback = consumptionRaw.map((r) => ({
+    trajectoryHash: r.trajectoryHash,
+    usedCount: r.usedCount,
+    successCount: r.successCount,
+    fromFleet: r.sourceTag === 'fleet_consolidated',
+  }));
+
+  if (trajectories.length === 0 && memorySummaries.length === 0 && consumptionFeedback.length === 0) {
+    return null;
+  }
 
   // Enforce payload byte budget — drop lowest-signal trajectories first.
   const envelope: LearningExportEnvelope = {
@@ -164,6 +178,7 @@ export function buildLearningEnvelope(
     windowEnd,
     trajectories,
     memorySummaries,
+    consumptionFeedback: consumptionFeedback.length > 0 ? consumptionFeedback : undefined,
   };
   const clamped = clampEnvelopeToBytes(envelope, LEARNING_EXPORT_LIMITS.MAX_PAYLOAD_BYTES);
   return clamped;
@@ -176,7 +191,7 @@ function selectTrajectories(db: ISqliteDriver, windowStart: number, _windowEnd: 
   // because old cursors are swept.
   const rows = db
     .prepare(
-      `SELECT rb.id, rb.trajectory_hash, rb.task_description, rb.trajectory, rb.success_score, rb.usage_count
+      `SELECT rb.id, rb.trajectory_hash, rb.task_description, rb.trajectory, rb.success_score, rb.usage_count, rb.failure_pattern
        FROM reasoning_bank rb
        WHERE rb.source_tag IS NULL
          AND rb.updated_at >= ?
@@ -196,6 +211,7 @@ function selectTrajectories(db: ISqliteDriver, windowStart: number, _windowEnd: 
     trajectory: string;
     success_score: number;
     usage_count: number;
+    failure_pattern: number;
   }>;
 
   return rows.map((r) => ({
@@ -206,6 +222,8 @@ function selectTrajectories(db: ISqliteDriver, windowStart: number, _windowEnd: 
     trajectoryJson: JSON.stringify(deepScrubForExport(safeParseArray(r.trajectory))),
     successScore: r.success_score,
     usageCountLocal: r.usage_count,
+    // v2.5.0 Phase B2 — forward the failure flag to master.
+    failurePattern: r.failure_pattern === 1,
   }));
 }
 
@@ -349,6 +367,9 @@ export function ingestLearningEnvelope(
         trajectoryHash: tr.trajectoryHash,
         taskDescription: tr.taskDescription,
         trajectoryJson: tr.trajectoryJson,
+        // v2.5.0 Phase B2 — persist failure flag so the dream pass
+        // can segregate avoidance rules from preferred paths.
+        failurePattern: tr.failurePattern === true,
       }),
       tr.successScore,
       tr.usageCountLocal,
@@ -370,6 +391,40 @@ export function ingestLearningEnvelope(
     memorySummaries += 1;
   }
 
+  // v2.5.0 Phase B1 — consumption feedback. Folded into existing
+  // consolidated_learnings rows: increment usage_count_fleetwide +
+  // track a new adoption signal for future ranking. A new
+  // consolidated_feedback row per envelope captures the raw
+  // per-device per-trajectory counts for audit; re-ranking happens
+  // in the next dream pass when it consumes these rows.
+  let consumption = 0;
+  if (envelope.consumptionFeedback && envelope.consumptionFeedback.length > 0) {
+    try {
+      const feedbackInsert = db.prepare(
+        `INSERT INTO fleet_learnings (id, device_id, learning_type, payload, success_score, usage_count_local, received_at)
+         VALUES (?, ?, 'consumption_feedback', ?, ?, ?, ?)`
+      );
+      for (const f of envelope.consumptionFeedback) {
+        if (!f.fromFleet) continue; // only fleet-consolidated adoption matters for re-ranking
+        feedbackInsert.run(
+          crypto.randomUUID(),
+          deviceId,
+          JSON.stringify({
+            trajectoryHash: f.trajectoryHash,
+            usedCount: f.usedCount,
+            successCount: f.successCount,
+          }),
+          f.usedCount > 0 ? f.successCount / f.usedCount : 0,
+          f.usedCount,
+          now
+        );
+        consumption += 1;
+      }
+    } catch (e) {
+      logNonCritical('fleet.learning.ingest-consumption', e);
+    }
+  }
+
   try {
     logActivity(db, {
       userId: 'system_default_user',
@@ -381,6 +436,7 @@ export function ingestLearningEnvelope(
       details: {
         trajectories,
         memorySummaries,
+        consumption,
         windowStart: envelope.windowStart,
         windowEnd: envelope.windowEnd,
       },

@@ -33,6 +33,13 @@ export type TrajectoryInput = {
   taskDescription: string;
   steps: TrajectoryStep[];
   successScore: number;
+  /**
+   * v2.5.0 Phase B2 — mark this as a failure trajectory so the
+   * distillation pass can extract avoidance rules. Defaults to
+   * false (preferred path). Pre-v2.5 only stored successes; failure
+   * capture lets agents learn from the fleet's mistakes too.
+   */
+  failurePattern?: boolean;
 };
 
 /** Hash a trajectory for deduplication. Uses task description + tool sequence. */
@@ -63,13 +70,25 @@ export function storeTrajectory(db: ISqliteDriver, input: TrajectoryInput): stri
   }
 
   const id = crypto.randomUUID();
+  // v2.5.0 Phase B2 — stamp failure_pattern = 1 when the caller
+  // flagged this as a failed turn. Default 0 preserves existing
+  // behavior for v2.4.x callers and other non-turn writers.
   db.prepare(
-    `INSERT INTO reasoning_bank (id, trajectory_hash, task_description, trajectory, success_score, usage_count, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 1, ?, ?)`
-  ).run(id, hash, input.taskDescription, JSON.stringify(input.steps), input.successScore, Date.now(), Date.now());
+    `INSERT INTO reasoning_bank (id, trajectory_hash, task_description, trajectory, success_score, usage_count, failure_pattern, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)`
+  ).run(
+    id,
+    hash,
+    input.taskDescription,
+    JSON.stringify(input.steps),
+    input.successScore,
+    input.failurePattern ? 1 : 0,
+    Date.now(),
+    Date.now()
+  );
 
   console.log(
-    `[ReasoningBank] Stored new trajectory ${id} (${String(input.steps.length)} steps, score: ${String(input.successScore)})`
+    `[ReasoningBank] Stored new ${input.failurePattern ? 'failure' : 'success'} trajectory ${id} (${String(input.steps.length)} steps, score: ${String(input.successScore)})`
   );
   return id;
 }
@@ -111,6 +130,88 @@ export function findSimilarTrajectories(db: ISqliteDriver, taskDescription: stri
     .all(...params, limit) as Array<Record<string, unknown>>;
 
   return rows.map(rowToTrajectory);
+}
+
+/**
+ * v2.5.0 Phase B1 — consumption feedback. Called when a retrieved
+ * trajectory actually gets used in a turn (by the retrieval caller
+ * in the wake cycle). Increments two counters:
+ *   - consumption_count — always; "this slave used it"
+ *   - consumption_success_count — only if the turn that consumed it
+ *     ended with success_score >= 0.7; "this slave used it AND the
+ *     turn ultimately succeeded"
+ *
+ * The counters piggyback to master on the next learning push so
+ * master's dream pass can re-rank by real-world adoption, not just
+ * the original ingestion signal. Fire-and-forget — logging a usage
+ * never fails the caller's hot path.
+ */
+export function recordTrajectoryConsumed(
+  db: ISqliteDriver,
+  trajectoryId: string,
+  turnSucceeded: boolean
+): void {
+  try {
+    if (turnSucceeded) {
+      db.prepare(
+        'UPDATE reasoning_bank SET consumption_count = consumption_count + 1, consumption_success_count = consumption_success_count + 1 WHERE id = ?'
+      ).run(trajectoryId);
+    } else {
+      db.prepare('UPDATE reasoning_bank SET consumption_count = consumption_count + 1 WHERE id = ?').run(trajectoryId);
+    }
+  } catch {
+    /* best-effort telemetry; never break the wake cycle */
+  }
+}
+
+/**
+ * v2.5.0 Phase B1 — drain pending consumption counters for the next
+ * learning envelope. Returns a compact per-id map. After the envelope
+ * POSTs and gets acked, call resetConsumptionCounters() to clear.
+ */
+export function drainConsumptionFeedback(
+  db: ISqliteDriver
+): Array<{ id: string; trajectoryHash: string; usedCount: number; successCount: number; sourceTag: string | null }> {
+  try {
+    const rows = db
+      .prepare(
+        `SELECT id, trajectory_hash, consumption_count, consumption_success_count, source_tag
+         FROM reasoning_bank
+         WHERE consumption_count > 0`
+      )
+      .all() as Array<{
+      id: string;
+      trajectory_hash: string;
+      consumption_count: number;
+      consumption_success_count: number;
+      source_tag: string | null;
+    }>;
+    return rows.map((r) => ({
+      id: r.id,
+      trajectoryHash: r.trajectory_hash,
+      usedCount: r.consumption_count,
+      successCount: r.consumption_success_count,
+      sourceTag: r.source_tag,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export function resetConsumptionCounters(db: ISqliteDriver, ids: string[]): void {
+  if (ids.length === 0) return;
+  try {
+    const chunk = 500;
+    for (let i = 0; i < ids.length; i += chunk) {
+      const slice = ids.slice(i, i + chunk);
+      const placeholders = slice.map(() => '?').join(',');
+      db.prepare(
+        `UPDATE reasoning_bank SET consumption_count = 0, consumption_success_count = 0 WHERE id IN (${placeholders})`
+      ).run(...slice);
+    }
+  } catch {
+    /* non-critical — next drain will retry the same rows */
+  }
 }
 
 /**

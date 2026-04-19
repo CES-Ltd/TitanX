@@ -90,6 +90,14 @@ class AcpAgentManager extends BaseAgentManager<AcpAgentManagerData, AcpPermissio
   // Track current message for cron detection (accumulated from streaming chunks)
   private currentMsgId: string | null = null;
   private currentMsgContent: string = '';
+  /**
+   * v2.5.0 Phase B1 — most recent reasoning-bank trajectory the
+   * current turn consumed (injected via findSimilarTrajectories).
+   * Captured at retrieval time; TurnFinalizer checks this when the
+   * turn closes and calls recordTrajectoryConsumed(..., true) to flip
+   * the consumption_success_count if the turn's successScore >= 0.7.
+   */
+  private _pendingConsumedTrajectoryId: string | null = null;
   /** Current turn's thinking message msg_id for accumulating content */
   private thinkingMsgId: string | null = null;
   /** Timestamp when thinking started for duration calculation */
@@ -567,6 +575,29 @@ class AcpAgentManager extends BaseAgentManager<AcpAgentManagerData, AcpPermissio
               this.thinkingStartTime = null;
               this.thinkingContent = '';
             }
+            // v2.5.0 Phase B1 — if this turn consumed a reasoning-bank
+            // trajectory AND ended cleanly (no error signal), flip
+            // the success counter on that trajectory. The earlier
+            // optimistic `recordTrajectoryConsumed(..., false)` at
+            // retrieval time already incremented usage_count; this
+            // second call increments success_count so master can
+            // compute adoption success rate in its next dream pass.
+            if (this._pendingConsumedTrajectoryId) {
+              try {
+                void getDatabase().then((db) => {
+                  if (this._pendingConsumedTrajectoryId) {
+                    reasoningBank.recordTrajectoryConsumed(
+                      db.getDriver(),
+                      this._pendingConsumedTrajectoryId,
+                      true
+                    );
+                  }
+                });
+              } catch {
+                /* best-effort */
+              }
+              this._pendingConsumedTrajectoryId = null;
+            }
             // Check for SKILL_SUGGEST.md updates (registered by cron executor)
             skillSuggestWatcher.onFinish(this.conversation_id);
           }
@@ -714,6 +745,18 @@ class AcpAgentManager extends BaseAgentManager<AcpAgentManagerData, AcpPermissio
           );
           // Inject trajectory hint as context for the agent
           data.content = `${data.content}\n\n[System: A similar task was completed before. ${distilled}]`;
+          // v2.5.0 Phase B1 — mark the trajectory as consumed for
+          // this turn. Record here optimistically; the success flag
+          // gets corrected via recordTrajectoryConsumed(..., true)
+          // from TurnFinalizer when the turn actually closes with a
+          // good score. Optimistic because we want a non-zero
+          // consumption_count ASAP so the next push carries the
+          // adoption signal even if the turn later errors.
+          reasoningBank.recordTrajectoryConsumed(db.getDriver(), trajectory.id, false);
+          // Stash the id so TurnFinalizer can flip success_count on
+          // final score. Using conversation_id as the bucket key so
+          // overlapping turns on other agents don't trample.
+          this._pendingConsumedTrajectoryId = trajectory.id;
           // Audit log
           try {
             activityLogService.logActivity(db.getDriver(), {
