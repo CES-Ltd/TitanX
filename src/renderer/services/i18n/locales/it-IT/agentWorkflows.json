@@ -48,5 +48,19 @@
     "unpublish": "Unpublish from fleet",
     "unpublished": "Unpublished from fleet",
     "unpublishFailed": "Unpublish failed"
+  },
+  "editor": {
+    "title": "Edit step parameters",
+    "hint": "Edit the node.parameters JSON below. Click Apply (or Cmd/Ctrl+Enter) to stage the change; use the Save button in the page header to persist.",
+    "apply": "Apply",
+    "cancel": "Cancel",
+    "save": "Save",
+    "revert": "Revert",
+    "saved": "Workflow saved",
+    "saveFailed": "Save failed: {{msg}}",
+    "dirty": "Unsaved",
+    "editable": "Editable",
+    "readonly": "Read-only (master-managed)",
+    "paramApplied": "Node parameters updated"
   }
 }

@@ -33,6 +33,17 @@ import {
 import { workflowEngine, agentWorkflows } from '@/common/adapter/ipcBridge';
 import type { IAgentWorkflowRun } from '@/common/adapter/ipcBridge';
 import WorkflowGraphView from './WorkflowGraphView';
+import NodeParameterDrawer from './NodeParameterDrawer';
+
+type EditorNode = {
+  id: string;
+  type: string;
+  name: string;
+  position?: { x: number; y: number };
+  parameters?: Record<string, unknown>;
+  onError?: 'stop' | 'continue' | 'retry';
+};
+type EditorConnection = { fromNodeId: string; fromOutput: string; toNodeId: string; toInput: string };
 
 type WorkflowRow = {
   id: string;
@@ -100,7 +111,79 @@ const AgentWorkflowsPage: React.FC = () => {
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState('');
 
+  // v2.6.0 Phase 2.x — editor state. Hydrated on selection change;
+  // drag + connect + parameter edits mutate `editorNodes` /
+  // `editorConnections`; Save persists via workflowEngine.update.
+  const [editorNodes, setEditorNodes] = useState<EditorNode[]>([]);
+  const [editorConnections, setEditorConnections] = useState<EditorConnection[]>([]);
+  const [originalSignature, setOriginalSignature] = useState<string>('');
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
   const selectedWorkflow = useMemo(() => workflows.find((w) => w.id === selected), [workflows, selected]);
+
+  // Re-hydrate editor state whenever the workflow selection changes.
+  useEffect(() => {
+    if (!selectedWorkflow) {
+      setEditorNodes([]);
+      setEditorConnections([]);
+      setOriginalSignature('');
+      setSelectedNodeId(null);
+      return;
+    }
+    try {
+      const nodes = JSON.parse(selectedWorkflow.nodes) as EditorNode[];
+      const conns = JSON.parse(selectedWorkflow.connections) as EditorConnection[];
+      setEditorNodes(nodes);
+      setEditorConnections(conns);
+      setOriginalSignature(JSON.stringify({ nodes, conns }));
+      setSelectedNodeId(null);
+    } catch {
+      /* keep previous state */
+    }
+  }, [selectedWorkflow?.id, selectedWorkflow?.nodes, selectedWorkflow?.connections]);
+
+  const editable = selectedWorkflow?.source !== 'master'; // slaves must not edit master-pushed rows
+
+  const dirty = useMemo(
+    () => JSON.stringify({ nodes: editorNodes, conns: editorConnections }) !== originalSignature,
+    [editorNodes, editorConnections, originalSignature]
+  );
+
+  const handleSaveGraph = async () => {
+    if (!selectedWorkflow) return;
+    setSaving(true);
+    try {
+      await workflowEngine.update.invoke({
+        workflowId: selectedWorkflow.id,
+        updates: { nodes: editorNodes, connections: editorConnections } as unknown as Record<string, unknown>,
+      });
+      Message.success(t('agentWorkflows.editor.saved', 'Workflow saved'));
+      setOriginalSignature(JSON.stringify({ nodes: editorNodes, conns: editorConnections }));
+      void loadWorkflows();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Save failed';
+      Message.error(t('agentWorkflows.editor.saveFailed', { defaultValue: 'Save failed: {{msg}}', msg }));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRevert = () => {
+    if (!selectedWorkflow) return;
+    try {
+      setEditorNodes(JSON.parse(selectedWorkflow.nodes) as EditorNode[]);
+      setEditorConnections(JSON.parse(selectedWorkflow.connections) as EditorConnection[]);
+    } catch {
+      /* no-op */
+    }
+  };
+
+  const selectedNode = selectedNodeId ? editorNodes.find((n) => n.id === selectedNodeId) : null;
+
+  const handleApplyParameters = (nodeId: string, parameters: Record<string, unknown>) => {
+    setEditorNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, parameters } : n)));
+  };
 
   const handleCopyJson = async () => {
     if (!selectedWorkflow) return;
@@ -217,6 +300,13 @@ const AgentWorkflowsPage: React.FC = () => {
         </Space>
       </div>
 
+      <NodeParameterDrawer
+        visible={selectedNodeId !== null && editable}
+        node={selectedNode}
+        onClose={() => setSelectedNodeId(null)}
+        onApply={handleApplyParameters}
+      />
+
       <Modal
         title={t('agentWorkflows.import.title', 'Import workflow JSON')}
         visible={importOpen}
@@ -304,19 +394,46 @@ const AgentWorkflowsPage: React.FC = () => {
                   ) : null}
                 </div>
                 <Divider style={{ margin: '8px 0' }} />
-                <Typography.Text style={{ fontWeight: 600 }}>
-                  {t('agentWorkflows.detail.graph', 'Graph')}
-                </Typography.Text>
+                <div className='flex items-center justify-between gap-8px'>
+                  <Typography.Text style={{ fontWeight: 600 }}>
+                    {t('agentWorkflows.detail.graph', 'Graph')}
+                    {editable ? (
+                      <Tag color={dirty ? 'orange' : 'blue'} size='small' style={{ marginLeft: 8 }}>
+                        {dirty
+                          ? t('agentWorkflows.editor.dirty', 'Unsaved')
+                          : t('agentWorkflows.editor.editable', 'Editable')}
+                      </Tag>
+                    ) : (
+                      <Tag size='small' color='gray' style={{ marginLeft: 8 }}>
+                        {t('agentWorkflows.editor.readonly', 'Read-only (master-managed)')}
+                      </Tag>
+                    )}
+                  </Typography.Text>
+                  {editable ? (
+                    <Space size={4}>
+                      <Button size='mini' disabled={!dirty || saving} onClick={handleRevert}>
+                        {t('agentWorkflows.editor.revert', 'Revert')}
+                      </Button>
+                      <Button
+                        size='mini'
+                        type='primary'
+                        loading={saving}
+                        disabled={!dirty}
+                        onClick={() => void handleSaveGraph()}
+                      >
+                        {t('agentWorkflows.editor.save', 'Save')}
+                      </Button>
+                    </Space>
+                  ) : null}
+                </div>
                 <WorkflowGraphView
-                  nodes={parsedNodes as Array<{ id: string; type: string; name: string }>}
-                  connections={
-                    JSON.parse(selectedWorkflow.connections) as Array<{
-                      fromNodeId: string;
-                      fromOutput: string;
-                      toNodeId: string;
-                      toInput: string;
-                    }>
-                  }
+                  nodes={editorNodes}
+                  connections={editorConnections}
+                  editable={editable}
+                  selectedNodeId={selectedNodeId}
+                  onNodesChange={(next) => setEditorNodes(next as EditorNode[])}
+                  onConnectionsChange={(next) => setEditorConnections(next as EditorConnection[])}
+                  onNodeClick={setSelectedNodeId}
                 />
                 <Divider style={{ margin: '8px 0' }} />
                 <Typography.Text style={{ fontWeight: 600 }}>
