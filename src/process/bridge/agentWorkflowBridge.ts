@@ -25,6 +25,7 @@ import {
 import { getActiveRun as getActiveRunDb, listRuns as listRunsDb } from '@process/services/workflows/agentRunState';
 import { abortRun, dispatcherEvents, pauseRun, resumeRun, skipStep } from '@process/services/workflows/agentDispatcher';
 import { publishWorkflowToFleet, unpublishWorkflowFromFleet } from '@process/services/workflows/fleetPublish';
+import { summarizeWorkflowFamily } from '@process/services/workflows/dreamDigest';
 import type { AgentWorkflowRun, WorkflowBinding } from '@process/services/workflows/agent-types';
 
 export function initAgentWorkflowBridge(): void {
@@ -103,6 +104,13 @@ export function initAgentWorkflowBridge(): void {
   ipcBridge.agentWorkflows.unpublishFromFleet.provider(async ({ workflowId }) => {
     const db = await getDatabase();
     return unpublishWorkflowFromFleet(db.getDriver(), workflowId);
+  });
+
+  // ── Dream digest (v2.6.0 Phase 4.x) ────────────────────────────────────────
+
+  ipcBridge.agentWorkflows.digest.provider(async ({ canonicalId }) => {
+    const db = await getDatabase();
+    return summarizeWorkflowFamily(db.getDriver(), canonicalId);
   });
 
   // ── Events — re-publish dispatcher events to renderer ─────────────────────

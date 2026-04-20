@@ -429,6 +429,196 @@ describe('parallel.* handlers', () => {
   });
 });
 
+describe('summarizeWorkflowFamily (Phase 4.x dream digest)', () => {
+  type TrajRow = {
+    id: string;
+    task_description: string;
+    trajectory: string;
+    success_score: number;
+    usage_count: number;
+    failure_pattern: number;
+    created_at: number;
+    updated_at: number;
+  };
+
+  function makeDigestDriver(rows: TrajRow[]): ISqliteDriver {
+    const driver: ISqliteDriver = {
+      prepare: () => ({
+        run: () => ({ changes: 0, lastInsertRowid: 0 }),
+        get: () => undefined,
+        all: () => rows,
+      }),
+      exec: () => {},
+      pragma: () => null,
+      transaction: (fn) => fn,
+      close: () => {},
+    };
+    return driver;
+  }
+
+  it('returns a zero-digest when no trajectories exist', async () => {
+    const { summarizeWorkflowFamily } = await import('@process/services/workflows/dreamDigest');
+    const digest = summarizeWorkflowFamily(makeDigestDriver([]), 'builtin:workflow.safe_commit@1');
+    expect(digest.trajectoryCount).toBe(0);
+    expect(digest.successRate).toBe(0);
+    expect(digest.mostCommonSuccessfulPath).toEqual([]);
+    expect(digest.suggestion).toBe('');
+  });
+
+  it('aggregates + picks the most common successful path', async () => {
+    const { summarizeWorkflowFamily } = await import('@process/services/workflows/dreamDigest');
+    const now = Date.now();
+    const successTraj = JSON.stringify([
+      { toolName: 'prompt.plan', args: {}, result: '' },
+      { toolName: 'tool.git.commit', args: {}, result: '' },
+    ]);
+    const altTraj = JSON.stringify([
+      { toolName: 'prompt.plan', args: {}, result: '' },
+      { toolName: 'tool.git.push', args: {}, result: '' },
+    ]);
+    const rows: TrajRow[] = [
+      {
+        id: '1',
+        task_description: '[workflow:test@1] run1',
+        trajectory: successTraj,
+        success_score: 0.8,
+        usage_count: 1,
+        failure_pattern: 0,
+        created_at: now,
+        updated_at: now,
+      },
+      {
+        id: '2',
+        task_description: '[workflow:test@1] run2',
+        trajectory: successTraj,
+        success_score: 0.8,
+        usage_count: 1,
+        failure_pattern: 0,
+        created_at: now,
+        updated_at: now + 100,
+      },
+      {
+        id: '3',
+        task_description: '[workflow:test@1] run3',
+        trajectory: altTraj,
+        success_score: 0.8,
+        usage_count: 1,
+        failure_pattern: 0,
+        created_at: now,
+        updated_at: now + 200,
+      },
+    ];
+    const digest = summarizeWorkflowFamily(makeDigestDriver(rows), 'test@1');
+    expect(digest.trajectoryCount).toBe(3);
+    expect(digest.successCount).toBe(3);
+    expect(digest.successRate).toBe(1);
+    expect(digest.mostCommonSuccessfulPath).toEqual(['prompt.plan', 'tool.git.commit']);
+    expect(digest.lastSeenAt).toBe(now + 200);
+  });
+
+  it('splits successes from failures + computes success rate', async () => {
+    const { summarizeWorkflowFamily } = await import('@process/services/workflows/dreamDigest');
+    const now = Date.now();
+    const steps = (name: string) => JSON.stringify([{ toolName: 'prompt.plan' }, { toolName: name }]);
+    const rows: TrajRow[] = [
+      {
+        id: 's1',
+        task_description: '[workflow:x] a',
+        trajectory: steps('ok'),
+        success_score: 0.8,
+        usage_count: 1,
+        failure_pattern: 0,
+        created_at: now,
+        updated_at: now,
+      },
+      {
+        id: 's2',
+        task_description: '[workflow:x] b',
+        trajectory: steps('ok'),
+        success_score: 0.8,
+        usage_count: 1,
+        failure_pattern: 0,
+        created_at: now,
+        updated_at: now,
+      },
+      {
+        id: 's3',
+        task_description: '[workflow:x] c',
+        trajectory: steps('ok'),
+        success_score: 0.8,
+        usage_count: 1,
+        failure_pattern: 0,
+        created_at: now,
+        updated_at: now,
+      },
+      {
+        id: 's4',
+        task_description: '[workflow:x] d',
+        trajectory: steps('ok'),
+        success_score: 0.8,
+        usage_count: 1,
+        failure_pattern: 0,
+        created_at: now,
+        updated_at: now,
+      },
+      {
+        id: 'f1',
+        task_description: '[workflow:x] e',
+        trajectory: steps('bad'),
+        success_score: 0.3,
+        usage_count: 1,
+        failure_pattern: 1,
+        created_at: now,
+        updated_at: now,
+      },
+    ];
+    const digest = summarizeWorkflowFamily(makeDigestDriver(rows), 'x');
+    expect(digest.trajectoryCount).toBe(5);
+    expect(digest.successCount).toBe(4);
+    expect(digest.successRate).toBe(0.8);
+    expect(digest.mostCommonSuccessfulPath).toEqual(['prompt.plan', 'ok']);
+    expect(digest.mostCommonFailurePath).toEqual(['prompt.plan', 'bad']);
+    // >= MIN_SAMPLE_SIZE (5) + successRate >= 0.8 → "strong signal" branch.
+    expect(digest.suggestion).toContain('Strong signal');
+  });
+
+  it('emits an empty suggestion when the sample is below MIN_SAMPLE_SIZE', async () => {
+    const { summarizeWorkflowFamily } = await import('@process/services/workflows/dreamDigest');
+    const now = Date.now();
+    const rows: TrajRow[] = [
+      {
+        id: '1',
+        task_description: '[workflow:y] only',
+        trajectory: JSON.stringify([{ toolName: 'prompt.plan' }]),
+        success_score: 0.8,
+        usage_count: 1,
+        failure_pattern: 0,
+        created_at: now,
+        updated_at: now,
+      },
+    ];
+    const digest = summarizeWorkflowFamily(makeDigestDriver(rows), 'y');
+    expect(digest.trajectoryCount).toBe(1);
+    expect(digest.suggestion).toBe('');
+  });
+
+  it('returns zero-digest when the reasoning_bank query throws', async () => {
+    const { summarizeWorkflowFamily } = await import('@process/services/workflows/dreamDigest');
+    const throwingDriver: ISqliteDriver = {
+      prepare: () => {
+        throw new Error('no such table: reasoning_bank');
+      },
+      exec: () => {},
+      pragma: () => null,
+      transaction: (fn) => fn,
+      close: () => {},
+    };
+    const digest = summarizeWorkflowFamily(throwingDriver, 'anything');
+    expect(digest.trajectoryCount).toBe(0);
+    expect(digest.suggestion).toBe('');
+  });
+});
+
 describe('git executor injection (Phase 3.x scaffold)', () => {
   it('setGitExecutor swaps the active executor; handlers route through it', async () => {
     const { setGitExecutor, getGitExecutor } = await import('@process/services/workflows/handlers/agent/gitHandlers');

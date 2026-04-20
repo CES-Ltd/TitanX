@@ -2534,6 +2534,21 @@ export const agentWorkflows = {
   publishToFleet: bridge.buildProvider<boolean, { workflowId: string }>('agent-workflows.publish-to-fleet'),
   unpublishFromFleet: bridge.buildProvider<boolean, { workflowId: string }>('agent-workflows.unpublish-from-fleet'),
 
+  // v2.6.0 Phase 4.x — workflow-family trajectory digest.
+  digest: bridge.buildProvider<
+    {
+      canonicalId: string;
+      trajectoryCount: number;
+      successCount: number;
+      successRate: number;
+      lastSeenAt: number;
+      mostCommonSuccessfulPath: string[];
+      mostCommonFailurePath: string[];
+      suggestion: string;
+    },
+    { canonicalId: string }
+  >('agent-workflows.digest'),
+
   // Events — re-published from the dispatcher's EventEmitter at bridge init.
   onRunStarted: bridge.buildEmitter<IAgentWorkflowRun>('agent-workflows.run-started'),
   onStepCompleted: bridge.buildEmitter<{ runId: string; stepId: string; outputs: Record<string, unknown> }>(
