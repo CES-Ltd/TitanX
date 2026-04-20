@@ -139,8 +139,13 @@ function autoLayout(rawNodes: RawNode[], connections: RawConnection[]): Map<stri
     byDepth.set(d, arr);
   }
 
-  const COLUMN_WIDTH = 220;
-  const ROW_HEIGHT = 90;
+  // Node width is ~200px (minWidth 160 + padding); column spacing
+  // must leave room for edge routing between nodes.
+  const COLUMN_WIDTH = 280;
+  // Rendered node height ~70px (2 text rows + padding); vertical
+  // gap gives smoothstep edges breathing room for multi-branch
+  // fan-out cases.
+  const ROW_HEIGHT = 130;
   for (const [d, ids] of byDepth) {
     ids.forEach((id, idx) => {
       positions.set(id, { x: d * COLUMN_WIDTH, y: idx * ROW_HEIGHT });
@@ -150,13 +155,27 @@ function autoLayout(rawNodes: RawNode[], connections: RawConnection[]): Map<stri
   return positions;
 }
 
+/**
+ * Decide whether a node's stored `position` is real or a placeholder.
+ * Seed workflows (seeds.ts) default every node to `{ x: 0, y: 0 }` —
+ * that's a "no-position" sentinel, not a real "stack at origin"
+ * request. When every position is (0,0), ignore them and use the
+ * computed auto-layout instead. When at least one node has a
+ * non-trivial position, assume the operator has laid the graph out
+ * explicitly (edit mode) and respect every position as stored.
+ */
+function everyNodeAtOrigin(rawNodes: RawNode[]): boolean {
+  return rawNodes.every((n) => !n.position || (n.position.x === 0 && n.position.y === 0));
+}
+
 const WorkflowGraphView: React.FC<WorkflowGraphProps> = ({ nodes: rawNodes, connections }) => {
   const { flowNodes, flowEdges } = useMemo(() => {
     const layout = autoLayout(rawNodes, connections);
+    const useLayout = everyNodeAtOrigin(rawNodes);
     const flowNodes: Node[] = rawNodes.map((n) => ({
       id: n.id,
       type: 'workflowStep',
-      position: n.position ?? layout.get(n.id) ?? { x: 0, y: 0 },
+      position: useLayout ? (layout.get(n.id) ?? { x: 0, y: 0 }) : (n.position ?? layout.get(n.id) ?? { x: 0, y: 0 }),
       data: { label: n.name || n.id, type: n.type },
     }));
     const flowEdges: Edge[] = connections.map((c, idx) => ({
@@ -172,12 +191,20 @@ const WorkflowGraphView: React.FC<WorkflowGraphProps> = ({ nodes: rawNodes, conn
   }, [rawNodes, connections]);
 
   return (
-    <div style={{ width: '100%', height: 360, border: '1px solid var(--border-base)', borderRadius: 8 }}>
+    <div style={{ width: '100%', height: 400, border: '1px solid var(--border-base)', borderRadius: 8 }}>
       <ReactFlow
         nodes={flowNodes}
         edges={flowEdges}
         nodeTypes={nodeTypes}
         fitView
+        // Clamp the auto-fit zoom — a 2-3 node graph otherwise zooms
+        // to 2x+ and looks cartoonish. 1.0 is a comfortable max; the
+        // Controls widget still lets operators zoom further if they
+        // want to inspect fine detail.
+        fitViewOptions={{ padding: 0.2, maxZoom: 1, minZoom: 0.3 }}
+        minZoom={0.25}
+        maxZoom={1.75}
+        defaultViewport={{ x: 0, y: 0, zoom: 1 }}
         attributionPosition='bottom-right'
         nodesDraggable={false}
         nodesConnectable={false}
