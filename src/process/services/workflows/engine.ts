@@ -42,6 +42,22 @@ export function registerNodeHandler(nodeType: string, handler: NodeHandler): voi
   nodeHandlers.set(nodeType, handler);
 }
 
+/**
+ * v2.6.0 · Agent Workflow Builder — look up a handler by node type.
+ *
+ * Governance callers use `executeWorkflow()` / internal `executeNode()`
+ * and never need this. The agent-workflow dispatcher
+ * (agentDispatcher.ts) dispatches one step per turn without the
+ * full-graph execution envelope, so it looks up handlers directly.
+ * Purely additive — zero impact on the existing one-shot flow.
+ */
+export function getRegisteredHandler(nodeType: string): NodeHandler | undefined {
+  return nodeHandlers.get(nodeType);
+}
+
+/** v2.6.0 — NodeHandler type re-exported for the dispatcher's typed context build. */
+export type { NodeHandler };
+
 // ── Built-in node handlers ───────────────────────────────────────────────────
 
 registerNodeHandler('trigger', async (_node, inputData) => inputData);

@@ -17,7 +17,23 @@ export type WorkflowNodeType =
   | 'security_check'
   | 'memory'
   | 'planning'
-  | 'reflection_gate';
+  | 'reflection_gate'
+  // v2.6.0 Phase 1 — Agent Workflow Builder node types. Purely
+  // additive; governance callers never produce these strings.
+  // Prompt family — defer to next LLM turn via presetContext.
+  | 'prompt.plan'
+  | 'prompt.create_todo'
+  | 'prompt.review'
+  | 'prompt.freeform'
+  // Git tool family — whitelisted argv-safe subprocess.
+  | 'tool.git.status'
+  | 'tool.git.diff'
+  | 'tool.git.commit'
+  | 'tool.git.push'
+  // Sprint family — thin bridge over TeamSession.TaskManager.
+  | 'sprint.create_task'
+  | 'sprint.update_task'
+  | 'sprint.list_tasks';
 
 /** A single node in the workflow DAG */
 export type WorkflowNode = {
