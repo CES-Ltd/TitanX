@@ -28,6 +28,8 @@ import { getDatabase } from '@process/services/database';
 import * as activityLogService from '@process/services/activityLog';
 import { resolveConversationType as registryResolveConversationType } from './conversationTypes';
 import { getAgent as getGalleryAgent, getEffectiveInstructions } from '@process/services/agentGallery';
+import { createBinding as createWorkflowBinding } from '@process/services/workflows/agentBinding';
+import { logNonCritical } from '@process/utils/logNonCritical';
 
 export class TeamSessionService {
   private readonly sessions: Map<string, TeamSession> = new Map();
@@ -691,7 +693,46 @@ export class TeamSessionService {
       /* non-critical */
     }
 
+    // v2.6.0 · Agent Workflow Builder — slot-level binding at hire.
+    // Precedence: explicit agent.workflowId (operator override) first;
+    // else the template's default_workflow_id. Either path produces
+    // a slot-level binding that supersedes any template-level binding
+    // for this specific hire. Missing workflow (null on both paths)
+    // means the agent runs free — backward-compat with pre-v2.6.0.
+    await this.bindDefaultWorkflow(newAgent, teamId, agent.agentGalleryId).catch((err) =>
+      logNonCritical('team.hire.workflow_binding', err)
+    );
+
     return newAgent;
+  }
+
+  /**
+   * v2.6.0 — resolve and insert a slot-level workflow binding for a
+   * freshly-hired agent. Non-critical: binding failure never blocks
+   * the hire (the agent can still be used without a workflow).
+   */
+  private async bindDefaultWorkflow(newAgent: TeamAgent, teamId: string, agentGalleryId?: string): Promise<void> {
+    const explicit = newAgent.workflowId;
+    let workflowId: string | undefined = explicit;
+
+    if (!workflowId && agentGalleryId) {
+      try {
+        const logDb = await getDatabase();
+        const template = getGalleryAgent(logDb.getDriver(), agentGalleryId);
+        workflowId = template?.defaultWorkflowId;
+      } catch {
+        /* non-critical — treat as "no default" */
+      }
+    }
+
+    if (!workflowId) return;
+
+    const logDb = await getDatabase();
+    createWorkflowBinding(logDb.getDriver(), {
+      workflowDefinitionId: workflowId,
+      slotId: newAgent.slotId,
+      teamId,
+    });
   }
 
   private resolveBackend(agentType: string, agents: TeamAgent[]): string {

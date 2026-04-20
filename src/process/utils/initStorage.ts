@@ -1008,6 +1008,27 @@ const initStorage = async () => {
       try {
         await getDatabase();
         await cleanupOrphanedHealthCheckConversations();
+
+        // v2.6.0 · Agent Workflow Builder — post-migration bootstrap.
+        // Order matters:
+        //   1. Side-effect import of the agent-handler barrel to
+        //      register prompt.*, tool.git.*, sprint.* on the shared
+        //      engine registry. Must run before any workflow fires.
+        //   2. Seed the 6 builtin workflows (idempotent; canonical_id
+        //      lookup + version-gated upgrade-in-place).
+        //   3. Start the agent-workflow busy guard's auto-cleanup
+        //      timer (mirrors cronBusyGuard's startAutoCleanup;
+        //      hourly sweep of stale per-slot dispatch state).
+        try {
+          await import('@process/services/workflows/handlers/agent');
+          const db = await getDatabase();
+          const { seedBuiltinWorkflows } = await import('@process/services/workflows/seeds');
+          seedBuiltinWorkflows(db.getDriver(), 'system_default_user');
+          const { agentWorkflowBusyGuard } = await import('@process/services/workflows/AgentWorkflowBusyGuard');
+          agentWorkflowBusyGuard.startAutoCleanup();
+        } catch (wfErr) {
+          console.warn('[InitStorage] Agent Workflow Builder bootstrap warning:', wfErr);
+        }
       } catch (error) {
         console.error('[InitStorage] Database initialization failed, falling back to file-based storage:', error);
       }
