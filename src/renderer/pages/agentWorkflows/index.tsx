@@ -62,6 +62,16 @@ type WorkflowRow = {
 
 const AGENT_USER_ID = 'system_default_user';
 
+/**
+ * Generate a stable-ish id for a freshly-added node. Hoisted out of
+ * the component so it doesn't recreate on every render (+ satisfies
+ * unicorn/consistent-function-scoping).
+ */
+function mintNodeId(type: string): string {
+  const prefix = type.replace(/[^a-z0-9]/gi, '_').slice(0, 12);
+  return `${prefix}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
 const AgentWorkflowsPage: React.FC = () => {
   const { t } = useTranslation();
   const [workflows, setWorkflows] = useState<WorkflowRow[]>([]);
@@ -189,14 +199,9 @@ const AgentWorkflowsPage: React.FC = () => {
 
   // v2.6.0 Phase 2.x — add-node + new-workflow flows.
   //
-  // Node id generation: use a short random suffix so fresh nodes
-  // have collision-free stable ids even before the first save. Ids
-  // survive save/load unchanged; the DB doesn't care about the shape.
-  const mintNodeId = (type: string): string => {
-    const prefix = type.replace(/[^a-z0-9]/gi, '_').slice(0, 12);
-    return `${prefix}_${Math.random().toString(36).slice(2, 8)}`;
-  };
-
+  // Node id generation via hoisted mintNodeId above — short random
+  // suffix so fresh nodes have collision-free stable ids before the
+  // first save. Ids survive save/load unchanged.
   const handleAddNode = (type: EditorNode['type']) => {
     // Drop new nodes to the right of the rightmost existing node so
     // they don't land on top of anything; operator can drag from there.

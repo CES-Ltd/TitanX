@@ -195,6 +195,62 @@ const CONTENT_BRIEF: BuiltinWorkflow = {
   connections: [edge('trigger', 'plan'), edge('plan', 'break'), edge('break', 'draft'), edge('draft', 'review')],
 };
 
+// ── 7. parallel_review ───────────────────────────────────────────────────────
+// Demonstrates the Phase 2 extended handlers (parallel.*, human.approve,
+// memory.recall, acp.slash.invoke) alongside the Phase 1 chain. A realistic
+// multi-reviewer flow: diff once → fan out to code + security review in
+// parallel → human gate → join → summarize + file.
+const PARALLEL_REVIEW: BuiltinWorkflow = {
+  canonicalId: 'builtin:workflow.parallel_review@1',
+  name: 'Parallel review',
+  description:
+    'Fan out a single diff to parallel code + security reviewers, gate on a human approval, join, summarize, file.',
+  subcategory: 'technical',
+  nodes: [
+    node('trigger', 'trigger', 'Start'),
+    node('recall', 'memory.recall', 'Recall similar past reviews', {
+      query: 'review diff',
+      limit: 3,
+    }),
+    node('diff', 'tool.git.diff', 'Read the diff', { args: ['--stat'] }),
+    node('fan_out', 'parallel.fan_out', 'Fan out reviewers'),
+    node('code_review', 'prompt.review', 'Code review', {
+      promptTemplate:
+        'Code review: correctness, readability, test coverage. Respond with `{ "approved": boolean, "issues": string[] }`.',
+      outputSchema: { approved: 'boolean', issues: 'string[]' },
+    }),
+    node('security_review', 'prompt.review', 'Security review', {
+      promptTemplate:
+        'Security review: injection, auth bypass, unsafe deserialization, credential exposure. Respond with `{ "approved": boolean, "issues": string[] }`.',
+      outputSchema: { approved: 'boolean', issues: 'string[]' },
+    }),
+    node('join', 'parallel.join', 'Join reviewers'),
+    node('human_gate', 'human.approve', 'Human approval gate', {
+      reason: 'Confirm both reviewers cleared before filing the summary task.',
+    }),
+    node('summarize', 'prompt.freeform', 'Summarize', {
+      promptTemplate:
+        'Summarize the code + security reviews into a short task description. Include approvals, outstanding issues, and follow-up hints from the memory.recall step.',
+    }),
+    node('file_task', 'sprint.create_task', 'File review summary', {
+      subject: 'PR review: {{var.llmOutput}}',
+      description: 'Auto-generated from parallel_review@1. Includes code + security review outcomes.',
+    }),
+  ],
+  connections: [
+    edge('trigger', 'recall'),
+    edge('recall', 'diff'),
+    edge('diff', 'fan_out'),
+    edge('fan_out', 'code_review'),
+    edge('fan_out', 'security_review'),
+    edge('code_review', 'join'),
+    edge('security_review', 'join'),
+    edge('join', 'human_gate'),
+    edge('human_gate', 'summarize'),
+    edge('summarize', 'file_task'),
+  ],
+};
+
 // ── 6. research_digest ───────────────────────────────────────────────────────
 const RESEARCH_DIGEST: BuiltinWorkflow = {
   canonicalId: 'builtin:workflow.research_digest@1',
@@ -221,6 +277,7 @@ const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
   LEAD_QUALIFY,
   CONTENT_BRIEF,
   RESEARCH_DIGEST,
+  PARALLEL_REVIEW,
 ];
 
 /**

@@ -145,13 +145,13 @@ describeOrSkip('seedBuiltinWorkflows', () => {
     (db as BetterSqlite3Driver).close();
   });
 
-  it('inserts exactly 6 workflows on first call', () => {
+  it('inserts exactly 7 workflows on first call', () => {
     const count = seedBuiltinWorkflows(db, ADMIN_USER);
-    expect(count).toBe(6);
+    expect(count).toBe(7);
     const rows = db.prepare("SELECT count(*) as c FROM workflow_definitions WHERE source = 'builtin'").get() as {
       c: number;
     };
-    expect(rows.c).toBe(6);
+    expect(rows.c).toBe(7);
   });
 
   it('is idempotent — second call inserts zero', () => {
@@ -193,7 +193,7 @@ describeOrSkip('seedBuiltinWorkflows', () => {
     const rows = db
       .prepare("SELECT canonical_id, category FROM workflow_definitions WHERE source = 'builtin'")
       .all() as Array<{ canonical_id: string; category: string }>;
-    expect(rows).toHaveLength(6);
+    expect(rows).toHaveLength(7);
     for (const r of rows) {
       expect(r.canonical_id).toMatch(/^builtin:workflow\./);
       expect(r.category).toMatch(/^agent-behavior\//);
@@ -534,6 +534,6 @@ describeOrSkip('agentDispatcher — parallel.fan_out → [A, B] → parallel.joi
 
 describeOrSkip('seed library count sanity', () => {
   it('matches the TS constant count', () => {
-    expect(_listBuiltinWorkflows()).toHaveLength(6);
+    expect(_listBuiltinWorkflows()).toHaveLength(7);
   });
 });

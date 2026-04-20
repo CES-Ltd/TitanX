@@ -12,11 +12,17 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { ISqliteDriver, IStatement } from '@process/services/database/drivers/ISqliteDriver';
 import { AgentWorkflowBusyGuard } from '@process/services/workflows/AgentWorkflowBusyGuard';
-import { renderPromptTemplate } from '@process/services/workflows/handlers/agent/promptHandlers';
+import {
+  AGENT_CONTEXT_KEY,
+  renderPromptTemplate,
+  type HandlerAgentContext,
+} from '@process/services/workflows/handlers/agent/promptHandlers';
 import { findEntryStepIds } from '@process/services/workflows/agentRunState';
 import { resolveActiveBinding } from '@process/services/workflows/agentBinding';
 import { _listBuiltinWorkflows } from '@process/services/workflows/seeds';
 import { ALL_MIGRATIONS } from '@process/services/database/migrations';
+import { getRegisteredHandler } from '@process/services/workflows/engine';
+import '@process/services/workflows/handlers/agent'; // side-effect: register every handler
 import type { WorkflowConnection, WorkflowNode } from '@process/services/workflows/types';
 
 /**
@@ -240,8 +246,8 @@ describe('resolveActiveBinding', () => {
 // ── Builtin seeds ────────────────────────────────────────────────────────────
 
 describe('_listBuiltinWorkflows', () => {
-  it('ships exactly 6 workflows', () => {
-    expect(_listBuiltinWorkflows()).toHaveLength(6);
+  it('ships exactly 7 workflows', () => {
+    expect(_listBuiltinWorkflows()).toHaveLength(7);
   });
 
   it('each workflow has a canonical id starting with "builtin:workflow."', () => {
@@ -301,5 +307,158 @@ describe('migration v74', () => {
     const { driver, execs } = makeStubDriver();
     v74.up(driver);
     expect(execs.some((e) => e.includes('agent_gallery') && e.includes('default_workflow_id'))).toBe(true);
+  });
+});
+
+// ── Phase 2 extended handlers — non-DB-dependent assertions ─────────────────
+
+/**
+ * Helper — build a minimal node + input envelope so we can invoke a
+ * handler directly off the shared engine registry.
+ */
+function makeNodeShim(type: WorkflowNode['type'], parameters: Record<string, unknown> = {}): WorkflowNode {
+  return { id: 't', type, name: 't', parameters, position: { x: 0, y: 0 }, onError: 'stop' };
+}
+
+function makeInput(state: Record<string, unknown> = {}): Record<string, unknown> {
+  const ctx: HandlerAgentContext = { runId: 'r', slotId: 's', state };
+  return { [AGENT_CONTEXT_KEY]: ctx };
+}
+
+function makeExecCtx(): Parameters<NonNullable<ReturnType<typeof getRegisteredHandler>>>[2] {
+  // Minimal ExecutionContext shape — handlers only touch context.db
+  // (memory.recall is the sole reader; it gracefully handles a stub).
+  return {
+    db: {
+      prepare: () => ({ run: () => ({ changes: 0, lastInsertRowid: 0 }), get: () => undefined, all: () => [] }),
+    } as unknown as ISqliteDriver,
+    executionId: 'e',
+    workflowId: 'w',
+    nodeOutputs: new Map(),
+    cancelled: false,
+  };
+}
+
+describe('prompt.* handlers (deferred-envelope contract)', () => {
+  for (const type of ['prompt.plan', 'prompt.create_todo', 'prompt.review', 'prompt.freeform'] as const) {
+    it(`${type} returns a __deferred envelope with a rendered promptTemplate`, async () => {
+      const handler = getRegisteredHandler(type);
+      expect(handler).toBeDefined();
+      const out = await handler!(makeNodeShim(type), makeInput({ module: 'core' }), makeExecCtx());
+      expect(out.__deferred).toBe(true);
+      expect(typeof out.promptTemplate).toBe('string');
+    });
+  }
+
+  it('prompt.plan renders {{var.X}} using the agent-context state bag', async () => {
+    const handler = getRegisteredHandler('prompt.plan')!;
+    const out = await handler(
+      makeNodeShim('prompt.plan', { promptTemplate: 'plan for {{var.module}}' }),
+      makeInput({ module: 'core' }),
+      makeExecCtx()
+    );
+    expect(out.promptTemplate).toBe('plan for core');
+  });
+
+  it('operator-supplied outputSchema is passed through untouched', async () => {
+    const schema = { approved: 'boolean', issues: 'string[]' };
+    const handler = getRegisteredHandler('prompt.review')!;
+    const out = await handler(makeNodeShim('prompt.review', { outputSchema: schema }), makeInput(), makeExecCtx());
+    expect(out.outputSchema).toEqual(schema);
+  });
+});
+
+describe('human.approve handler', () => {
+  it('emits a pause envelope with a reason from parameters', async () => {
+    const handler = getRegisteredHandler('human.approve')!;
+    const out = await handler(
+      makeNodeShim('human.approve', { reason: 'Security review required' }),
+      makeInput(),
+      makeExecCtx()
+    );
+    expect(out.__pauseReason).toBe('human_approval_required');
+    expect(out.__pausePromptTemplate).toBe('Security review required');
+    expect(typeof out.pendingAt).toBe('number');
+  });
+
+  it('falls back to a default prompt when reason is missing', async () => {
+    const handler = getRegisteredHandler('human.approve')!;
+    const out = await handler(makeNodeShim('human.approve'), makeInput(), makeExecCtx());
+    expect(out.__pauseReason).toBe('human_approval_required');
+    expect(typeof out.__pausePromptTemplate).toBe('string');
+    expect((out.__pausePromptTemplate as string).length).toBeGreaterThan(0);
+  });
+});
+
+describe('memory.recall handler', () => {
+  it('returns an empty result set when reasoningBank is unavailable / has no hits', async () => {
+    const handler = getRegisteredHandler('memory.recall')!;
+    const out = await handler(
+      makeNodeShim('memory.recall', { query: 'fix bug in core', limit: 3 }),
+      makeInput(),
+      makeExecCtx()
+    );
+    // Shape: always { results: [], count?: number } — graceful degradation.
+    expect(Array.isArray(out.results)).toBe(true);
+  });
+
+  it('returns empty when agent context is missing', async () => {
+    const handler = getRegisteredHandler('memory.recall')!;
+    const out = await handler(
+      makeNodeShim('memory.recall'),
+      {} as Record<string, unknown>, // no __agent
+      makeExecCtx()
+    );
+    expect(out.results).toEqual([]);
+  });
+});
+
+describe('parallel.* handlers', () => {
+  it('parallel.fan_out emits __fanOut: true', async () => {
+    const handler = getRegisteredHandler('parallel.fan_out')!;
+    const out = await handler(makeNodeShim('parallel.fan_out'), makeInput(), makeExecCtx());
+    expect(out.__fanOut).toBe(true);
+    expect(typeof out.startedAt).toBe('number');
+  });
+
+  it('parallel.join emits __join: true', async () => {
+    const handler = getRegisteredHandler('parallel.join')!;
+    const out = await handler(makeNodeShim('parallel.join'), makeInput(), makeExecCtx());
+    expect(out.__join).toBe(true);
+    expect(typeof out.joinedAt).toBe('number');
+  });
+});
+
+describe('acp.slash.invoke handler', () => {
+  it('throws when command parameter is missing', async () => {
+    const handler = getRegisteredHandler('acp.slash.invoke')!;
+    await expect(handler(makeNodeShim('acp.slash.invoke'), makeInput(), makeExecCtx())).rejects.toThrow(/command/);
+  });
+
+  it('builds the prompt template as /<command> [args...] with {{var.X}} resolution', async () => {
+    const handler = getRegisteredHandler('acp.slash.invoke')!;
+    const out = await handler(
+      makeNodeShim('acp.slash.invoke', { command: 'compact', args: ['{{var.hint}}'] }),
+      makeInput({ hint: 'keep-recent' }),
+      makeExecCtx()
+    );
+    expect(out.__deferred).toBe(true);
+    expect(out.promptTemplate).toBe('/compact keep-recent');
+  });
+
+  it('accepts a single string for args (coerces to array)', async () => {
+    const handler = getRegisteredHandler('acp.slash.invoke')!;
+    const out = await handler(
+      makeNodeShim('acp.slash.invoke', { command: 'help', args: 'topics' }),
+      makeInput(),
+      makeExecCtx()
+    );
+    expect(out.promptTemplate).toBe('/help topics');
+  });
+
+  it('omits args cleanly when none supplied', async () => {
+    const handler = getRegisteredHandler('acp.slash.invoke')!;
+    const out = await handler(makeNodeShim('acp.slash.invoke', { command: 'clear' }), makeInput(), makeExecCtx());
+    expect(out.promptTemplate).toBe('/clear');
   });
 });

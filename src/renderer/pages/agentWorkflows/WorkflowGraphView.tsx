@@ -174,14 +174,14 @@ const WorkflowGraphView: React.FC<WorkflowGraphProps> = ({
   const { flowNodes, flowEdges } = useMemo(() => {
     const layout = autoLayout(rawNodes, connections);
     const useLayout = everyNodeAtOrigin(rawNodes);
-    const flowNodes: Node[] = rawNodes.map((n) => ({
+    const nextNodes: Node[] = rawNodes.map((n) => ({
       id: n.id,
       type: 'workflowStep',
       position: useLayout ? (layout.get(n.id) ?? { x: 0, y: 0 }) : (n.position ?? layout.get(n.id) ?? { x: 0, y: 0 }),
       data: { label: n.name || n.id, type: n.type, selected: n.id === selectedNodeId },
       draggable: editable,
     }));
-    const flowEdges: Edge[] = connections.map((c, idx) => ({
+    const nextEdges: Edge[] = connections.map((c, idx) => ({
       id: `e-${idx}-${c.fromNodeId}-${c.toNodeId}`,
       source: c.fromNodeId,
       target: c.toNodeId,
@@ -189,7 +189,7 @@ const WorkflowGraphView: React.FC<WorkflowGraphProps> = ({
       markerEnd: { type: MarkerType.ArrowClosed },
       type: 'smoothstep',
     }));
-    return { flowNodes, flowEdges };
+    return { flowNodes: nextNodes, flowEdges: nextEdges };
   }, [rawNodes, connections, selectedNodeId, editable]);
 
   const handleNodesChange = useCallback(
