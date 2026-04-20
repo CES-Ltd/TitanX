@@ -61,6 +61,16 @@
     "dirty": "Unsaved",
     "editable": "Editable",
     "readonly": "Read-only (master-managed)",
-    "paramApplied": "Node parameters updated"
+    "paramApplied": "Node parameters updated",
+    "addNode": "+ Add node"
+  },
+  "new": {
+    "button": "+ New workflow",
+    "title": "New agent workflow",
+    "ok": "Create",
+    "hint": "Creates a blank workflow with just a trigger node. Add steps with the \"+ Add node\" button once created.",
+    "namePlaceholder": "Workflow name",
+    "created": "Workflow created",
+    "failed": "Create failed"
   }
 }

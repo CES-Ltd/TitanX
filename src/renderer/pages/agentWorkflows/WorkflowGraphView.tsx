@@ -261,6 +261,41 @@ const WorkflowGraphView: React.FC<WorkflowGraphProps> = ({
     onNodeClick?.(null);
   }, [onNodeClick]);
 
+  // Delete key / Backspace handlers — ReactFlow fires these when the
+  // selection is a node or edge and the user hits the OS delete key.
+  // We strip the deleted item from the canonical arrays and emit up;
+  // the parent re-renders with fresh props, clearing the selection.
+  const handleNodesDelete = useCallback(
+    (deleted: Node[]) => {
+      if (!editable || !onNodesChange) return;
+      const deletedIds = new Set(deleted.map((n) => n.id));
+      const nextNodes = rawNodes.filter((n) => !deletedIds.has(n.id));
+      onNodesChange(nextNodes);
+      // Also drop any connection that referenced a deleted node.
+      if (onConnectionsChange) {
+        const nextConns = connections.filter((c) => !deletedIds.has(c.fromNodeId) && !deletedIds.has(c.toNodeId));
+        if (nextConns.length !== connections.length) onConnectionsChange(nextConns);
+      }
+      onNodeClick?.(null);
+    },
+    [editable, rawNodes, connections, onNodesChange, onConnectionsChange, onNodeClick]
+  );
+
+  const handleEdgesDelete = useCallback(
+    (deleted: Edge[]) => {
+      if (!editable || !onConnectionsChange) return;
+      const deletedEdgeIds = new Set(deleted.map((e) => e.id));
+      // Edge ids are deterministic `e-<idx>-<from>-<to>`; parse back
+      // to match canonical connections. Safer: match by source/target.
+      const nextConns = connections.filter((c, idx) => {
+        const id = `e-${idx}-${c.fromNodeId}-${c.toNodeId}`;
+        return !deletedEdgeIds.has(id);
+      });
+      if (nextConns.length !== connections.length) onConnectionsChange(nextConns);
+    },
+    [editable, connections, onConnectionsChange]
+  );
+
   return (
     <div style={{ width: '100%', height: 400, border: '1px solid var(--border-base)', borderRadius: 8 }}>
       <ReactFlow
@@ -279,8 +314,11 @@ const WorkflowGraphView: React.FC<WorkflowGraphProps> = ({
         onNodesChange={editable ? handleNodesChange : undefined}
         onEdgesChange={editable ? handleEdgesChange : undefined}
         onConnect={editable ? handleConnect : undefined}
+        onNodesDelete={editable ? handleNodesDelete : undefined}
+        onEdgesDelete={editable ? handleEdgesDelete : undefined}
         onNodeClick={handleFlowNodeClick}
         onPaneClick={handlePaneClick}
+        deleteKeyCode={editable ? ['Delete', 'Backspace'] : null}
         proOptions={{ hideAttribution: true }}
       >
         <Background gap={16} />

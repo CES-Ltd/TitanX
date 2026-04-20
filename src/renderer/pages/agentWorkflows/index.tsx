@@ -29,6 +29,8 @@ import {
   Message,
   Modal,
   Input,
+  Dropdown,
+  Menu,
 } from '@arco-design/web-react';
 import { workflowEngine, agentWorkflows } from '@/common/adapter/ipcBridge';
 import type { IAgentWorkflowRun } from '@/common/adapter/ipcBridge';
@@ -185,6 +187,71 @@ const AgentWorkflowsPage: React.FC = () => {
     setEditorNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, parameters } : n)));
   };
 
+  // v2.6.0 Phase 2.x — add-node + new-workflow flows.
+  //
+  // Node id generation: use a short random suffix so fresh nodes
+  // have collision-free stable ids even before the first save. Ids
+  // survive save/load unchanged; the DB doesn't care about the shape.
+  const mintNodeId = (type: string): string => {
+    const prefix = type.replace(/[^a-z0-9]/gi, '_').slice(0, 12);
+    return `${prefix}_${Math.random().toString(36).slice(2, 8)}`;
+  };
+
+  const handleAddNode = (type: EditorNode['type']) => {
+    // Drop new nodes to the right of the rightmost existing node so
+    // they don't land on top of anything; operator can drag from there.
+    const maxX = editorNodes.reduce((m, n) => Math.max(m, n.position?.x ?? 0), 0);
+    const newNode: EditorNode = {
+      id: mintNodeId(type),
+      type,
+      name: type,
+      position: { x: maxX + 300, y: 0 },
+      parameters: {},
+      onError: 'stop',
+    };
+    setEditorNodes((prev) => [...prev, newNode]);
+    setSelectedNodeId(newNode.id);
+  };
+
+  const [newWfOpen, setNewWfOpen] = useState(false);
+  const [newWfName, setNewWfName] = useState('');
+  const handleCreateNewWorkflow = async () => {
+    const name = newWfName.trim();
+    if (!name) return;
+    try {
+      const created = (await workflowEngine.create.invoke({
+        userId: AGENT_USER_ID,
+        name,
+        description: '',
+        nodes: [
+          { id: 'trigger', type: 'trigger', name: 'Start', parameters: {}, position: { x: 0, y: 0 }, onError: 'stop' },
+        ],
+        connections: [],
+      })) as { id: string } | undefined;
+      // workflow-engine.create stamps the row but returns the inserted
+      // shape only in newer backends; we refresh + select by name as
+      // a belt-and-suspenders fallback.
+      await loadWorkflows();
+      setSelected(created?.id ?? null);
+      setNewWfOpen(false);
+      setNewWfName('');
+      // The newly-created row lands without a category; tag it so it
+      // surfaces in our agent-behavior filter (avoids the post-create
+      // "where did my workflow go?" surprise).
+      if (created?.id) {
+        void workflowEngine.update
+          .invoke({
+            workflowId: created.id,
+            updates: { category: 'agent-behavior/custom' } as unknown as Record<string, unknown>,
+          })
+          .then(() => loadWorkflows());
+      }
+      Message.success(t('agentWorkflows.new.created', 'Workflow created'));
+    } catch {
+      Message.error(t('agentWorkflows.new.failed', 'Create failed'));
+    }
+  };
+
   const handleCopyJson = async () => {
     if (!selectedWorkflow) return;
     try {
@@ -254,6 +321,9 @@ const AgentWorkflowsPage: React.FC = () => {
           </Typography.Text>
         </div>
         <Space>
+          <Button type='primary' onClick={() => setNewWfOpen(true)}>
+            {t('agentWorkflows.new.button', '+ New workflow')}
+          </Button>
           <Button onClick={() => setImportOpen(true)}>{t('agentWorkflows.import.button', 'Import JSON')}</Button>
           <Button disabled={!selectedWorkflow} onClick={() => void handleCopyJson()}>
             {t('agentWorkflows.detail.copyJson', 'Copy JSON')}
@@ -306,6 +376,32 @@ const AgentWorkflowsPage: React.FC = () => {
         onClose={() => setSelectedNodeId(null)}
         onApply={handleApplyParameters}
       />
+
+      <Modal
+        title={t('agentWorkflows.new.title', 'New agent workflow')}
+        visible={newWfOpen}
+        onCancel={() => {
+          setNewWfOpen(false);
+          setNewWfName('');
+        }}
+        onOk={() => void handleCreateNewWorkflow()}
+        okButtonProps={{ disabled: !newWfName.trim() }}
+        okText={t('agentWorkflows.new.ok', 'Create')}
+      >
+        <Typography.Text type='secondary'>
+          {t(
+            'agentWorkflows.new.hint',
+            'Creates a blank workflow with just a trigger node. Add steps with the "+ Add node" button once created.'
+          )}
+        </Typography.Text>
+        <Input
+          value={newWfName}
+          onChange={setNewWfName}
+          placeholder={t('agentWorkflows.new.namePlaceholder', 'Workflow name')}
+          style={{ marginTop: 12 }}
+          onPressEnter={() => void handleCreateNewWorkflow()}
+        />
+      </Modal>
 
       <Modal
         title={t('agentWorkflows.import.title', 'Import workflow JSON')}
@@ -411,6 +507,46 @@ const AgentWorkflowsPage: React.FC = () => {
                   </Typography.Text>
                   {editable ? (
                     <Space size={4}>
+                      <Dropdown
+                        position='bl'
+                        droplist={
+                          <Menu
+                            onClickMenuItem={(type) => {
+                              handleAddNode(type as EditorNode['type']);
+                            }}
+                          >
+                            <Menu.SubMenu key='prompt' title='Prompt'>
+                              <Menu.Item key='prompt.plan'>prompt.plan</Menu.Item>
+                              <Menu.Item key='prompt.create_todo'>prompt.create_todo</Menu.Item>
+                              <Menu.Item key='prompt.review'>prompt.review</Menu.Item>
+                              <Menu.Item key='prompt.freeform'>prompt.freeform</Menu.Item>
+                            </Menu.SubMenu>
+                            <Menu.SubMenu key='tool' title='Tool · git'>
+                              <Menu.Item key='tool.git.status'>tool.git.status</Menu.Item>
+                              <Menu.Item key='tool.git.diff'>tool.git.diff</Menu.Item>
+                              <Menu.Item key='tool.git.commit'>tool.git.commit</Menu.Item>
+                              <Menu.Item key='tool.git.push'>tool.git.push</Menu.Item>
+                            </Menu.SubMenu>
+                            <Menu.SubMenu key='sprint' title='Sprint'>
+                              <Menu.Item key='sprint.create_task'>sprint.create_task</Menu.Item>
+                              <Menu.Item key='sprint.update_task'>sprint.update_task</Menu.Item>
+                              <Menu.Item key='sprint.list_tasks'>sprint.list_tasks</Menu.Item>
+                            </Menu.SubMenu>
+                            <Menu.SubMenu key='flow' title='Control flow'>
+                              <Menu.Item key='condition'>condition</Menu.Item>
+                              <Menu.Item key='parallel.fan_out'>parallel.fan_out</Menu.Item>
+                              <Menu.Item key='parallel.join'>parallel.join</Menu.Item>
+                            </Menu.SubMenu>
+                            <Menu.SubMenu key='integration' title='Integration'>
+                              <Menu.Item key='human.approve'>human.approve</Menu.Item>
+                              <Menu.Item key='memory.recall'>memory.recall</Menu.Item>
+                              <Menu.Item key='acp.slash.invoke'>acp.slash.invoke</Menu.Item>
+                            </Menu.SubMenu>
+                          </Menu>
+                        }
+                      >
+                        <Button size='mini'>{t('agentWorkflows.editor.addNode', '+ Add node')}</Button>
+                      </Dropdown>
                       <Button size='mini' disabled={!dirty || saving} onClick={handleRevert}>
                         {t('agentWorkflows.editor.revert', 'Revert')}
                       </Button>
