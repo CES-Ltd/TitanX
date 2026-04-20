@@ -3182,6 +3182,149 @@ const migration_v73: IMigration = {
   },
 };
 
+/**
+ * Migration v74 — Agent Workflow Builder (v2.6.0, Phase 1).
+ *
+ * Builds on the existing n8n-style workflow engine (migrations v40-v42).
+ *
+ * Four additive changes:
+ *
+ *   1. `workflow_definitions` gets five new optional columns so we can
+ *      tag rows with canonical IDs (for idempotent seeding), provenance
+ *      (`source` tri-state mirroring `agent_gallery.source`), category
+ *      (for UI filtering — agent-behavior vs governance), and fleet
+ *      metadata (wired now to avoid a breaking Phase-3 migration when
+ *      we add master→slave workflow publishing).
+ *
+ *   2. New `workflow_bindings` table — links a `workflow_definitions`
+ *      row to either an `agent_gallery` template (default-at-hire) or
+ *      a specific `team_agents.slot_id` (operator override at hire
+ *      time). Mirrors `iam_policy_bindings` semantics, incl. optional
+ *      TTL via `expires_at`. The CHECK constraint enforces that at
+ *      least one scope is set.
+ *
+ *   3. New `agent_workflow_runs` table — per-agent multi-turn state.
+ *      Distinct from existing `workflow_executions` (which records
+ *      one-shot governance runs). Agent workflows execute *one step per
+ *      turn* across many turns, so they need their own state envelope
+ *      with `graph_snapshot` for upgrade-stability (an in-flight run
+ *      reads from the snapshot even if the source definition is edited
+ *      mid-run — the run finishes on the version it began with;
+ *      subsequent runs pick up the edit).
+ *
+ *   4. `agent_gallery.default_workflow_id` — allows templates to ship
+ *      with a recommended workflow. Hire modal pre-fills; operator can
+ *      override (slot-level binding supersedes template-level).
+ *
+ * All changes are additive and default-safe — existing agents without
+ * a binding, existing governance workflows, and the existing
+ * `workflow-engine.*` IPC surface all behave identically to pre-v74.
+ * The feature is opt-in at every level (plus a new `agent_workflows`
+ * security feature toggles the dispatcher entirely off).
+ */
+const migration_v74: IMigration = {
+  version: 74,
+  name: 'Agent Workflow Builder v2.6.0 — extend workflow_definitions + workflow_bindings + agent_workflow_runs',
+  up: (db) => {
+    const addColumn = (table: string, column: string, type: string): void => {
+      try {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (!/duplicate column name/i.test(msg)) throw e;
+      }
+    };
+
+    // 1. Extend workflow_definitions with metadata (all additive/optional).
+    //    Default `source='local'` keeps every pre-v74 row semantically
+    //    identical to what it was (a user-authored governance workflow).
+    addColumn('workflow_definitions', 'canonical_id', 'TEXT');
+    addColumn('workflow_definitions', 'source', "TEXT NOT NULL DEFAULT 'local'");
+    addColumn('workflow_definitions', 'category', 'TEXT');
+    addColumn('workflow_definitions', 'managed_by_version', 'INTEGER');
+    addColumn('workflow_definitions', 'published_to_fleet', 'INTEGER NOT NULL DEFAULT 0');
+    db.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_wf_defs_canonical ON workflow_definitions(canonical_id) WHERE canonical_id IS NOT NULL`
+    );
+    db.exec('CREATE INDEX IF NOT EXISTS idx_wf_defs_source ON workflow_definitions(source)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_wf_defs_category ON workflow_definitions(category)');
+
+    // 2. workflow_bindings — template-level default or slot-level override.
+    db.exec(`CREATE TABLE IF NOT EXISTS workflow_bindings (
+      id TEXT PRIMARY KEY,
+      workflow_definition_id TEXT NOT NULL REFERENCES workflow_definitions(id) ON DELETE CASCADE,
+      agent_gallery_id TEXT,
+      slot_id TEXT,
+      team_id TEXT,
+      bound_at INTEGER NOT NULL,
+      expires_at INTEGER,
+      CHECK (agent_gallery_id IS NOT NULL OR slot_id IS NOT NULL)
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_wf_bindings_slot ON workflow_bindings(slot_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_wf_bindings_template ON workflow_bindings(agent_gallery_id)');
+
+    // 3. agent_workflow_runs — per-turn multi-turn state (distinct from
+    //    workflow_executions which records one-shot governance runs).
+    db.exec(`CREATE TABLE IF NOT EXISTS agent_workflow_runs (
+      id TEXT PRIMARY KEY,
+      workflow_definition_id TEXT NOT NULL,
+      definition_version INTEGER NOT NULL,
+      graph_snapshot TEXT NOT NULL,
+      agent_slot_id TEXT NOT NULL,
+      team_id TEXT,
+      conversation_id TEXT,
+      status TEXT NOT NULL CHECK(status IN ('pending','running','completed','failed','paused')),
+      active_step_ids TEXT NOT NULL,
+      completed_step_ids TEXT NOT NULL,
+      failed_step_ids TEXT NOT NULL,
+      state_json TEXT,
+      started_at INTEGER NOT NULL,
+      completed_at INTEGER,
+      trace_json TEXT
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_agent_wf_runs_slot ON agent_workflow_runs(agent_slot_id, status)');
+
+    // 4. agent_gallery.default_workflow_id — templates can ship with a
+    //    recommended workflow that the hire modal pre-fills.
+    addColumn('agent_gallery', 'default_workflow_id', 'TEXT');
+
+    // 5. Seed the `agent_workflows` security feature toggle row OFF
+    //    (opt-in). Consistent with how v39/v47 seed their toggle rows
+    //    — `setToggle()` uses UPDATE, so a row must pre-exist for the
+    //    UI to flip the feature on.
+    db.prepare(
+      'INSERT OR IGNORE INTO security_feature_toggles (feature, enabled, updated_at) VALUES (?, 0, ?)'
+    ).run('agent_workflows', Date.now());
+
+    console.log(
+      '[Migration v74] Extended workflow_definitions + added workflow_bindings + agent_workflow_runs + agent_gallery.default_workflow_id + agent_workflows toggle'
+    );
+  },
+  down: (db) => {
+    const dropColumn = (table: string, column: string): void => {
+      try {
+        db.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+      } catch {
+        /* older SQLite may not support DROP COLUMN; leave in place */
+      }
+    };
+    dropColumn('agent_gallery', 'default_workflow_id');
+    db.exec('DROP INDEX IF EXISTS idx_agent_wf_runs_slot');
+    db.exec('DROP TABLE IF EXISTS agent_workflow_runs');
+    db.exec('DROP INDEX IF EXISTS idx_wf_bindings_template');
+    db.exec('DROP INDEX IF EXISTS idx_wf_bindings_slot');
+    db.exec('DROP TABLE IF EXISTS workflow_bindings');
+    db.exec('DROP INDEX IF EXISTS idx_wf_defs_category');
+    db.exec('DROP INDEX IF EXISTS idx_wf_defs_source');
+    db.exec('DROP INDEX IF EXISTS idx_wf_defs_canonical');
+    dropColumn('workflow_definitions', 'published_to_fleet');
+    dropColumn('workflow_definitions', 'managed_by_version');
+    dropColumn('workflow_definitions', 'category');
+    dropColumn('workflow_definitions', 'source');
+    dropColumn('workflow_definitions', 'canonical_id');
+  },
+};
+
 // prettier-ignore
 export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
@@ -3197,7 +3340,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v54, migration_v55, migration_v56, migration_v57, migration_v58, migration_v59,
   migration_v60, migration_v61, migration_v62, migration_v63, migration_v64, migration_v65,
   migration_v66, migration_v67, migration_v68, migration_v69, migration_v70, migration_v71,
-  migration_v72, migration_v73,
+  migration_v72, migration_v73, migration_v74,
 ];
 
 /**

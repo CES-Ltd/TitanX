@@ -22,7 +22,15 @@ export type SecurityFeature =
   | 'trace_system'
   // v1.9.26+ fleet mode (master/slave). Default ON — admins disable this
   // to force an install into Regular mode even if fleet.mode was set.
-  | 'fleet_mode_enabled';
+  | 'fleet_mode_enabled'
+  // v2.6.0+ Agent Workflow Builder. Master on/off for the dispatcher
+  // that binds workflow_definitions to agent slots at hire time and
+  // injects step context into per-turn prompts. Default OFF — opt-in.
+  // Distinct from `workflow_gates` which controls agent-triggered
+  // governance workflows (ActionExecutor.handleTriggerWorkflow); the
+  // two systems share the engine + registry but serve different
+  // audiences and have independent kill switches.
+  | 'agent_workflows';
 
 export type FeatureToggle = {
   feature: SecurityFeature;
