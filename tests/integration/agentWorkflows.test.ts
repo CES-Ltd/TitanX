@@ -367,6 +367,169 @@ describeOrSkip('agentDispatcher — security + backward-compat', () => {
   });
 });
 
+// ── Parallel fan-out + join (Phase 2.x) ─────────────────────────────────────
+
+/**
+ * Inserts a synthetic workflow:
+ *
+ *   trigger → fan_out → [action_A, action_B] → join → action_final
+ *
+ * All non-trigger steps use types whose handlers are registered
+ * without external dependencies (action, parallel.fan_out,
+ * parallel.join) so the test can walk the dispatcher end-to-end
+ * without mocking sprint / git / prompt handlers.
+ */
+function insertParallelTestWorkflow(db: ISqliteDriver): string {
+  const id = 'wf-parallel-test';
+  const now = Date.now();
+  const nodes = [
+    { id: 'trigger', type: 'trigger', name: 'Start', parameters: {}, position: { x: 0, y: 0 }, onError: 'stop' },
+    {
+      id: 'fan_out',
+      type: 'parallel.fan_out',
+      name: 'Fan out',
+      parameters: {},
+      position: { x: 280, y: 0 },
+      onError: 'stop',
+    },
+    { id: 'a', type: 'action', name: 'A', parameters: {}, position: { x: 560, y: 0 }, onError: 'stop' },
+    { id: 'b', type: 'action', name: 'B', parameters: {}, position: { x: 560, y: 130 }, onError: 'stop' },
+    {
+      id: 'join',
+      type: 'parallel.join',
+      name: 'Join',
+      parameters: {},
+      position: { x: 840, y: 0 },
+      onError: 'stop',
+    },
+    { id: 'final', type: 'action', name: 'Final', parameters: {}, position: { x: 1120, y: 0 }, onError: 'stop' },
+  ];
+  const connections = [
+    { fromNodeId: 'trigger', fromOutput: 'main', toNodeId: 'fan_out', toInput: 'main' },
+    { fromNodeId: 'fan_out', fromOutput: 'main', toNodeId: 'a', toInput: 'main' },
+    { fromNodeId: 'fan_out', fromOutput: 'main', toNodeId: 'b', toInput: 'main' },
+    { fromNodeId: 'a', fromOutput: 'main', toNodeId: 'join', toInput: 'main' },
+    { fromNodeId: 'b', fromOutput: 'main', toNodeId: 'join', toInput: 'main' },
+    { fromNodeId: 'join', fromOutput: 'main', toNodeId: 'final', toInput: 'main' },
+  ];
+  db.prepare(
+    `INSERT INTO workflow_definitions
+       (id, user_id, name, description, nodes, connections, settings, enabled, version,
+        created_at, updated_at, canonical_id, source, category, published_to_fleet)
+     VALUES (?, ?, 'Parallel test', 'A/B parallel harness', ?, ?, '{}', 1, 1, ?, ?, ?, 'local', 'agent-behavior/test', 0)`
+  ).run(id, ADMIN_USER, JSON.stringify(nodes), JSON.stringify(connections), now, now, 'local:workflow.parallel_test@1');
+  return id;
+}
+
+describeOrSkip('agentDispatcher — parallel.fan_out → [A, B] → parallel.join', () => {
+  let db: ISqliteDriver;
+  beforeEach(() => {
+    db = setupDb();
+    dispatcherEvents.removeAllListeners();
+  });
+  afterEach(() => {
+    (db as BetterSqlite3Driver).close();
+  });
+
+  it('walks the fan-out, completes both branches, then activates + completes join', async () => {
+    setToggle(db, 'agent_workflows', true);
+    const wfId = insertParallelTestWorkflow(db);
+    createBinding(db, { workflowDefinitionId: wfId, slotId: 'slot-par', teamId: 'team-a' });
+
+    const result = await prepareTurnContext({
+      db,
+      slotId: 'slot-par',
+      teamId: 'team-a',
+      allowedTools: ['*'],
+      turnNumber: 0,
+    });
+
+    // Every handler in the graph is non-deferred → the walk runs
+    // from entry to terminal in a single dispatch. No injection.
+    expect(result).toBeNull();
+
+    // Run is now completed (no active steps remain).
+    const row = db
+      .prepare('SELECT status, completed_step_ids FROM agent_workflow_runs WHERE agent_slot_id = ?')
+      .get('slot-par') as { status: string; completed_step_ids: string };
+    expect(row.status).toBe('completed');
+
+    const completed = JSON.parse(row.completed_step_ids) as string[];
+    // Every non-trigger node must be in completed.
+    expect(completed).toEqual(expect.arrayContaining(['fan_out', 'a', 'b', 'join', 'final']));
+
+    // Key invariant for parallel.join: join's index must be AFTER
+    // both 'a' and 'b' — the dispatcher cannot have activated join
+    // until both predecessors were in the completed set.
+    const idxA = completed.indexOf('a');
+    const idxB = completed.indexOf('b');
+    const idxJoin = completed.indexOf('join');
+    expect(idxJoin).toBeGreaterThan(idxA);
+    expect(idxJoin).toBeGreaterThan(idxB);
+  });
+
+  it('does not prematurely activate the join when only one branch is complete', async () => {
+    setToggle(db, 'agent_workflows', true);
+    const wfId = insertParallelTestWorkflow(db);
+
+    // Seed a live run with 'fan_out' + 'a' already completed, 'b'
+    // still active. This simulates the mid-flight state the walk
+    // would hit between dispatching A and B.
+    const { createRun: _createRun, updateRunSteps } = await import('@process/services/workflows/agentRunState');
+    const row = db.prepare('SELECT nodes, connections FROM workflow_definitions WHERE id = ?').get(wfId) as {
+      nodes: string;
+      connections: string;
+    };
+    const wfFull = {
+      id: wfId,
+      userId: ADMIN_USER,
+      name: 'Parallel test',
+      description: 'A/B parallel harness',
+      nodes: JSON.parse(row.nodes),
+      connections: JSON.parse(row.connections),
+      settings: {},
+      enabled: true,
+      version: 1,
+      createdAt: 0,
+      updatedAt: 0,
+    } as Parameters<typeof _createRun>[1]['workflow'];
+
+    const run = _createRun(db, { workflow: wfFull, agentSlotId: 'slot-par2' });
+    // Jump ahead: mark 'fan_out' + 'a' completed; 'b' still active.
+    updateRunSteps(db, run.id, {
+      activeStepIds: ['b'],
+      completedStepIds: ['fan_out', 'a'],
+    });
+
+    // Invoke computeNextActiveSteps directly via a walk simulation:
+    // what happens when 'a' just completed and we're deciding
+    // what to activate from its edges?
+    //
+    // Rather than unit-test the internal helper, drive the dispatcher:
+    // a subsequent prepareTurnContext call should walk 'b' + join.
+    const result = await prepareTurnContext({
+      db,
+      slotId: 'slot-par2',
+      teamId: 'team-a',
+      allowedTools: ['*'],
+      turnNumber: 1,
+    });
+    expect(result).toBeNull();
+
+    const final = db.prepare('SELECT status, completed_step_ids FROM agent_workflow_runs WHERE id = ?').get(run.id) as {
+      status: string;
+      completed_step_ids: string;
+    };
+    expect(final.status).toBe('completed');
+    const completed = JSON.parse(final.completed_step_ids) as string[];
+    // 'a' was already completed; 'b' + 'join' + 'final' should have
+    // been added in order — join comes after b, final after join.
+    expect(completed).toEqual(expect.arrayContaining(['b', 'join', 'final']));
+    expect(completed.indexOf('join')).toBeGreaterThan(completed.indexOf('b'));
+    expect(completed.indexOf('final')).toBeGreaterThan(completed.indexOf('join'));
+  });
+});
+
 // ── Sanity ─────────────────────────────────────────────────────────────────
 
 describeOrSkip('seed library count sanity', () => {
