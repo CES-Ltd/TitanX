@@ -429,6 +429,26 @@ describe('parallel.* handlers', () => {
   });
 });
 
+describe('git executor injection (Phase 3.x scaffold)', () => {
+  it('setGitExecutor swaps the active executor; handlers route through it', async () => {
+    const { setGitExecutor, getGitExecutor } = await import('@process/services/workflows/handlers/agent/gitHandlers');
+    const captured: Array<{ args: string[]; cwd: string }> = [];
+    setGitExecutor(async (args, cwd) => {
+      captured.push({ args, cwd });
+      return { stdout: 'stub', stderr: '', exitCode: 0, argv: ['git', ...args], cwd };
+    });
+    const handler = getRegisteredHandler('tool.git.status')!;
+    const out = await handler(makeNodeShim('tool.git.status', { cwd: '/tmp/xyz' }), makeInput(), makeExecCtx());
+    expect(out.stdout).toBe('stub');
+    expect(captured).toHaveLength(1);
+    expect(captured[0].args).toEqual(['status', '--porcelain']);
+    expect(captured[0].cwd).toBe('/tmp/xyz');
+    // Restore the default so subsequent tests don't pick up the stub.
+    setGitExecutor(null);
+    expect(getGitExecutor()).not.toBeUndefined();
+  });
+});
+
 describe('acp.slash.invoke handler', () => {
   it('throws when command parameter is missing', async () => {
     const handler = getRegisteredHandler('acp.slash.invoke')!;

@@ -3,11 +3,23 @@
  * Agent Workflow Builder — git tool family handlers.
  *
  * Whitelisted git-over-argv. Each handler assembles a command as an
- * argv array and spawns `git` with `shell: false` — no shell
+ * argv array and delegates to a pluggable `GitExecutor`; the default
+ * is an `execFile('git', ...)` with `shell: false` — no shell
  * interpolation, no command injection surface. The argv is rendered
  * through the same `{{var.X}}` templating prompt handlers use, so
  * parameters can reference workflow-level variables set by prior
  * steps.
+ *
+ * Pluggable executor (v2.6.0 Phase 3.x scaffold):
+ *
+ *   The actual subprocess call is factored behind a `GitExecutor`
+ *   function type so a future dedicated git MCP adapter can replace
+ *   the implementation without touching the handlers or the
+ *   dispatcher. Install an alternate executor at boot via
+ *   `setGitExecutor(fn)` — e.g. in a Phase 3 commit that wires up
+ *   a Model Context Protocol git server, the executor would dispatch
+ *   argv over that MCP channel instead of forking a subprocess.
+ *   Handlers stay stable (argv → { stdout, stderr, exitCode }).
  *
  * Security shape (plan.md § Critical-Files § Git backend):
  *
@@ -19,18 +31,13 @@
  *     enforced upstream by the dispatcher, not in-handler. Handlers
  *     trust the dispatcher's allowlist check has passed by the time
  *     they're invoked.
- *   - Phase 3 swaps this for a dedicated git MCP adapter; because
- *     the handler shape is stable (argv → {stdout, stderr, exitCode}),
- *     existing workflows continue to work without edits.
  *
  * Working directory resolution:
  *
  *   1. `node.parameters.cwd` — explicit operator-supplied path
  *   2. `inputData.__agent.state.cwd` — runtime variable set by a
- *      prior step (e.g. a sprint.* handler that materialized a
- *      workspace)
- *   3. `process.cwd()` — fallback; corresponds to the Electron main
- *      process working directory at app launch
+ *      prior step
+ *   3. `process.cwd()` — fallback
  *
  * Timeout: per-handler default 30s. Override via
  * `node.parameters.timeoutMs`. Spawn is aborted on timeout; the
@@ -47,7 +54,11 @@ const execFileAsync = promisify(execFile);
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
-type GitRunResult = {
+/**
+ * Result envelope every executor returns. Kept stable so a
+ * subprocess → MCP swap doesn't leak through to handlers.
+ */
+export type GitRunResult = {
   stdout: string;
   stderr: string;
   exitCode: number;
@@ -56,12 +67,16 @@ type GitRunResult = {
 };
 
 /**
- * Run a `git <args...>` subprocess with shell:false. Treats a
- * non-zero exit as a return value (not a throw) — the dispatcher
- * decides whether to treat a non-zero as a workflow-level failure
- * based on the node's `onError` policy and the caller's branch edges.
+ * Pluggable git executor signature. Receives the git argv (without
+ * the leading `git`), the resolved cwd, and the timeout. Must never
+ * throw on non-zero exit — return the result envelope with
+ * `exitCode !== 0` so the dispatcher can route via the node's
+ * `onError` policy.
  */
-async function runGit(args: string[], cwd: string, timeoutMs: number): Promise<GitRunResult> {
+export type GitExecutor = (args: string[], cwd: string, timeoutMs: number) => Promise<GitRunResult>;
+
+/** Default — fork a subprocess with shell:false. */
+const subprocessExecutor: GitExecutor = async (args, cwd, timeoutMs) => {
   try {
     const { stdout, stderr } = await execFileAsync('git', args, {
       cwd,
@@ -80,6 +95,26 @@ async function runGit(args: string[], cwd: string, timeoutMs: number): Promise<G
       cwd,
     };
   }
+};
+
+let activeExecutor: GitExecutor = subprocessExecutor;
+
+/**
+ * Swap the active git executor. Call once at app boot if an MCP
+ * git adapter is available; leave unset to use the subprocess
+ * default. Pass `null` to restore the default (useful for tests).
+ */
+export function setGitExecutor(impl: GitExecutor | null): void {
+  activeExecutor = impl ?? subprocessExecutor;
+}
+
+/** Currently-active executor (for tests + observability). */
+export function getGitExecutor(): GitExecutor {
+  return activeExecutor;
+}
+
+async function runGit(args: string[], cwd: string, timeoutMs: number): Promise<GitRunResult> {
+  return activeExecutor(args, cwd, timeoutMs);
 }
 
 function resolveCwd(node: { parameters: Record<string, unknown> }, inputData: Record<string, unknown>): string {
