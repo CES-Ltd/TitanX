@@ -15,7 +15,11 @@
     "category": "Category",
     "version": "Version",
     "canonicalId": "Canonical ID",
-    "steps": "Steps"
+    "steps": "Steps",
+    "graph": "Graph",
+    "copyJson": "Copy JSON",
+    "copied": "Workflow JSON copied to clipboard",
+    "copyFailed": "Copy failed"
   },
   "runs": {
     "title": "Recent runs",
@@ -27,5 +31,13 @@
     "label": "Workflow (optional)",
     "placeholder": "No workflow — run free",
     "hint": "Binds a procedural sequence to this hire. Slot binding supersedes the template default."
+  },
+  "import": {
+    "title": "Import workflow JSON",
+    "button": "Import JSON",
+    "ok": "Import",
+    "hint": "Paste a workflow JSON (name, description, nodes, connections). The imported row is saved as source=local; builtin seeds are never overwritten.",
+    "success": "Workflow imported",
+    "failed": "Import failed: {{msg}}"
   }
 }

@@ -17,7 +17,19 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Card, List, Tag, Typography, Empty, Button, Space, Divider } from '@arco-design/web-react';
+import {
+  Card,
+  List,
+  Tag,
+  Typography,
+  Empty,
+  Button,
+  Space,
+  Divider,
+  Message,
+  Modal,
+  Input,
+} from '@arco-design/web-react';
 import { workflowEngine, agentWorkflows } from '@/common/adapter/ipcBridge';
 import type { IAgentWorkflowRun } from '@/common/adapter/ipcBridge';
 import WorkflowGraphView from './WorkflowGraphView';
@@ -84,7 +96,56 @@ const AgentWorkflowsPage: React.FC = () => {
     };
   }, [loadRuns]);
 
+  const [importOpen, setImportOpen] = useState(false);
+  const [importText, setImportText] = useState('');
+
   const selectedWorkflow = useMemo(() => workflows.find((w) => w.id === selected), [workflows, selected]);
+
+  const handleCopyJson = async () => {
+    if (!selectedWorkflow) return;
+    try {
+      const payload = {
+        name: selectedWorkflow.name,
+        description: selectedWorkflow.description,
+        category: selectedWorkflow.category,
+        canonicalId: selectedWorkflow.canonical_id,
+        nodes: JSON.parse(selectedWorkflow.nodes),
+        connections: JSON.parse(selectedWorkflow.connections),
+      };
+      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+      Message.success(t('agentWorkflows.detail.copied', 'Workflow JSON copied to clipboard'));
+    } catch {
+      Message.error(t('agentWorkflows.detail.copyFailed', 'Copy failed'));
+    }
+  };
+
+  const handleImport = async () => {
+    try {
+      const payload = JSON.parse(importText) as {
+        name: string;
+        description?: string;
+        nodes: unknown[];
+        connections: unknown[];
+      };
+      if (!payload.name || !Array.isArray(payload.nodes) || !Array.isArray(payload.connections)) {
+        throw new Error('Missing required fields');
+      }
+      await workflowEngine.create.invoke({
+        userId: AGENT_USER_ID,
+        name: payload.name,
+        description: payload.description,
+        nodes: payload.nodes,
+        connections: payload.connections,
+      });
+      Message.success(t('agentWorkflows.import.success', 'Workflow imported'));
+      setImportOpen(false);
+      setImportText('');
+      void loadWorkflows();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Invalid JSON';
+      Message.error(t('agentWorkflows.import.failed', { defaultValue: 'Import failed: {{msg}}', msg }));
+    }
+  };
   const parsedNodes = useMemo(() => {
     if (!selectedWorkflow) return [] as Array<{ id: string; type: string; name: string }>;
     try {
@@ -96,17 +157,47 @@ const AgentWorkflowsPage: React.FC = () => {
 
   return (
     <div className='flex flex-col h-full overflow-hidden px-24px py-16px gap-16px'>
-      <div>
-        <Typography.Title heading={3} style={{ margin: 0 }}>
-          {t('agentWorkflows.title', 'Agent Workflows')}
-        </Typography.Title>
+      <div className='flex items-start justify-between gap-12px'>
+        <div>
+          <Typography.Title heading={3} style={{ margin: 0 }}>
+            {t('agentWorkflows.title', 'Agent Workflows')}
+          </Typography.Title>
+          <Typography.Text type='secondary'>
+            {t(
+              'agentWorkflows.subtitle',
+              'Node-based procedural sequences bound to agents at hire time. Phase 1 ships 6 builtin workflows; visual editor coming in Phase 2.'
+            )}
+          </Typography.Text>
+        </div>
+        <Space>
+          <Button onClick={() => setImportOpen(true)}>{t('agentWorkflows.import.button', 'Import JSON')}</Button>
+          <Button disabled={!selectedWorkflow} onClick={() => void handleCopyJson()}>
+            {t('agentWorkflows.detail.copyJson', 'Copy JSON')}
+          </Button>
+        </Space>
+      </div>
+
+      <Modal
+        title={t('agentWorkflows.import.title', 'Import workflow JSON')}
+        visible={importOpen}
+        onCancel={() => setImportOpen(false)}
+        onOk={() => void handleImport()}
+        okText={t('agentWorkflows.import.ok', 'Import')}
+      >
         <Typography.Text type='secondary'>
           {t(
-            'agentWorkflows.subtitle',
-            'Node-based procedural sequences bound to agents at hire time. Phase 1 ships 6 builtin workflows; visual editor coming in Phase 2.'
+            'agentWorkflows.import.hint',
+            'Paste a workflow JSON (name, description, nodes, connections). The imported row is saved as source=local; builtin seeds are never overwritten.'
           )}
         </Typography.Text>
-      </div>
+        <Input.TextArea
+          value={importText}
+          onChange={setImportText}
+          autoSize={{ minRows: 10, maxRows: 20 }}
+          placeholder='{ "name": "...", "nodes": [...], "connections": [...] }'
+          style={{ marginTop: 12, fontFamily: 'monospace', fontSize: 12 }}
+        />
+      </Modal>
 
       <div className='flex-1 flex gap-16px overflow-hidden'>
         <Card
