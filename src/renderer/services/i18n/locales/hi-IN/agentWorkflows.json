@@ -1,0 +1,26 @@
+{
+  "title": "Agent Workflows",
+  "subtitle": "Node-based procedural sequences bound to agents at hire time. Phase 1 ships 6 builtin workflows; visual editor coming in Phase 2.",
+  "list": {
+    "title": "Workflows",
+    "empty": "No workflows yet"
+  },
+  "tag": {
+    "builtin": "Builtin",
+    "local": "Local"
+  },
+  "detail": {
+    "none": "Select a workflow",
+    "selectPrompt": "Select a workflow from the list",
+    "category": "Category",
+    "version": "Version",
+    "canonicalId": "Canonical ID",
+    "steps": "Steps"
+  },
+  "runs": {
+    "title": "Recent runs",
+    "empty": "No runs yet",
+    "slot": "Slot",
+    "abort": "Abort"
+  }
+}
