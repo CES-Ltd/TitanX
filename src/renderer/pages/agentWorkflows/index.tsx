@@ -15,7 +15,7 @@
  *     description, nodes, connections summary) + recent runs.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Card,
@@ -134,6 +134,16 @@ const AgentWorkflowsPage: React.FC = () => {
 
   const selectedWorkflow = useMemo(() => workflows.find((w) => w.id === selected), [workflows, selected]);
 
+  // v2.6.0 polish — undo/redo stack. Captures a {nodes, conns}
+  // snapshot after every edit; Cmd/Ctrl+Z / Cmd/Ctrl+Shift+Z walks
+  // the stack. Capped at HISTORY_MAX entries to keep the memory
+  // bounded even on long editing sessions.
+  type HistoryEntry = { nodes: EditorNode[]; conns: EditorConnection[] };
+  const HISTORY_MAX = 50;
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const restoringRef = useRef(false);
+
   // Re-hydrate editor state whenever the workflow selection changes.
   useEffect(() => {
     if (!selectedWorkflow) {
@@ -141,19 +151,89 @@ const AgentWorkflowsPage: React.FC = () => {
       setEditorConnections([]);
       setOriginalSignature('');
       setSelectedNodeId(null);
+      setHistory([]);
+      setHistoryIndex(-1);
       return;
     }
     try {
       const nodes = JSON.parse(selectedWorkflow.nodes) as EditorNode[];
       const conns = JSON.parse(selectedWorkflow.connections) as EditorConnection[];
+      restoringRef.current = true; // the next editorNodes/conns push is a hydration, not an edit
       setEditorNodes(nodes);
       setEditorConnections(conns);
       setOriginalSignature(JSON.stringify({ nodes, conns }));
       setSelectedNodeId(null);
+      setHistory([{ nodes, conns }]);
+      setHistoryIndex(0);
     } catch {
       /* keep previous state */
     }
   }, [selectedWorkflow?.id, selectedWorkflow?.nodes, selectedWorkflow?.connections]);
+
+  // Push to history on every user edit (skip when restoring from
+  // undo/redo or rehydrating from selection change).
+  useEffect(() => {
+    if (restoringRef.current) {
+      restoringRef.current = false;
+      return;
+    }
+    if (history.length === 0) return; // no workflow yet
+    const nextSig = JSON.stringify({ nodes: editorNodes, conns: editorConnections });
+    const topSig = JSON.stringify(history[historyIndex]);
+    if (nextSig === topSig) return; // dedupe identical snapshots
+    const truncated = history.slice(0, historyIndex + 1);
+    const appended = [...truncated, { nodes: editorNodes, conns: editorConnections }];
+    const capped = appended.length > HISTORY_MAX ? appended.slice(-HISTORY_MAX) : appended;
+    setHistory(capped);
+    setHistoryIndex(capped.length - 1);
+    // Note: deliberately omit history/historyIndex from deps to avoid
+    // a push-loop — only the editor arrays drive new snapshots.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editorNodes, editorConnections]);
+
+  const canUndo = historyIndex > 0;
+  const canRedo = historyIndex >= 0 && historyIndex < history.length - 1;
+
+  const handleUndo = useCallback(() => {
+    if (!canUndo) return;
+    const prev = history[historyIndex - 1];
+    restoringRef.current = true;
+    setEditorNodes(prev.nodes);
+    setEditorConnections(prev.conns);
+    setHistoryIndex(historyIndex - 1);
+  }, [canUndo, history, historyIndex]);
+
+  const handleRedo = useCallback(() => {
+    if (!canRedo) return;
+    const next = history[historyIndex + 1];
+    restoringRef.current = true;
+    setEditorNodes(next.nodes);
+    setEditorConnections(next.conns);
+    setHistoryIndex(historyIndex + 1);
+  }, [canRedo, history, historyIndex]);
+
+  // Global keyboard handler — only fires when an editable workflow
+  // is selected. Skips while typing inside a form input (most Arco
+  // fields set document.activeElement, and the browser already
+  // handles undo inside <textarea> / <input> natively).
+  useEffect(() => {
+    if (!selectedWorkflow || selectedWorkflow.source === 'master') return;
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      if (!e.shiftKey && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        handleUndo();
+      } else if ((e.shiftKey && e.key.toLowerCase() === 'z') || e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedWorkflow, handleUndo, handleRedo]);
 
   const editable = selectedWorkflow?.source !== 'master'; // slaves must not edit master-pushed rows
 
@@ -512,6 +592,22 @@ const AgentWorkflowsPage: React.FC = () => {
                   </Typography.Text>
                   {editable ? (
                     <Space size={4}>
+                      <Button
+                        size='mini'
+                        disabled={!canUndo}
+                        onClick={handleUndo}
+                        title={t('agentWorkflows.editor.undoTitle', 'Undo (Cmd/Ctrl+Z)')}
+                      >
+                        {t('agentWorkflows.editor.undo', 'Undo')}
+                      </Button>
+                      <Button
+                        size='mini'
+                        disabled={!canRedo}
+                        onClick={handleRedo}
+                        title={t('agentWorkflows.editor.redoTitle', 'Redo (Cmd/Ctrl+Shift+Z)')}
+                      >
+                        {t('agentWorkflows.editor.redo', 'Redo')}
+                      </Button>
                       <Dropdown
                         position='bl'
                         droplist={

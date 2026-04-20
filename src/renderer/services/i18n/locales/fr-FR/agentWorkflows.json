@@ -62,7 +62,11 @@
     "editable": "Editable",
     "readonly": "Read-only (master-managed)",
     "paramApplied": "Node parameters updated",
-    "addNode": "+ Add node"
+    "addNode": "+ Add node",
+    "undo": "Undo",
+    "redo": "Redo",
+    "undoTitle": "Undo (Cmd/Ctrl+Z)",
+    "redoTitle": "Redo (Cmd/Ctrl+Shift+Z)"
   },
   "new": {
     "button": "+ New workflow",
