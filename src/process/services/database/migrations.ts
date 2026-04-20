@@ -3292,9 +3292,10 @@ const migration_v74: IMigration = {
     //    (opt-in). Consistent with how v39/v47 seed their toggle rows
     //    — `setToggle()` uses UPDATE, so a row must pre-exist for the
     //    UI to flip the feature on.
-    db.prepare(
-      'INSERT OR IGNORE INTO security_feature_toggles (feature, enabled, updated_at) VALUES (?, 0, ?)'
-    ).run('agent_workflows', Date.now());
+    db.prepare('INSERT OR IGNORE INTO security_feature_toggles (feature, enabled, updated_at) VALUES (?, 0, ?)').run(
+      'agent_workflows',
+      Date.now()
+    );
 
     console.log(
       '[Migration v74] Extended workflow_definitions + added workflow_bindings + agent_workflow_runs + agent_gallery.default_workflow_id + agent_workflows toggle'

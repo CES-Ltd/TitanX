@@ -101,11 +101,7 @@ describe('findEntryStepIds', () => {
   });
 
   it('excludes trigger + webhook types from the returned set', () => {
-    const nodes = [
-      makeNode('t', 'trigger'),
-      makeNode('w', 'webhook'),
-      makeNode('a', 'prompt.plan'),
-    ];
+    const nodes = [makeNode('t', 'trigger'), makeNode('w', 'webhook'), makeNode('a', 'prompt.plan')];
     const conns = [edge('t', 'a'), edge('w', 'a')];
     expect(findEntryStepIds(nodes, conns)).toEqual(['a']);
   });
