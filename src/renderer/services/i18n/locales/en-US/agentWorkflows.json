@@ -22,5 +22,10 @@
     "empty": "No runs yet",
     "slot": "Slot",
     "abort": "Abort"
+  },
+  "hire": {
+    "label": "Workflow (optional)",
+    "placeholder": "No workflow — run free",
+    "hint": "Binds a procedural sequence to this hire. Slot binding supersedes the template default."
   }
 }

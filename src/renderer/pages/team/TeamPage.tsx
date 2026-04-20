@@ -33,7 +33,7 @@ type Props = {
 
 type TeamPageContentProps = {
   team: TTeam;
-  onAddAgent: (data: { agentName: string; agentKey: string }) => void;
+  onAddAgent: (data: { agentName: string; agentKey: string; workflowId?: string }) => void;
   onRenameTeam: (newName: string) => Promise<boolean>;
 };
 
@@ -476,6 +476,7 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({ team, onAddAgent, onR
             {[
               { label: '🛡 ' + t('governance.title', 'Governance'), path: '/governance' },
               { label: '📊 ' + t('observability.title', 'Observability'), path: '/observability' },
+              { label: '🪢 ' + t('agentWorkflows.title', 'Agent Workflows'), path: '/agent-workflows' },
             ].map((item) => (
               <button
                 key={item.path}
@@ -532,7 +533,7 @@ const TeamPage: React.FC<Props> = ({ team }) => {
   const defaultSlotId = team.agents[0]?.slotId ?? '';
 
   const handleAddAgent = useCallback(
-    async (data: { agentName: string; agentKey: string }) => {
+    async (data: { agentName: string; agentKey: string; workflowId?: string }) => {
       const allAgents = [...cliAgents, ...presetAssistants];
       const agent = agentFromKey(data.agentKey, allAgents);
       const backend = resolveTeamAgentType(agent, 'claude');
@@ -545,6 +546,10 @@ const TeamPage: React.FC<Props> = ({ team }) => {
         conversationType: resolveConversationType(backend),
         cliPath: agent?.cliPath,
         customAgentId: agent?.customAgentId,
+        // v2.6.0 — optional workflow binding (operator override at hire).
+        // TeamSessionService inserts a slot-level workflow_bindings row
+        // when set; else it falls back to the template's defaultWorkflowId.
+        workflowId: data.workflowId,
       });
     },
     [addAgent, cliAgents, presetAssistants]
