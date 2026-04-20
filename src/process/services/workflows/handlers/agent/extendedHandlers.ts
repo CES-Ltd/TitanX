@@ -83,6 +83,64 @@ registerNodeHandler('human.approve', async (node) => {
   };
 });
 
+// ── acp.slash.invoke ─────────────────────────────────────────────────────────
+/**
+ * Invoke an ACP runtime slash command on the next agent turn.
+ *
+ * Slash commands live on the ACP protocol (e.g. `/compact`,
+ * `/clear`, `/resume`, agent-specific ones like `/codex`). The ACP
+ * backend parses them out of the next user message and runs them
+ * as protocol actions rather than LLM generations.
+ *
+ * We model this as a deferred handler whose `promptTemplate` is
+ * literally the slash command string — the dispatcher will inject
+ * it into the next turn via presetContext, the agent sees
+ * `/<command> <args...>` at the top of its context, and the ACP
+ * runtime handles the rest. No IAM gate at this layer — the ACP
+ * backend's allowlist (SlashCommandAvailability) is the real gate.
+ *
+ * Parameters:
+ *   - `command` (string, required) — slash command name without the
+ *     leading slash. e.g. `"compact"` → invokes `/compact`.
+ *   - `args` (string[] | string, optional) — space-joined into the
+ *     command. Supports `{{var.X}}` templating against the run's
+ *     state bag (same as prompt.* handlers).
+ *
+ * Completion — the handler returns a deferred envelope; the next
+ * turn's output is captured as the step's result, same as
+ * prompt.freeform. Since slash commands typically produce their
+ * output as the agent's response text, the capture is
+ * straightforward.
+ */
+registerNodeHandler('acp.slash.invoke', async (node, inputData) => {
+  const cmdName = ((node.parameters.command as string) ?? '').trim();
+  if (!cmdName) {
+    throw new Error('acp.slash.invoke: `command` parameter is required');
+  }
+  const rawArgs = node.parameters.args;
+  const argsArray: string[] = Array.isArray(rawArgs)
+    ? rawArgs.map((a) => String(a))
+    : typeof rawArgs === 'string'
+      ? [rawArgs]
+      : [];
+
+  // Reuse the prompt-family templating helper so `{{var.X}}` works
+  // inside command args identically to how it works in prompt
+  // templates. Late import to avoid a circular boot-order import
+  // between extendedHandlers (required by the barrel at bootstrap)
+  // and promptHandlers' exports.
+  const { renderPromptTemplate } = await import('./promptHandlers');
+  const state = getCtx(inputData)?.state ?? {};
+  const renderedArgs = argsArray.map((a) => renderPromptTemplate(a, state));
+
+  const promptTemplate = ['/' + cmdName, ...renderedArgs].join(' ').trim();
+  return {
+    __deferred: true,
+    promptTemplate,
+    completionCriteria: `Slash command /${cmdName} must have been recognized + executed by the ACP runtime.`,
+  };
+});
+
 // ── memory.recall ────────────────────────────────────────────────────────────
 /**
  * Read-only lookup against reasoningBank trajectories. Returns the

@@ -38,7 +38,9 @@ export type WorkflowNodeType =
   | 'parallel.fan_out'
   | 'parallel.join'
   | 'human.approve'
-  | 'memory.recall';
+  | 'memory.recall'
+  // v2.6.0 Phase 2.x — ACP runtime slash command invocation.
+  | 'acp.slash.invoke';
 
 /** A single node in the workflow DAG */
 export type WorkflowNode = {
