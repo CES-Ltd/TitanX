@@ -61,6 +61,7 @@ import { getRegisteredHandler, type NodeHandler } from './engine';
 import { isToolAllowed } from '../agentSandbox';
 import { isFeatureEnabled } from '../securityFeatures';
 import { logNonCritical } from '@process/utils/logNonCritical';
+import * as reasoningBank from '../reasoningBank';
 
 /**
  * Event bus for dispatcher lifecycle events. The IPC bridge
@@ -205,6 +206,7 @@ export async function observeTurnCompletion(params: {
 
   if (newActive.length === 0) {
     updateRunStatus(db, run.id, 'completed');
+    captureRunTrajectory(db, run.id, 'completed');
     const final = getActiveRun(db, slotId) ?? run;
     dispatcherEvents.emit('run-completed', final);
   }
@@ -225,6 +227,7 @@ export function resumeRun(db: ISqliteDriver, runId: string): void {
 export function abortRun(db: ISqliteDriver, runId: string): void {
   abortRunInState(db, runId);
   appendTrace(db, runId, { timestamp: Date.now(), kind: 'aborted' });
+  captureRunTrajectory(db, runId, 'failed');
   const row = db.prepare('SELECT * FROM agent_workflow_runs WHERE id = ?').get(runId);
   if (row) dispatcherEvents.emit('run-failed', row);
 }
@@ -295,6 +298,7 @@ async function walkActiveSteps(args: {
       updateRunSteps(db, run.id, { failedStepIds: failed });
       if (node.onError === 'continue') continue;
       updateRunStatus(db, run.id, 'failed');
+      captureRunTrajectory(db, run.id, 'failed');
       const final = getActiveRun(db, slotId) ?? run;
       dispatcherEvents.emit('run-failed', final);
       return null;
@@ -319,6 +323,7 @@ async function walkActiveSteps(args: {
       updateRunSteps(db, run.id, { failedStepIds: failed });
       if (node.onError === 'continue') continue;
       updateRunStatus(db, run.id, 'failed');
+      captureRunTrajectory(db, run.id, 'failed');
       const final = getActiveRun(db, slotId) ?? run;
       dispatcherEvents.emit('run-failed', final);
       return null;
@@ -389,6 +394,7 @@ async function walkActiveSteps(args: {
   if (nextActive.length === 0) {
     updateRunSteps(db, run.id, { activeStepIds: [] });
     updateRunStatus(db, run.id, 'completed');
+    captureRunTrajectory(db, run.id, 'completed');
     const final = getActiveRun(db, slotId) ?? run;
     dispatcherEvents.emit('run-completed', final);
   }
@@ -486,6 +492,58 @@ function recordStepFailure(
     turnNumber,
     details: { code, message: err.message },
   });
+}
+
+/**
+ * v2.6.0 Phase 4 — feed a completed / failed run into reasoningBank
+ * so Dream Mode's nightly distillation pass can mine workflow-
+ * specific patterns alongside free-agent trajectories.
+ *
+ * Pattern — taskDescription is prefixed with `[workflow:<canonical>]`
+ * so a Phase 4.x distillation prompt can filter by the workflow
+ * family (e.g. "what pattern of safe_commit@1 steps succeeds most
+ * often?"). Steps map each completed node to a
+ * `{ toolName: node.type, args: params, result }` shape — exactly
+ * the shape the distillation prompt already expects.
+ *
+ * Non-critical — wrapped in try/catch; a reasoningBank failure must
+ * never stall the dispatcher's terminal transition.
+ */
+function captureRunTrajectory(db: ISqliteDriver, runId: string, finalStatus: 'completed' | 'failed'): void {
+  try {
+    const row = db.prepare('SELECT * FROM agent_workflow_runs WHERE id = ?').get(runId) as
+      | Record<string, unknown>
+      | undefined;
+    if (!row) return;
+    const snapshot = JSON.parse(row.graph_snapshot as string) as WorkflowDefinition;
+    const completed = JSON.parse(row.completed_step_ids as string) as string[];
+    const state = JSON.parse((row.state_json as string) ?? '{}') as Record<string, unknown>;
+
+    const canonicalPart = snapshot.canonicalId ?? `local:${snapshot.id}`;
+    const taskDescription = `[workflow:${canonicalPart}] ${snapshot.name}`.slice(0, 300);
+
+    const steps = completed.map((stepId) => {
+      const node = snapshot.nodes.find((n) => n.id === stepId);
+      const outputs = (state[stepId] as Record<string, unknown> | undefined) ?? {};
+      return {
+        toolName: node?.type ?? 'unknown',
+        args: node?.parameters ?? {},
+        result: typeof outputs === 'object' ? JSON.stringify(outputs).slice(0, 500) : '',
+        durationMs: 0,
+      };
+    });
+
+    if (steps.length === 0) return;
+
+    reasoningBank.storeTrajectory(db, {
+      taskDescription,
+      steps,
+      successScore: finalStatus === 'completed' ? 0.8 : 0.3,
+      failurePattern: finalStatus === 'failed',
+    });
+  } catch (err) {
+    logNonCritical('agent-workflow.capture-trajectory', err);
+  }
 }
 
 function loadWorkflowDefinition(db: ISqliteDriver, workflowId: string): WorkflowDefinition | null {
