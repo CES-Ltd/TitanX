@@ -20,6 +20,7 @@ import { useTranslation } from 'react-i18next';
 import { Card, List, Tag, Typography, Empty, Button, Space, Divider } from '@arco-design/web-react';
 import { workflowEngine, agentWorkflows } from '@/common/adapter/ipcBridge';
 import type { IAgentWorkflowRun } from '@/common/adapter/ipcBridge';
+import WorkflowGraphView from './WorkflowGraphView';
 
 type WorkflowRow = {
   id: string;
@@ -171,6 +172,21 @@ const AgentWorkflowsPage: React.FC = () => {
                     </Tag>
                   ) : null}
                 </div>
+                <Divider style={{ margin: '8px 0' }} />
+                <Typography.Text style={{ fontWeight: 600 }}>
+                  {t('agentWorkflows.detail.graph', 'Graph')}
+                </Typography.Text>
+                <WorkflowGraphView
+                  nodes={parsedNodes as Array<{ id: string; type: string; name: string }>}
+                  connections={
+                    JSON.parse(selectedWorkflow.connections) as Array<{
+                      fromNodeId: string;
+                      fromOutput: string;
+                      toNodeId: string;
+                      toInput: string;
+                    }>
+                  }
+                />
                 <Divider style={{ margin: '8px 0' }} />
                 <Typography.Text style={{ fontWeight: 600 }}>
                   {t('agentWorkflows.detail.steps', 'Steps')} ({parsedNodes.length})

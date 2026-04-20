@@ -23,6 +23,7 @@
 import './promptHandlers';
 import './gitHandlers';
 import './sprintHandlers';
+import './extendedHandlers'; // Phase 2 — parallel.*, human.approve, memory.recall
 
 export {
   AGENT_CONTEXT_KEY,

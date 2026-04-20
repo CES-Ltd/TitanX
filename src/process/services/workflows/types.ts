@@ -33,7 +33,12 @@ export type WorkflowNodeType =
   // Sprint family — thin bridge over TeamSession.TaskManager.
   | 'sprint.create_task'
   | 'sprint.update_task'
-  | 'sprint.list_tasks';
+  | 'sprint.list_tasks'
+  // v2.6.0 Phase 2 — parallel control flow + human-in-the-loop + memory recall.
+  | 'parallel.fan_out'
+  | 'parallel.join'
+  | 'human.approve'
+  | 'memory.recall';
 
 /** A single node in the workflow DAG */
 export type WorkflowNode = {

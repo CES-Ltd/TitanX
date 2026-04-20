@@ -347,6 +347,27 @@ async function walkActiveSteps(args: {
       };
     }
 
+    // v2.6.0 Phase 2 — human.approve → transition to paused.
+    if (output.__pauseReason === 'human_approval_required') {
+      state = { ...state, [stepId]: output, __pendingApproval: { stepId, reason: output.__pausePromptTemplate } };
+      updateRunState(db, run.id, state);
+      updateRunSteps(db, run.id, {
+        activeStepIds: [stepId, ...nextActive],
+        completedStepIds: completed,
+        failedStepIds: failed,
+      });
+      updateRunStatus(db, run.id, 'paused');
+      appendTrace(db, run.id, {
+        timestamp: Date.now(),
+        kind: 'paused',
+        stepId,
+        stepLabel: node.name,
+        turnNumber,
+        details: { reason: output.__pausePromptTemplate },
+      });
+      return null;
+    }
+
     // Non-deferred — persist + advance.
     state = { ...state, [stepId]: output };
     completed.push(stepId);
