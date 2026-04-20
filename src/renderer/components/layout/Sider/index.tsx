@@ -18,6 +18,7 @@ import SiderToolbar from './SiderToolbar';
 import SiderSearchEntry from './SiderSearchEntry';
 import SiderScheduledEntry from './SiderScheduledEntry';
 import SiderGovernanceEntry from './SiderGovernanceEntry';
+import SiderAgentWorkflowsEntry from './SiderAgentWorkflowsEntry';
 import SiderObservabilityEntry from './SiderObservabilityEntry';
 import SiderFleetEntry from './SiderFleetEntry';
 import SiderFooter from './SiderFooter';
@@ -106,6 +107,19 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
     setIsBatchMode(false);
     Promise.resolve(navigate('/scheduled')).catch((error) => {
       console.error('Navigation failed:', error);
+    });
+    if (onSessionClick) {
+      onSessionClick();
+    }
+  };
+
+  const handleAgentWorkflowsClick = () => {
+    cleanupSiderTooltips();
+    blurActiveElement();
+    closePreview();
+    setIsBatchMode(false);
+    Promise.resolve(navigate('/agent-workflows')).catch((error) => {
+      console.error('[Sider] Failed to navigate to agent-workflows:', error);
     });
     if (onSessionClick) {
       onSessionClick();
@@ -218,6 +232,16 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
                 collapsed={collapsed}
                 siderTooltipProps={siderTooltipProps}
                 onClick={handleGovernanceClick}
+              />
+            )}
+            {/* v2.6.0 — Agent Workflows (hidden on slave) */}
+            {!isSlave && (
+              <SiderAgentWorkflowsEntry
+                isMobile={isMobile}
+                isActive={pathname === '/agent-workflows'}
+                collapsed={collapsed}
+                siderTooltipProps={siderTooltipProps}
+                onClick={handleAgentWorkflowsClick}
               />
             )}
             {/* Observability entry (IT-managed — hidden on slave) */}
