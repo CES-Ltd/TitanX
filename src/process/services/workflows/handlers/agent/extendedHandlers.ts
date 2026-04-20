@@ -47,13 +47,19 @@ registerNodeHandler('parallel.fan_out', async (_node, inputData) => {
 
 // ── parallel.join ────────────────────────────────────────────────────────────
 /**
- * Join node — waits for all incoming branches before advancing. The
- * dispatcher's edge walker checks `__join: true` on nodes with
- * multiple incoming edges and activates only when every predecessor
- * has completed. In Phase 2 the dispatcher treats join nodes as
- * ordinary nodes that complete immediately (single incoming branch
- * is already handled); a true all-branches-joined check lands with
- * parallel workflow tests in Phase 3.
+ * Join node — waits for all incoming branches before advancing.
+ *
+ * v2.6.0 Phase 2.x: the dispatcher's `computeNextActiveSteps` enforces
+ * the wait by filtering candidate activations: a `parallel.join` is
+ * only activated when every one of its incoming-edge sources is in
+ * `completedStepIds`. Single-predecessor joins behave like any other
+ * node (the "all predecessors" check trivially passes). For multi-
+ * predecessor joins, the first completed predecessor's walk finds
+ * the join not-yet-ready; later predecessors' walks re-evaluate and
+ * the last one flips it active.
+ *
+ * The handler itself just marks the join as settled and stamps a
+ * timestamp so the debug viewer can surface "joined at".
  */
 registerNodeHandler('parallel.join', async () => {
   return { __join: true, joinedAt: Date.now() };

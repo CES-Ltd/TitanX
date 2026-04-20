@@ -186,7 +186,7 @@ export async function observeTurnCompletion(params: {
   state[pending.stepId] = { llmOutput: accumulatedText };
   const completed = [...run.completedStepIds, pending.stepId];
   const remaining = run.activeStepIds.filter((id) => id !== pending.stepId);
-  const next = computeNextActiveSteps(node, { llmOutput: accumulatedText }, snapshot.connections);
+  const next = computeNextActiveSteps(node, { llmOutput: accumulatedText }, snapshot.connections, snapshot, completed);
   const newActive = [...remaining, ...next];
 
   updateRunState(db, run.id, state);
@@ -244,7 +244,7 @@ export function skipStep(db: ISqliteDriver, runId: string, stepId: string): void
   const completed = JSON.parse(row.completed_step_ids as string) as string[];
   const newActive = active.filter((s) => s !== stepId);
   const newCompleted = [...completed, stepId];
-  const next = computeNextActiveSteps(node, {}, snapshot.connections);
+  const next = computeNextActiveSteps(node, {}, snapshot.connections, snapshot, newCompleted);
   updateRunSteps(db, runId, {
     activeStepIds: [...newActive, ...next],
     completedStepIds: newCompleted,
@@ -376,7 +376,7 @@ async function walkActiveSteps(args: {
     // Non-deferred — persist + advance.
     state = { ...state, [stepId]: output };
     completed.push(stepId);
-    const next = computeNextActiveSteps(node, output, snapshot.connections);
+    const next = computeNextActiveSteps(node, output, snapshot.connections, snapshot, completed);
     nextActive = [...nextActive, ...next];
     updateRunSteps(db, run.id, { activeStepIds: nextActive, completedStepIds: completed });
     updateRunState(db, run.id, state);
@@ -435,17 +435,54 @@ async function dispatchHandler(
   throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
 }
 
+/**
+ * Compute downstream steps to activate after `completedNode` settles.
+ *
+ * Two special behaviors:
+ *
+ *   1. `condition` branch — output sets `__branch` to 'true'/'false';
+ *      we follow only edges whose `fromOutput` matches.
+ *
+ *   2. `parallel.join` targets — v2.6.0 Phase 2.x. A join node waits
+ *      until ALL of its upstream predecessors have completed. If only
+ *      *this* predecessor has completed, the join stays inactive —
+ *      the walk will re-check it on a later completion. Keeps the
+ *      simple linear-workflow behavior intact (one predecessor =
+ *      always ready) while enabling a fan-out/join pattern without
+ *      a double-activation.
+ *
+ * Callers pass `snapshot` + `completedStepIds` so the join-readiness
+ * check can introspect the graph without the function pulling its
+ * own state.
+ */
 function computeNextActiveSteps(
   completedNode: WorkflowNode,
   output: Record<string, unknown>,
-  connections: WorkflowConnection[]
+  connections: WorkflowConnection[],
+  snapshot?: WorkflowDefinition,
+  completedStepIds?: string[]
 ): string[] {
   const branch = output.__branch as string | undefined;
   const outgoing = connections.filter((c) => c.fromNodeId === completedNode.id);
-  if (branch && completedNode.type === 'condition') {
-    return outgoing.filter((c) => c.fromOutput === branch).map((c) => c.toNodeId);
-  }
-  return outgoing.map((c) => c.toNodeId);
+  const targets =
+    branch && completedNode.type === 'condition'
+      ? outgoing.filter((c) => c.fromOutput === branch).map((c) => c.toNodeId)
+      : outgoing.map((c) => c.toNodeId);
+
+  if (!snapshot || !completedStepIds) return targets;
+
+  // Treat the just-completed node as completed for the purposes of
+  // the join-readiness check below — the caller always adds it to
+  // completedStepIds before calling us, but be defensive.
+  const completedSet = new Set([...completedStepIds, completedNode.id]);
+
+  return targets.filter((targetId) => {
+    const target = snapshot.nodes.find((n) => n.id === targetId);
+    if (!target || target.type !== 'parallel.join') return true;
+    const incoming = connections.filter((c) => c.toNodeId === targetId);
+    // Ready only when every upstream predecessor has completed.
+    return incoming.every((c) => completedSet.has(c.fromNodeId));
+  });
 }
 
 function isDeferredOutput(output: Record<string, unknown>): output is PromptDeferredOutput & Record<string, unknown> {
