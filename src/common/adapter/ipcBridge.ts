@@ -2530,6 +2530,10 @@ export const agentWorkflows = {
   abort: bridge.buildProvider<void, { runId: string }>('agent-workflows.abort'),
   skipStep: bridge.buildProvider<void, { runId: string; stepId: string }>('agent-workflows.skip-step'),
 
+  // v2.6.0 Phase 3 — fleet publishing (master-side).
+  publishToFleet: bridge.buildProvider<boolean, { workflowId: string }>('agent-workflows.publish-to-fleet'),
+  unpublishFromFleet: bridge.buildProvider<boolean, { workflowId: string }>('agent-workflows.unpublish-from-fleet'),
+
   // Events — re-published from the dispatcher's EventEmitter at bridge init.
   onRunStarted: bridge.buildEmitter<IAgentWorkflowRun>('agent-workflows.run-started'),
   onStepCompleted: bridge.buildEmitter<{ runId: string; stepId: string; outputs: Record<string, unknown> }>(

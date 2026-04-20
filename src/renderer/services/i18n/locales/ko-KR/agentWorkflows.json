@@ -39,5 +39,14 @@
     "hint": "Paste a workflow JSON (name, description, nodes, connections). The imported row is saved as source=local; builtin seeds are never overwritten.",
     "success": "Workflow imported",
     "failed": "Import failed: {{msg}}"
+  },
+  "fleet": {
+    "publish": "Publish to fleet",
+    "published": "Published to fleet",
+    "publishFailed": "Publish failed",
+    "publishSkipped": "Cannot republish a master-sourced workflow",
+    "unpublish": "Unpublish from fleet",
+    "unpublished": "Unpublished from fleet",
+    "unpublishFailed": "Unpublish failed"
   }
 }

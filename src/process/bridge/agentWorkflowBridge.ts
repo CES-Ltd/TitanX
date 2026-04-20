@@ -24,6 +24,7 @@ import {
 } from '@process/services/workflows/agentBinding';
 import { getActiveRun as getActiveRunDb, listRuns as listRunsDb } from '@process/services/workflows/agentRunState';
 import { abortRun, dispatcherEvents, pauseRun, resumeRun, skipStep } from '@process/services/workflows/agentDispatcher';
+import { publishWorkflowToFleet, unpublishWorkflowFromFleet } from '@process/services/workflows/fleetPublish';
 import type { AgentWorkflowRun, WorkflowBinding } from '@process/services/workflows/agent-types';
 
 export function initAgentWorkflowBridge(): void {
@@ -90,6 +91,18 @@ export function initAgentWorkflowBridge(): void {
   ipcBridge.agentWorkflows.skipStep.provider(async ({ runId, stepId }) => {
     const db = await getDatabase();
     skipStep(db.getDriver(), runId, stepId);
+  });
+
+  // ── Fleet publishing (v2.6.0 Phase 3) ──────────────────────────────────────
+
+  ipcBridge.agentWorkflows.publishToFleet.provider(async ({ workflowId }) => {
+    const db = await getDatabase();
+    return publishWorkflowToFleet(db.getDriver(), workflowId);
+  });
+
+  ipcBridge.agentWorkflows.unpublishFromFleet.provider(async ({ workflowId }) => {
+    const db = await getDatabase();
+    return unpublishWorkflowFromFleet(db.getDriver(), workflowId);
   });
 
   // ── Events — re-publish dispatcher events to renderer ─────────────────────

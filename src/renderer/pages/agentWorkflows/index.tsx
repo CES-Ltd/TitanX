@@ -44,6 +44,7 @@ type WorkflowRow = {
   nodes: string;
   connections: string;
   version: number;
+  published_to_fleet: number;
 };
 
 const AGENT_USER_ID = 'system_default_user';
@@ -174,6 +175,45 @@ const AgentWorkflowsPage: React.FC = () => {
           <Button disabled={!selectedWorkflow} onClick={() => void handleCopyJson()}>
             {t('agentWorkflows.detail.copyJson', 'Copy JSON')}
           </Button>
+          {selectedWorkflow &&
+            (selectedWorkflow.published_to_fleet === 1 ? (
+              <Button
+                status='warning'
+                onClick={async () => {
+                  try {
+                    await agentWorkflows.unpublishFromFleet.invoke({ workflowId: selectedWorkflow.id });
+                    Message.success(t('agentWorkflows.fleet.unpublished', 'Unpublished from fleet'));
+                    void loadWorkflows();
+                  } catch {
+                    Message.error(t('agentWorkflows.fleet.unpublishFailed', 'Unpublish failed'));
+                  }
+                }}
+              >
+                {t('agentWorkflows.fleet.unpublish', 'Unpublish from fleet')}
+              </Button>
+            ) : (
+              <Button
+                type='primary'
+                disabled={selectedWorkflow.source === 'master'}
+                onClick={async () => {
+                  try {
+                    const ok = await agentWorkflows.publishToFleet.invoke({ workflowId: selectedWorkflow.id });
+                    if (ok) {
+                      Message.success(t('agentWorkflows.fleet.published', 'Published to fleet'));
+                      void loadWorkflows();
+                    } else {
+                      Message.warning(
+                        t('agentWorkflows.fleet.publishSkipped', 'Cannot republish a master-sourced workflow')
+                      );
+                    }
+                  } catch {
+                    Message.error(t('agentWorkflows.fleet.publishFailed', 'Publish failed'));
+                  }
+                }}
+              >
+                {t('agentWorkflows.fleet.publish', 'Publish to fleet')}
+              </Button>
+            ))}
         </Space>
       </div>
 
