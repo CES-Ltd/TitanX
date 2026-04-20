@@ -21,9 +21,11 @@
  * ESC (handled by Arco Drawer) cancels.
  */
 
-import React, { useEffect, useState } from 'react';
-import { Drawer, Typography, Input, Button, Space, Message, Tag } from '@arco-design/web-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Drawer, Typography, Input, Button, Space, Message, Tag, Radio } from '@arco-design/web-react';
 import { useTranslation } from 'react-i18next';
+import { getHandlerSchema } from './handlerParameterSchemas';
+import NodeParameterForm from './NodeParameterForm';
 
 type Props = {
   visible: boolean;
@@ -40,18 +42,34 @@ type Props = {
 
 const NodeParameterDrawer: React.FC<Props> = ({ visible, node, onClose, onApply }) => {
   const { t } = useTranslation();
-  const original = node?.parameters ?? {};
-  const [text, setText] = useState(JSON.stringify(original, null, 2));
+  const schema = node ? getHandlerSchema(node.type) : null;
+  const [mode, setMode] = useState<'form' | 'json'>(schema && schema.fields.length > 0 ? 'form' : 'json');
+
+  // Form state: the current edits, kept separately from the node so
+  // cancel/close doesn't commit. JSON state mirrors it.
+  const originalParams = useMemo(() => node?.parameters ?? {}, [node]);
+  const [formParams, setFormParams] = useState<Record<string, unknown>>(originalParams);
+  const [text, setText] = useState(JSON.stringify(originalParams, null, 2));
   const [parseError, setParseError] = useState<string | null>(null);
 
   // Reset editor state whenever the selected node changes.
   useEffect(() => {
-    setText(JSON.stringify(node?.parameters ?? {}, null, 2));
+    const params = node?.parameters ?? {};
+    setFormParams(params);
+    setText(JSON.stringify(params, null, 2));
     setParseError(null);
+    const nextSchema = node ? getHandlerSchema(node.type) : null;
+    setMode(nextSchema && nextSchema.fields.length > 0 ? 'form' : 'json');
   }, [node?.id]);
 
   const handleApply = () => {
     if (!node) return;
+    if (mode === 'form') {
+      onApply(node.id, formParams);
+      Message.success(t('agentWorkflows.editor.paramApplied', 'Node parameters updated'));
+      onClose();
+      return;
+    }
     try {
       const parsed = JSON.parse(text);
       if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
@@ -65,13 +83,38 @@ const NodeParameterDrawer: React.FC<Props> = ({ visible, node, onClose, onApply 
     }
   };
 
-  const dirty = text !== JSON.stringify(node?.parameters ?? {}, null, 2);
+  const dirty =
+    mode === 'form'
+      ? JSON.stringify(formParams) !== JSON.stringify(originalParams)
+      : text !== JSON.stringify(originalParams, null, 2);
 
   const handleKey = (evt: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((evt.metaKey || evt.ctrlKey) && evt.key === 'Enter') {
       evt.preventDefault();
       handleApply();
     }
+  };
+
+  // When switching from form → JSON, serialize the latest form state
+  // so the operator sees (and can further edit) their in-progress
+  // changes. Reverse direction mirrors from text → formParams on
+  // parse success; on failure we preserve the formParams view.
+  const switchMode = (next: 'form' | 'json') => {
+    if (next === mode) return;
+    if (next === 'json') {
+      setText(JSON.stringify(formParams, null, 2));
+      setParseError(null);
+    } else {
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          setFormParams(parsed as Record<string, unknown>);
+        }
+      } catch {
+        // leave formParams as-is
+      }
+    }
+    setMode(next);
   };
 
   return (
@@ -94,7 +137,7 @@ const NodeParameterDrawer: React.FC<Props> = ({ visible, node, onClose, onApply 
       footer={
         <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
           <Button onClick={onClose}>{t('agentWorkflows.editor.cancel', 'Cancel')}</Button>
-          <Button type='primary' disabled={!dirty || parseError !== null} onClick={handleApply}>
+          <Button type='primary' disabled={!dirty || (mode === 'json' && parseError !== null)} onClick={handleApply}>
             {t('agentWorkflows.editor.apply', 'Apply')}
           </Button>
         </Space>
@@ -102,32 +145,49 @@ const NodeParameterDrawer: React.FC<Props> = ({ visible, node, onClose, onApply 
     >
       {node ? (
         <Space direction='vertical' size={12} style={{ width: '100%' }}>
-          <Typography.Text type='secondary' style={{ fontSize: 12 }}>
-            {t(
-              'agentWorkflows.editor.hint',
-              'Edit the node.parameters JSON below. Click Apply (or Cmd/Ctrl+Enter) to stage the change; use the Save button in the page header to persist.'
-            )}
-          </Typography.Text>
-          <Input.TextArea
-            value={text}
-            onChange={(v) => {
-              setText(v);
-              try {
-                JSON.parse(v);
-                setParseError(null);
-              } catch (err) {
-                setParseError(err instanceof Error ? err.message : 'Invalid JSON');
-              }
-            }}
-            onKeyDown={handleKey}
-            autoSize={{ minRows: 14, maxRows: 28 }}
-            style={{ fontFamily: 'monospace', fontSize: 12 }}
-          />
-          {parseError ? (
-            <Typography.Text type='error' style={{ fontSize: 12 }}>
-              {parseError}
-            </Typography.Text>
+          {schema && schema.fields.length > 0 ? (
+            <Radio.Group
+              type='button'
+              size='mini'
+              value={mode}
+              onChange={(v: string) => switchMode(v as 'form' | 'json')}
+            >
+              <Radio value='form'>{t('agentWorkflows.editor.modeForm', 'Form')}</Radio>
+              <Radio value='json'>{t('agentWorkflows.editor.modeJson', 'JSON')}</Radio>
+            </Radio.Group>
           ) : null}
+          {mode === 'form' && schema ? (
+            <NodeParameterForm schema={schema} parameters={formParams} onChange={setFormParams} />
+          ) : (
+            <>
+              <Typography.Text type='secondary' style={{ fontSize: 12 }}>
+                {t(
+                  'agentWorkflows.editor.hint',
+                  'Edit the node.parameters JSON below. Click Apply (or Cmd/Ctrl+Enter) to stage the change; use the Save button in the page header to persist.'
+                )}
+              </Typography.Text>
+              <Input.TextArea
+                value={text}
+                onChange={(v) => {
+                  setText(v);
+                  try {
+                    JSON.parse(v);
+                    setParseError(null);
+                  } catch (err) {
+                    setParseError(err instanceof Error ? err.message : 'Invalid JSON');
+                  }
+                }}
+                onKeyDown={handleKey}
+                autoSize={{ minRows: 14, maxRows: 28 }}
+                style={{ fontFamily: 'monospace', fontSize: 12 }}
+              />
+              {parseError ? (
+                <Typography.Text type='error' style={{ fontSize: 12 }}>
+                  {parseError}
+                </Typography.Text>
+              ) : null}
+            </>
+          )}
         </Space>
       ) : null}
     </Drawer>

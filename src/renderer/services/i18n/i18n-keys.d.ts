@@ -73,6 +73,8 @@ export type I18nKey =
   | 'agentWorkflows.editor.dirty'
   | 'agentWorkflows.editor.editable'
   | 'agentWorkflows.editor.hint'
+  | 'agentWorkflows.editor.modeForm'
+  | 'agentWorkflows.editor.modeJson'
   | 'agentWorkflows.editor.paramApplied'
   | 'agentWorkflows.editor.readonly'
   | 'agentWorkflows.editor.redo'

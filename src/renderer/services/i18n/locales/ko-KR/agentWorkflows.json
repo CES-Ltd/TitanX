@@ -66,7 +66,9 @@
     "undo": "Undo",
     "redo": "Redo",
     "undoTitle": "Undo (Cmd/Ctrl+Z)",
-    "redoTitle": "Redo (Cmd/Ctrl+Shift+Z)"
+    "redoTitle": "Redo (Cmd/Ctrl+Shift+Z)",
+    "modeForm": "Form",
+    "modeJson": "JSON"
   },
   "new": {
     "button": "+ New workflow",
