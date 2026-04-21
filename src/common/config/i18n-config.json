@@ -25,6 +25,7 @@
     "governance",
     "pet",
     "deepAgent",
-    "fleet"
+    "fleet",
+    "agentWorkflows"
   ]
 }

@@ -114,6 +114,13 @@ const FEATURE_META: Record<string, { label: string; description: string; icon: R
     icon: <Analysis size={20} />,
     color: 'cyan',
   },
+  agent_workflows: {
+    label: 'Agent Workflow Builder',
+    description:
+      'Bind procedural node-based workflows to agents at hire time. Dispatcher runs one step per turn, injects context, enforces IAM. Distinct from Workflow Approval Gates (agent-triggered governance). Opt-in — default OFF.',
+    icon: <SplitBranch size={20} />,
+    color: 'green',
+  },
 };
 
 const SecurityDashboard: React.FC = () => {

@@ -77,6 +77,15 @@ export type FleetConfigBundle = {
    */
   consolidatedLearnings?: ConsolidatedLearningsPayload;
   /**
+   * v2.6.0 Phase 3 — agent workflow templates the master has
+   * published to the fleet. Slaves insert these as `source='master'`
+   * rows in `workflow_definitions` and register
+   * `workflow.template.<id>` in `managed_config_keys` so the UI
+   * can show "Installed by IT" badges. Undefined on pre-v2.6
+   * masters; slaves treat as empty list.
+   */
+  managedWorkflows?: ManagedWorkflowTemplate[];
+  /**
    * True when the caller's `since` was already >= master version — slave
    * can skip the apply step. Lets slaves poll efficiently.
    */
@@ -94,8 +103,30 @@ export type ApplyBundleResult = {
    *  into reasoning_bank. 0 when bundle carries none or version
    *  matches the locally-applied consolidated version. */
   consolidatedLearningsApplied: number;
+  /** v2.6.0 Phase 3: how many master-pushed workflow templates landed. */
+  managedWorkflowsReplaced: number;
   /** Keys that flipped from local → managed in this apply. */
   newlyManagedKeys: string[];
+};
+
+/**
+ * v2.6.0 — workflow template shipped by master. Lean version of
+ * WorkflowDefinition: we include only the fields needed to rebuild
+ * a usable definition on the slave (nodes + connections + metadata)
+ * and drop local fields like `enabled` (slaves control enablement).
+ */
+export type ManagedWorkflowTemplate = {
+  id: string;
+  name: string;
+  description?: string;
+  category?: string;
+  canonicalId?: string;
+  version: number;
+  managedByVersion?: number;
+  nodes: unknown[];
+  connections: unknown[];
+  settings?: Record<string, unknown>;
+  createdAt: number;
 };
 
 /** Why a config version was bumped. Goes into the audit log. */
@@ -108,5 +139,8 @@ export type BumpReason =
   | 'agent.template.published'
   | 'agent.template.unpublished'
   | 'agent.template.updated'
+  // v2.6.0 — Agent Workflow Builder fleet publishing
+  | 'workflow.published'
+  | 'workflow.unpublished'
   | 'config.manual_bump'
   | 'fleet.bundle.applied';

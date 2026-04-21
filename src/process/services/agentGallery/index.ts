@@ -54,6 +54,15 @@ export type GalleryAgent = {
   managedByVersion?: number;
   /** Master-side curation flag: has the admin pushed this to the fleet? */
   publishedToFleet: boolean;
+  /**
+   * v2.6.0 · Agent Workflow Builder — recommended workflow for this
+   * template. The hire modal pre-fills the Workflow dropdown with
+   * this value; operators can override or clear it. Undefined means
+   * "no recommendation" — the dropdown defaults to "None".
+   *
+   * Stored in `agent_gallery.default_workflow_id` (migration v74).
+   */
+  defaultWorkflowId?: string;
 };
 
 type CreateGalleryAgentInput = {
@@ -161,6 +170,7 @@ export function updateAgent(
       | 'skillsMd'
       | 'heartbeatMd'
       | 'agentType'
+      | 'defaultWorkflowId'
     >
   >
 ): void {
@@ -218,6 +228,10 @@ export function updateAgent(
   if (updates.heartbeatMd !== undefined) {
     setClauses.push('heartbeat_md = ?');
     args.push(updates.heartbeatMd);
+  }
+  if (updates.defaultWorkflowId !== undefined) {
+    setClauses.push('default_workflow_id = ?');
+    args.push(updates.defaultWorkflowId || null);
   }
 
   if (setClauses.length === 0) return;
@@ -370,5 +384,6 @@ function rowToAgent(row: Record<string, unknown>): GalleryAgent {
     source: source === 'master' || source === 'builtin' ? source : 'local',
     managedByVersion: (row.managed_by_version as number) ?? undefined,
     publishedToFleet: (row.published_to_fleet as number) === 1,
+    defaultWorkflowId: (row.default_workflow_id as string) ?? undefined,
   };
 }

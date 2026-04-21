@@ -2465,3 +2465,95 @@ export const deepAgent = {
   getSession: bridge.buildProvider<unknown | null, { sessionId: string }>('deepAgent.get-session'),
   stopSession: bridge.buildProvider<void, { sessionId: string }>('deepAgent.stop-session'),
 };
+
+// ── Agent Workflow Builder (v2.6.0 Phase 1) ──────────────────────────────────
+//
+// Agent-binding layer atop the existing workflow engine. Bindings link
+// a workflow_definitions row to either a gallery template (default-at-
+// hire) or a specific team_agents slot (hire-time operator override).
+// Runs persist per-agent multi-turn state; the dispatcher walks one
+// step per agent turn, surfacing lifecycle events to the renderer.
+//
+// 9 providers + 4 emitters — distinct from the existing workflowEngine
+// domain (which covers governance one-shot CRUD). Both coexist; this
+// namespace targets the agent-workflow dispatcher (agentDispatcher.ts).
+
+export interface IWorkflowBinding {
+  id: string;
+  workflowDefinitionId: string;
+  agentGalleryId?: string;
+  slotId?: string;
+  teamId?: string;
+  boundAt: number;
+  expiresAt?: number;
+}
+
+export interface IAgentWorkflowRun {
+  id: string;
+  workflowDefinitionId: string;
+  definitionVersion: number;
+  graphSnapshot: string;
+  agentSlotId: string;
+  teamId?: string;
+  conversationId?: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'paused';
+  activeStepIds: string[];
+  completedStepIds: string[];
+  failedStepIds: Array<{ stepId: string; attempts: number; lastError?: string }>;
+  stateJson: Record<string, unknown>;
+  startedAt: number;
+  completedAt?: number;
+  trace: Array<Record<string, unknown>>;
+}
+
+export const agentWorkflows = {
+  // Bindings — template or slot scope.
+  bind: bridge.buildProvider<
+    IWorkflowBinding,
+    { workflowDefinitionId: string; agentGalleryId?: string; slotId?: string; teamId?: string; expiresAt?: number }
+  >('agent-workflows.bind'),
+  unbind: bridge.buildProvider<void, { bindingId: string }>('agent-workflows.unbind'),
+  listBindings: bridge.buildProvider<IWorkflowBinding[], { agentGalleryId?: string; slotId?: string }>(
+    'agent-workflows.list-bindings'
+  ),
+
+  // Runtime state.
+  getActiveRun: bridge.buildProvider<IAgentWorkflowRun | null, { slotId: string }>('agent-workflows.get-active-run'),
+  listRuns: bridge.buildProvider<
+    IAgentWorkflowRun[],
+    { slotId?: string; teamId?: string; status?: IAgentWorkflowRun['status']; limit?: number }
+  >('agent-workflows.list-runs'),
+
+  // Admin operations.
+  pause: bridge.buildProvider<void, { runId: string }>('agent-workflows.pause'),
+  resume: bridge.buildProvider<void, { runId: string }>('agent-workflows.resume'),
+  abort: bridge.buildProvider<void, { runId: string }>('agent-workflows.abort'),
+  skipStep: bridge.buildProvider<void, { runId: string; stepId: string }>('agent-workflows.skip-step'),
+
+  // v2.6.0 Phase 3 — fleet publishing (master-side).
+  publishToFleet: bridge.buildProvider<boolean, { workflowId: string }>('agent-workflows.publish-to-fleet'),
+  unpublishFromFleet: bridge.buildProvider<boolean, { workflowId: string }>('agent-workflows.unpublish-from-fleet'),
+
+  // v2.6.0 Phase 4.x — workflow-family trajectory digest.
+  digest: bridge.buildProvider<
+    {
+      canonicalId: string;
+      trajectoryCount: number;
+      successCount: number;
+      successRate: number;
+      lastSeenAt: number;
+      mostCommonSuccessfulPath: string[];
+      mostCommonFailurePath: string[];
+      suggestion: string;
+    },
+    { canonicalId: string }
+  >('agent-workflows.digest'),
+
+  // Events — re-published from the dispatcher's EventEmitter at bridge init.
+  onRunStarted: bridge.buildEmitter<IAgentWorkflowRun>('agent-workflows.run-started'),
+  onStepCompleted: bridge.buildEmitter<{ runId: string; stepId: string; outputs: Record<string, unknown> }>(
+    'agent-workflows.step-completed'
+  ),
+  onRunCompleted: bridge.buildEmitter<IAgentWorkflowRun>('agent-workflows.run-completed'),
+  onRunFailed: bridge.buildEmitter<IAgentWorkflowRun>('agent-workflows.run-failed'),
+};

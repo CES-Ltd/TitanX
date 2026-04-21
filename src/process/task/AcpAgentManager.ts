@@ -43,6 +43,10 @@ import type { AgentKillReason } from './IAgentManager';
 import { hasNativeSkillSupport } from '@/common/types/acpTypes';
 import { prepareFirstMessageWithSkillsIndex } from '@process/task/agentUtils';
 import { extractTextFromMessage, processCronInMessage } from './MessageMiddleware';
+import { prepareTurnContext } from '@process/services/workflows/agentDispatcher';
+import { getAgent as getGalleryAgent } from '@process/services/agentGallery';
+import type { TeamAgent } from '@/common/types/teamTypes';
+import { logNonCritical } from '@process/utils/logNonCritical';
 
 interface AcpAgentManagerData {
   workspace?: string;
@@ -831,6 +835,17 @@ class AcpAgentManager extends BaseAgentManager<AcpAgentManagerData, AcpPermissio
           contentToSend = contentToSend.split(AIONUI_FILES_MARKER)[0].trimEnd();
         }
 
+        // v2.6.0 · Agent Workflow Builder — prepend the active
+        // workflow's current-step injection block if the bound
+        // slot is advancing a deferred step this turn. No-op when
+        // this conversation isn't a team-agent slot, there is no
+        // binding, the feature toggle is off, or the dispatcher
+        // has no deferred step ready (pure tool-chain turn).
+        const workflowBlock = await this.resolveWorkflowInjection();
+        if (workflowBlock) {
+          contentToSend = `${workflowBlock}\n\n${contentToSend}`;
+        }
+
         // 首条消息时注入预设规则和 skills
         // Inject preset rules and skills on first message
         //
@@ -1277,6 +1292,56 @@ class AcpAgentManager extends BaseAgentManager<AcpAgentManagerData, AcpPermissio
   private clearBusyState(): void {
     cronBusyGuard.setProcessing(this.conversation_id, false);
     this.status = 'finished';
+  }
+
+  /**
+   * v2.6.0 · Agent Workflow Builder — resolve this conversation to
+   * a team-agent slot and ask the workflow dispatcher for the
+   * current step's injection block. Returns null for:
+   *   - solo (non-team) conversations
+   *   - team slots with no binding
+   *   - disabled `agent_workflows` security feature (dispatcher
+   *     handles the gate internally)
+   *   - turns where the dispatcher advanced only non-deferred steps
+   *
+   * Iterates teams to find the matching slot; for Phase 1 team
+   * counts (typically < 10) this is acceptable. Phase 2 can add an
+   * index by conversationId if the hot-path cost becomes visible.
+   */
+  private async resolveWorkflowInjection(): Promise<string | null> {
+    try {
+      const db = await getDatabase();
+      const driver = db.getDriver();
+      const teams = driver.prepare('SELECT id, agents FROM teams').all() as Array<{
+        id: string;
+        agents: string;
+      }>;
+      for (const t of teams) {
+        const agents = JSON.parse(t.agents) as TeamAgent[];
+        const match = agents.find((a) => a.conversationId === this.conversation_id);
+        if (!match) continue;
+
+        let allowedTools: string[] = [];
+        if (match.agentGalleryId) {
+          const gallery = getGalleryAgent(driver, match.agentGalleryId);
+          allowedTools = gallery?.allowedTools ?? [];
+        }
+
+        const injection = await prepareTurnContext({
+          db: driver,
+          slotId: match.slotId,
+          teamId: t.id,
+          conversationId: this.conversation_id,
+          agentGalleryId: match.agentGalleryId,
+          allowedTools,
+          turnNumber: 0,
+        });
+        return injection?.injectedContext ?? null;
+      }
+    } catch (err) {
+      logNonCritical('acp.workflow-injection', err);
+    }
+    return null;
   }
 
   private async saveContextUsage(usage: { used: number; size: number }): Promise<void> {

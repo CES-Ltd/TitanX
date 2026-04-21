@@ -68,6 +68,15 @@ export type TeamAgent = {
   backend?: AgentBackend;
   /** Phase B: present only when backend='farm'. */
   fleetBinding?: AgentFleetBinding;
+  /**
+   * v2.6.0 · Agent Workflow Builder — optional workflow override set
+   * at hire time. When present, the hire flow inserts a slot-level
+   * `workflow_bindings` row that supersedes any template-level
+   * binding for this agent. When absent, the hire flow falls back
+   * to the template's `default_workflow_id` (if any). Null/omitted
+   * means "no workflow" — the agent runs free, exactly as pre-v2.6.0.
+   */
+  workflowId?: string;
 };
 
 /** Persisted team record (stored in SQLite `teams` table) */

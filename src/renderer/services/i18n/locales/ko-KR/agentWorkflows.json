@@ -1,0 +1,82 @@
+{
+  "title": "Agent Workflows",
+  "subtitle": "Node-based procedural sequences bound to agents at hire time. Phase 1 ships 6 builtin workflows; visual editor coming in Phase 2.",
+  "list": {
+    "title": "Workflows",
+    "empty": "No workflows yet"
+  },
+  "tag": {
+    "builtin": "Builtin",
+    "local": "Local"
+  },
+  "detail": {
+    "none": "Select a workflow",
+    "selectPrompt": "Select a workflow from the list",
+    "category": "Category",
+    "version": "Version",
+    "canonicalId": "Canonical ID",
+    "steps": "Steps",
+    "graph": "Graph",
+    "copyJson": "Copy JSON",
+    "copied": "Workflow JSON copied to clipboard",
+    "copyFailed": "Copy failed"
+  },
+  "runs": {
+    "title": "Recent runs",
+    "empty": "No runs yet",
+    "slot": "Slot",
+    "abort": "Abort"
+  },
+  "hire": {
+    "label": "Workflow (optional)",
+    "placeholder": "No workflow — run free",
+    "hint": "Binds a procedural sequence to this hire. Slot binding supersedes the template default."
+  },
+  "import": {
+    "title": "Import workflow JSON",
+    "button": "Import JSON",
+    "ok": "Import",
+    "hint": "Paste a workflow JSON (name, description, nodes, connections). The imported row is saved as source=local; builtin seeds are never overwritten.",
+    "success": "Workflow imported",
+    "failed": "Import failed: {{msg}}"
+  },
+  "fleet": {
+    "publish": "Publish to fleet",
+    "published": "Published to fleet",
+    "publishFailed": "Publish failed",
+    "publishSkipped": "Cannot republish a master-sourced workflow",
+    "unpublish": "Unpublish from fleet",
+    "unpublished": "Unpublished from fleet",
+    "unpublishFailed": "Unpublish failed"
+  },
+  "editor": {
+    "title": "Edit step parameters",
+    "hint": "Edit the node.parameters JSON below. Click Apply (or Cmd/Ctrl+Enter) to stage the change; use the Save button in the page header to persist.",
+    "apply": "Apply",
+    "cancel": "Cancel",
+    "save": "Save",
+    "revert": "Revert",
+    "saved": "Workflow saved",
+    "saveFailed": "Save failed: {{msg}}",
+    "dirty": "Unsaved",
+    "editable": "Editable",
+    "readonly": "Read-only (master-managed)",
+    "paramApplied": "Node parameters updated",
+    "addNode": "+ Add node",
+    "undo": "Undo",
+    "redo": "Redo",
+    "undoTitle": "Undo (Cmd/Ctrl+Z)",
+    "redoTitle": "Redo (Cmd/Ctrl+Shift+Z)",
+    "modeForm": "Form",
+    "modeJson": "JSON"
+  },
+  "new": {
+    "button": "+ New workflow",
+    "title": "New agent workflow",
+    "ok": "Create",
+    "hint": "Creates a blank workflow with just a trigger node. Add steps with the \"+ Add node\" button once created.",
+    "namePlaceholder": "Workflow name",
+    "created": "Workflow created",
+    "failed": "Create failed"
+  }
+}

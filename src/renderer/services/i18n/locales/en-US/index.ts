@@ -26,6 +26,7 @@ import governance from './governance.json';
 import pet from './pet.json';
 import deepAgent from './deepAgent.json';
 import fleet from './fleet.json';
+import agentWorkflows from './agentWorkflows.json';
 
 export default {
   common,
@@ -51,4 +52,5 @@ export default {
   pet,
   deepAgent,
   fleet,
+  agentWorkflows,
 };

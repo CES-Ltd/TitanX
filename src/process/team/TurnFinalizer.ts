@@ -26,6 +26,7 @@ import * as reasoningBank from '@process/services/reasoningBank';
 import * as agentPlanningService from '@process/services/agentPlanning';
 import * as tracingService from '@process/services/tracing';
 import * as securityFeaturesService from '@process/services/securityFeatures';
+import * as agentWorkflowDispatcher from '@process/services/workflows/agentDispatcher';
 import { logNonCritical } from '@process/utils/logNonCritical';
 import { costProviderFor, resolveConversationType } from './conversationTypes';
 
@@ -85,6 +86,29 @@ export class TurnFinalizer {
     this.storeAgentMemory(driver, outcome);
     this.autoCreatePlan(driver, outcome);
     this.recordTrace(driver, outcome);
+    await this.evaluateAgentWorkflowStep(driver, outcome);
+  }
+
+  /**
+   * v2.6.0 · Agent Workflow Builder — post-turn workflow advancement.
+   *
+   * When the turn's agent has a bound workflow with a deferred step
+   * pending, capture the accumulatedText as that step's output and
+   * advance the state machine. Dispatcher handles the security-feature
+   * gate internally; this observer is a no-op when no agent workflow
+   * is active for the slot.
+   */
+  private async evaluateAgentWorkflowStep(driver: ISqliteDriver, outcome: TurnOutcome): Promise<void> {
+    try {
+      await agentWorkflowDispatcher.observeTurnCompletion({
+        db: driver,
+        slotId: outcome.agent.slotId,
+        accumulatedText: outcome.accumulatedText,
+        turnNumber: 0,
+      });
+    } catch (err) {
+      logNonCritical('team.turn-finalizer.agent-workflow', err);
+    }
   }
 
   // ── ReasoningBank: store the trajectory for future replay ──────────────

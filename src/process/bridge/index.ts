@@ -64,6 +64,7 @@ import { initAgentSnapshotBridge } from './agentSnapshotBridge';
 import { initSecurityFeaturesBridge } from './securityFeaturesBridge';
 import { initInferenceRoutingBridge } from './inferenceRoutingBridge';
 import { initWorkflowEngineBridge } from './workflowEngineBridge';
+import { initAgentWorkflowBridge } from './agentWorkflowBridge';
 import { initAgentMemoryBridge } from './agentMemoryBridge';
 import { initAgentPlansBridge } from './agentPlansBridge';
 import { initTracingBridge } from './tracingBridge';
@@ -142,6 +143,7 @@ export function initAllBridges(deps: BridgeDependencies): void {
   initSecurityFeaturesBridge();
   initInferenceRoutingBridge();
   initWorkflowEngineBridge();
+  initAgentWorkflowBridge();
   initAgentMemoryBridge();
   initAgentPlansBridge();
   initTracingBridge();

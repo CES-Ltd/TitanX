@@ -207,6 +207,30 @@ export function buildConfigBundle(db: ISqliteDriver, sinceVersion: number): Flee
     // than failing the whole bundle build.
   }
 
+  // v2.6.0 Phase 3 — agent workflow templates. Master admins flip
+  // `published_to_fleet=1` on workflow_definitions to broadcast a
+  // workflow. Same source='master' loop guard as agent templates.
+  const workflowRows = db
+    .prepare(
+      `SELECT * FROM workflow_definitions
+       WHERE published_to_fleet = 1 AND (source IS NULL OR source != 'master')
+       ORDER BY name ASC`
+    )
+    .all() as Array<Record<string, unknown>>;
+  const managedWorkflows = workflowRows.map((r) => ({
+    id: r.id as string,
+    name: r.name as string,
+    description: (r.description as string) ?? undefined,
+    category: (r.category as string) ?? undefined,
+    canonicalId: (r.canonical_id as string) ?? undefined,
+    version: r.version as number,
+    managedByVersion: (r.managed_by_version as number) ?? undefined,
+    nodes: JSON.parse((r.nodes as string) || '[]'),
+    connections: JSON.parse((r.connections as string) || '[]'),
+    settings: JSON.parse((r.settings as string) || '{}'),
+    createdAt: r.created_at as number,
+  }));
+
   return {
     version: currentVersion,
     updatedAt,
@@ -215,6 +239,7 @@ export function buildConfigBundle(db: ISqliteDriver, sinceVersion: number): Flee
     securityFeatures,
     agentTemplates,
     consolidatedLearnings,
+    managedWorkflows,
     upToDate: false,
   };
 }
@@ -244,6 +269,7 @@ export function applyConfigBundle(db: ISqliteDriver, bundle: FleetConfigBundle):
       securityFeaturesUpdated: 0,
       agentTemplatesReplaced: 0,
       consolidatedLearningsApplied: 0,
+      managedWorkflowsReplaced: 0,
       newlyManagedKeys: [],
     };
   }
@@ -446,6 +472,49 @@ export function applyConfigBundle(db: ISqliteDriver, bundle: FleetConfigBundle):
     }
   }
 
+  // v2.6.0 Phase 3 — agent workflow templates. Wipe source='master'
+  // workflow rows + re-insert from bundle with source='master'. Local
+  // source='local' workflows (user forks or custom creations) are
+  // untouched. Errors per row are swallowed so one malformed entry
+  // can't stall the rest of the bundle apply.
+  let managedWorkflowsReplaced = 0;
+  if (bundle.managedWorkflows && bundle.managedWorkflows.length > 0) {
+    try {
+      db.prepare("DELETE FROM workflow_definitions WHERE source = 'master'").run();
+      const insertWorkflow = db.prepare(
+        `INSERT INTO workflow_definitions
+           (id, user_id, name, description, nodes, connections, settings, enabled, version,
+            created_at, updated_at, canonical_id, source, category, managed_by_version, published_to_fleet)
+         VALUES (?, 'system_default_user', ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, 'master', ?, ?, 0)`
+      );
+      const now = Date.now();
+      for (const w of bundle.managedWorkflows) {
+        try {
+          insertWorkflow.run(
+            w.id,
+            w.name,
+            w.description ?? null,
+            JSON.stringify(w.nodes),
+            JSON.stringify(w.connections),
+            JSON.stringify(w.settings ?? {}),
+            w.version,
+            w.createdAt,
+            now,
+            w.canonicalId ?? null,
+            w.category ?? null,
+            w.managedByVersion ?? bundle.version
+          );
+          managedWorkflowsReplaced += 1;
+          newlyManagedKeys.add(`workflow.template.${w.id}`);
+        } catch (e) {
+          logNonCritical('fleet.config.apply-workflow', e);
+        }
+      }
+    } catch (e) {
+      logNonCritical('fleet.config.apply-workflows', e);
+    }
+  }
+
   // Bump local version to the bundle's version (skipping the usual +1,
   // because the slave is *adopting* master's version, not adding to it).
   db.prepare(
@@ -479,6 +548,7 @@ export function applyConfigBundle(db: ISqliteDriver, bundle: FleetConfigBundle):
     securityFeaturesUpdated: bundle.securityFeatures.length,
     agentTemplatesReplaced: agentTemplatesInserted,
     consolidatedLearningsApplied,
+    managedWorkflowsReplaced,
     newlyManagedKeys: Array.from(newlyManagedKeys),
   };
 }

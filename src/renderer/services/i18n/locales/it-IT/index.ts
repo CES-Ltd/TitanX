@@ -24,6 +24,7 @@ import team from './team.json';
 import tools from './tools.json';
 import update from './update.json';
 import fleet from './fleet.json';
+import agentWorkflows from './agentWorkflows.json';
 
 export default {
   acp,
@@ -48,4 +49,5 @@ export default {
   tools,
   update,
   fleet,
+  agentWorkflows,
 };

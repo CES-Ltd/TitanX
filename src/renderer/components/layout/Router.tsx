@@ -25,6 +25,7 @@ const ScheduledTasksPage = React.lazy(() => import('@renderer/pages/cron/Schedul
 const TaskDetailPage = React.lazy(() => import('@renderer/pages/cron/ScheduledTasksPage/TaskDetailPage'));
 const TeamIndex = React.lazy(() => import('@renderer/pages/team'));
 const GovernancePage = React.lazy(() => import('@renderer/pages/governance'));
+const AgentWorkflowsPage = React.lazy(() => import('@renderer/pages/agentWorkflows'));
 const SprintBoard = React.lazy(() => import('@renderer/pages/team/sprint/SprintBoard'));
 const AgentGallery = React.lazy(() => import('@renderer/pages/team/gallery/AgentGallery'));
 const AgentTeamLive = React.lazy(() => import('@renderer/pages/team/live/AgentTeamLive'));
@@ -92,6 +93,14 @@ const PanelRoute: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
             element={
               <RestrictedRoute feature='Governance' allowedModes={['regular', 'master']}>
                 {withRouteFallback(GovernancePage)}
+              </RestrictedRoute>
+            }
+          />
+          <Route
+            path='/agent-workflows'
+            element={
+              <RestrictedRoute feature='Agent Workflows' allowedModes={['regular', 'master']}>
+                {withRouteFallback(AgentWorkflowsPage)}
               </RestrictedRoute>
             }
           />

@@ -151,7 +151,7 @@ const TeamTabView: React.FC<TeamTabViewProps> = ({
 };
 
 type AddAgentTriggerProps = {
-  onAddAgent: (data: { agentName: string; agentKey: string }) => void;
+  onAddAgent: (data: { agentName: string; agentKey: string; workflowId?: string }) => void;
 };
 
 const AddAgentTrigger: React.FC<AddAgentTriggerProps> = ({ onAddAgent }) => {
@@ -172,7 +172,7 @@ const AddAgentTrigger: React.FC<AddAgentTriggerProps> = ({ onAddAgent }) => {
 };
 
 type TeamTabsProps = {
-  onAddAgent: (data: { agentName: string; agentKey: string }) => void;
+  onAddAgent: (data: { agentName: string; agentKey: string; workflowId?: string }) => void;
   onTabClick?: (slotId: string) => void;
 };
 
