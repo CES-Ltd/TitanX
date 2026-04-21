@@ -8,13 +8,13 @@ How the [TitanX Wiki](https://github.com/CES-Ltd/TitanX/wiki) is organized, edit
 
 The wiki is **human-facing documentation**: installation, guided tutorials, conceptual overviews, and help content. It complements — rather than duplicates — the `/docs` folder, which holds canonical technical specs, ADRs, and contributor conventions.
 
-| Topic | Belongs in... |
-|---|---|
-| "How do I install TitanX?" | **Wiki** |
-| "What's the ADR for moving Queen drift detection into its own service?" | **`/docs/adr`** |
-| "What's the fleet command envelope format?" | **Wiki (summary)** + **`/docs/feature/fleet`** (authoritative spec) |
-| "How do I set up the dev environment?" | **Wiki (guided)** + **`/docs/development.md`** (reference) |
-| "How does this specific test work?" | **Code comments** + **`/docs/conventions/*`** |
+| Topic                                                                   | Belongs in...                                                       |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| "How do I install TitanX?"                                              | **Wiki**                                                            |
+| "What's the ADR for moving Queen drift detection into its own service?" | **`/docs/adr`**                                                     |
+| "What's the fleet command envelope format?"                             | **Wiki (summary)** + **`/docs/feature/fleet`** (authoritative spec) |
+| "How do I set up the dev environment?"                                  | **Wiki (guided)** + **`/docs/development.md`** (reference)          |
+| "How does this specific test work?"                                     | **Code comments** + **`/docs/conventions/*`**                       |
 
 **Rule:** when a topic has a canonical source in the repo, the wiki summarizes + links out. Wiki never becomes the source of truth for anything code-reviewed.
 
@@ -75,12 +75,12 @@ Both support Markdown and auto-render.
 
 ## Voice + tone
 
-| Section | Voice | Example |
-|---|---|---|
-| Home, Getting Started, First Launch, Your First Team | **Founder ("I")** | "We just shipped this — here's how to try it." |
-| Core Concepts, Fleet Mode, Dream Mode, Security | **Product (third-person)** | "TitanX captures every trajectory…" |
-| Reference pages (Configuration Keys, Env Vars, etc.) | **Neutral technical** | "The following environment variables are honored by the slave push worker." |
-| Troubleshooting, FAQ | **Conversational second-person** | "If you see X, check Y." |
+| Section                                              | Voice                            | Example                                                                     |
+| ---------------------------------------------------- | -------------------------------- | --------------------------------------------------------------------------- |
+| Home, Getting Started, First Launch, Your First Team | **Founder ("I")**                | "We just shipped this — here's how to try it."                              |
+| Core Concepts, Fleet Mode, Dream Mode, Security      | **Product (third-person)**       | "TitanX captures every trajectory…"                                         |
+| Reference pages (Configuration Keys, Env Vars, etc.) | **Neutral technical**            | "The following environment variables are honored by the slave push worker." |
+| Troubleshooting, FAQ                                 | **Conversational second-person** | "If you see X, check Y."                                                    |
 
 Keep it. Consistency across a page is more important than matching tone perfectly — just don't swap voices mid-page.
 
@@ -137,16 +137,16 @@ Quarterly: open every wiki page, skim, ask "is this still true?" Any content ref
 
 Wiki pages that link out to authoritative sources in the main repo:
 
-| Wiki page | Canonical source |
-|---|---|
-| [[Fleet Mode Overview]] | [`/docs/feature/fleet/README.md`](docs/feature/fleet/README.md) |
-| [[Architecture Overview]] | [`/docs/tech/architecture.md`](docs/tech/architecture.md) |
-| [[Development Setup]] | [`/docs/development.md`](docs/development.md) |
-| [[Project Structure]] | [`/docs/conventions/file-structure.md`](docs/conventions/file-structure.md) |
-| [[Code Conventions]] | [`AGENTS.md`](AGENTS.md) |
-| [[Testing]] | [`.claude/skills/testing/SKILL.md`](.claude/skills/testing/) |
-| [[Pull Request Workflow]] | [`.claude/skills/oss-pr/SKILL.md`](.claude/skills/oss-pr/) |
-| [[IAM Policies]] | [`/docs/feature/iam/README.md`](docs/feature/iam/) |
+| Wiki page                 | Canonical source                                                            |
+| ------------------------- | --------------------------------------------------------------------------- |
+| [[Fleet Mode Overview]]   | [`/docs/feature/fleet/README.md`](docs/feature/fleet/README.md)             |
+| [[Architecture Overview]] | [`/docs/tech/architecture.md`](docs/tech/architecture.md)                   |
+| [[Development Setup]]     | [`/docs/development.md`](docs/development.md)                               |
+| [[Project Structure]]     | [`/docs/conventions/file-structure.md`](docs/conventions/file-structure.md) |
+| [[Code Conventions]]      | [`AGENTS.md`](AGENTS.md)                                                    |
+| [[Testing]]               | [`.claude/skills/testing/SKILL.md`](.claude/skills/testing/)                |
+| [[Pull Request Workflow]] | [`.claude/skills/oss-pr/SKILL.md`](.claude/skills/oss-pr/)                  |
+| [[IAM Policies]]          | [`/docs/feature/iam/README.md`](docs/feature/iam/)                          |
 
 When the canonical source changes, the wiki summary may drift — that's OK for minor detail, not OK for the high-level claim (e.g., the wiki saying "slaves poll every 30s" when we change the default to 60s).
 
@@ -159,6 +159,7 @@ The wiki ships in two phases:
 ### Phase 1 (shipped with this doc — 12 pages)
 
 The "evaluator + first-time user" journey end-to-end:
+
 - Home
 - Installation
 - First Launch
@@ -171,7 +172,7 @@ The "evaluator + first-time user" journey end-to-end:
 - Development Setup
 - Troubleshooting
 - FAQ
-- _Sidebar + _Footer
+- \_Sidebar + \_Footer
 
 ### Phase 2 (to land incrementally — ~45 more pages)
 

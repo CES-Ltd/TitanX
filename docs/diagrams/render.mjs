@@ -60,29 +60,50 @@ async function renderOne(d) {
     const wait = target - Date.now();
     if (wait > 0) await page.waitForTimeout(wait);
     const framePath = path.resolve(framesDir, `frame-${String(i).padStart(4, '0')}.png`);
-    await page.screenshot({ path: framePath, type: 'png', fullPage: false, clip: { x: 0, y: 0, width: d.width, height: d.height } });
+    await page.screenshot({
+      path: framePath,
+      type: 'png',
+      fullPage: false,
+      clip: { x: 0, y: 0, width: d.width, height: d.height },
+    });
   }
   await browser.close();
   console.log(`[${d.html}] captured in ${String(Math.round((Date.now() - start) / 1000))}s`);
 
   // ffmpeg: palette-optimized 2-pass so the gif stays small but clean.
   const palette = path.resolve(framesDir, 'palette.png');
-  execFileSync('ffmpeg', [
-    '-y',
-    '-framerate', String(OUTPUT_FPS),
-    '-i', path.resolve(framesDir, 'frame-%04d.png'),
-    '-vf', `fps=${String(OUTPUT_FPS)},scale=${String(d.width)}:-1:flags=lanczos,palettegen=stats_mode=diff`,
-    palette,
-  ], { stdio: 'inherit' });
-  execFileSync('ffmpeg', [
-    '-y',
-    '-framerate', String(OUTPUT_FPS),
-    '-i', path.resolve(framesDir, 'frame-%04d.png'),
-    '-i', palette,
-    '-lavfi', `fps=${String(OUTPUT_FPS)},scale=${String(d.width)}:-1:flags=lanczos [x]; [x][1:v] paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`,
-    '-loop', '0',
-    gifPath,
-  ], { stdio: 'inherit' });
+  execFileSync(
+    'ffmpeg',
+    [
+      '-y',
+      '-framerate',
+      String(OUTPUT_FPS),
+      '-i',
+      path.resolve(framesDir, 'frame-%04d.png'),
+      '-vf',
+      `fps=${String(OUTPUT_FPS)},scale=${String(d.width)}:-1:flags=lanczos,palettegen=stats_mode=diff`,
+      palette,
+    ],
+    { stdio: 'inherit' }
+  );
+  execFileSync(
+    'ffmpeg',
+    [
+      '-y',
+      '-framerate',
+      String(OUTPUT_FPS),
+      '-i',
+      path.resolve(framesDir, 'frame-%04d.png'),
+      '-i',
+      palette,
+      '-lavfi',
+      `fps=${String(OUTPUT_FPS)},scale=${String(d.width)}:-1:flags=lanczos [x]; [x][1:v] paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`,
+      '-loop',
+      '0',
+      gifPath,
+    ],
+    { stdio: 'inherit' }
+  );
 
   console.log(`[${d.html}] → ${gifPath}`);
   await rm(framesDir, { recursive: true, force: true });
